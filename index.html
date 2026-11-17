@@ -1139,7 +1139,7 @@
               <img class="chat-avatar" id="chatAvatarImg" src="assets/analia-verde.webp" alt="Analía" width="64" height="64" hidden>
               <h1 style="font-size:23px;margin:0" id="chatTitle">Conversación</h1>
               <span style="color:var(--muted);font-size:13.5px" id="chatSubtitle"></span>
-              <button class="btn small obj-toggle" id="btnObjectives" type="button" aria-expanded="false" title="Mostrar u ocultar los objetivos del componente y la opción de marcar el bloque como no aplica">Objetivos <span class="chev">▾</span></button>
+              <button class="btn small obj-toggle" id="btnObjectives" type="button" aria-expanded="false" title="Mostrar u ocultar los objetivos del componente">Objetivos <span class="chev">▾</span></button>
               <button class="btn small" id="btnCanvasSide" type="button" aria-expanded="false" title="Mostrar u ocultar el bloque del lienzo junto al chat">Lienzo <span class="chev">▾</span></button>
             </div>
             <div class="module-select-row"><label for="moduleTabs">Componente</label><select class="module-select" id="moduleTabs" aria-label="Elegir componente"></select></div>
@@ -5057,7 +5057,7 @@ var MODULES = [
         }
         var blockerDetail = " (va " + answeredCount(blocker.id) + " de " + blocker.questions.length + " preguntas respondidas" + (pendingStep(blocker.id) ? ", con preguntas de seguimiento pendientes" : "") + ").";
         if (blocker.id === "M13" && moduleComplete("M13") && !pendingStep("M13") && !taskReported()) blockerDetail = " (sus preguntas ya están respondidas en su totalidad: lo que falta es el reporte del resultado de la tarea de cierre de C13 con su evidencia — qué pasó, con números, lo que dijeron las personas, y una foto, un enlace o los números inicial y final).";
-        t += analiaBubbleCls("<strong>Yo te muestro este bloque en solo lectura por ahora.</strong> Puedes leer sus preguntas, pero yo todavía no te las puedo hacer aquí: primero cerramos juntos <strong>" + esc(blocker.name) + "</strong>" + blockerDetail + " En cuanto lo cerremos, yo misma te traigo a este bloque.<br><br>Si este bloque no aplica para tu negocio, yo te lo registro como no aplica desde el panel de la derecha y seguimos sin quedarnos atascados." +
+        t += analiaBubbleCls("<strong>Yo te muestro este bloque en solo lectura por ahora.</strong> Puedes leer sus preguntas, pero yo todavía no te las puedo hacer aquí: primero cerramos juntos <strong>" + esc(blocker.name) + "</strong>" + blockerDetail + " En cuanto lo cerremos, yo misma te traigo a este bloque." +
           '<br><br><button class="btn small primary" id="btnGoBlocker">Ir a completar ' + esc(blocker.name) + "</button>", "locked");
       } else if (pend) {
         /* La pregunta de seguimiento pendiente ya aparece dentro del hilo:
@@ -5184,15 +5184,8 @@ var MODULES = [
       });
       renderProgressPanel();
       renderEvidencePanel();
-      var bna = $("btnNotApplicable");
-      if (bna) bna.addEventListener("click", function () {
-        var reason = window.prompt("¿Por qué no aplica este bloque para tu negocio? Escríbeme una frase corta:");
-        if (reason === null) return;
-        ensureAnswers();
-        state.notApplicable[m.id] = { reason: reason.trim() || "sin motivo anotado", at: new Date().toISOString() };
-        persist(); renderSidebar(); renderChat();
-        toast("Anotado: este bloque no aplica para tu negocio. Seguimos con el siguiente.");
-      });
+      /* v17.22: ya no se puede marcar un bloque como no aplica (se quitó el
+         botón y su creación); solo queda desmarcar un bloque marcado antes. */
       var buna = $("btnUndoNA");
       if (buna) buna.addEventListener("click", function () {
         if (state.notApplicable) delete state.notApplicable[m.id];
@@ -5272,7 +5265,7 @@ var MODULES = [
         var fh = briefFichaHtml();
         var na0 = state.notApplicable && state.notApplicable[m.id];
         if (na0) fh += '<div class="na-note">Marcaste este bloque como <strong>no aplica</strong> para tu negocio: «' + esc(na0.reason || "sin motivo") + '». Yo lo registro así y no te lo vuelvo a pedir.<br><button class="btn small" id="btnUndoNA" type="button">Quitar la marca de no aplica</button></div>';
-        else fh += '<div style="margin-top:14px"><button class="btn small" id="btnNotApplicable" type="button">Este bloque no aplica para mi negocio</button></div>';
+        /* v17.22: el botón para marcar el bloque como no aplica ya no existe: todos los componentes son necesarios para el diagnóstico. Solo queda «Quitar la marca» para un bloque marcado antes. */
         fh += '<div style="margin-top:10px"><button class="btn small" id="btnViewCanvas" type="button">Ver el lienzo</button></div>';
         $("progressPanel").innerHTML = fh;
         var bvc0 = $("btnViewCanvas");
@@ -5302,7 +5295,7 @@ var MODULES = [
       }
       var na = state.notApplicable && state.notApplicable[m.id];
       if (na) html += '<div class="na-note">Marcaste este bloque como <strong>no aplica</strong> para tu negocio: «' + esc(na.reason || "sin motivo") + '». Yo lo registro así y no te lo vuelvo a pedir.<br><button class="btn small" id="btnUndoNA" type="button">Quitar la marca de no aplica</button></div>';
-      else if (!moduleFullyComplete(m.id)) html += '<div style="margin-top:14px"><button class="btn small" id="btnNotApplicable" type="button">Este bloque no aplica para mi negocio</button></div>';
+      /* v17.22: sin botón para marcar el bloque como no aplica: todos los componentes son necesarios para el diagnóstico. */
       html += '<div class="pp-module-meta" style="border-top:1px dashed var(--line);padding-top:12px"><strong>Alerta principal:</strong> ' + esc(m.alert) + "</div>";
       /* v17.9: ir del componente a su bloque del lienzo (y viceversa). */
       var blk = null;
@@ -5541,7 +5534,7 @@ var MODULES = [
         addCoachNote(ui.module, cur.qi, "No pasa nada, yo lo dejo marcado como pendiente: un «todavía no lo sé» honesto vale más que inventar una cifra. Seguimos con la siguiente pregunta, y cuando tengas el dato, vuelves y me lo cuentas.");
       }
       if (intent === "noaplica") {
-        addCoachNote(ui.module, cur.qi, "Entendido, yo registro esta pregunta como no aplica para tu negocio. Y si el bloque entero no aplica, lo marcas en el panel de la derecha con el botón «Este bloque no aplica para mi negocio».");
+        addCoachNote(ui.module, cur.qi, "Entendido, yo registro esta pregunta como no aplica para tu negocio.");
       }
       /* Sin detenciones: toda respuesta se acepta y el dato que falte se
          descubre con la siguiente pregunta de la cadena, en el flujo normal. */
@@ -5587,7 +5580,7 @@ var MODULES = [
         b.innerHTML = label + ' <span class="chev">▾</span>';
         b.title = inBrief
           ? "Mostrar u ocultar la Ficha de contexto"
-          : "Mostrar u ocultar los objetivos del componente y la opción de marcar el bloque como no aplica";
+          : "Mostrar u ocultar los objetivos del componente";
       }
       if (inBrief) {
         if (briefPanelLastModule !== "M0") briefPanelOpen = true; /* al entrar al Brief, la ficha se abre */
