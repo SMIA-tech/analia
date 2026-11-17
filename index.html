@@ -298,6 +298,11 @@
       .msg .bubble.market h4 { margin: 14px 0 4px; font-family: "Lora", Georgia, serif; font-size: 15px; color: var(--ink); }
       .msg .bubble.market h4:first-of-type { margin-top: 8px; }
       .msg .bubble.market p { margin: 0 0 6px; }
+      /* v17.15 · Referencias externas de «Investigar»: lista con su fuente. */
+      .msg .bubble.market ul.research-list { margin: 8px 0 4px 18px; padding: 0; }
+      .msg .bubble.market ul.research-list li { margin-bottom: 7px; }
+      .msg .bubble.market ul.research-list li a { font-weight: 700; }
+      .msg .bubble.market .research-note, .research-note { font-size: 12.5px; color: var(--muted); }
       .msg .bubble.task { background: var(--panel-2); border: 1.5px solid var(--gold); font-size: 14.5px; }
       .msg .bubble.task .qtag { color: var(--gold); }
       .composer { border-top: 1px solid var(--line); padding: 14px 0 18px; }
@@ -1108,7 +1113,7 @@
                 <div class="evidence-panel" id="evidencePanel" hidden></div>
                 <div class="composer-actions">
                 <div class="mode-chips" role="group" aria-label="Modos de exigencia de Analía">
-                  <button class="chip" data-mode="investigar" title="Analía te pedirá el contexto: tendencias, referentes y lo que ya existe en el mercado"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Investigar</button>
+                  <button class="chip" data-mode="investigar" title="Analía mira hacia afuera: busca en el mercado referencias de tu sector y tus precios, con su fuente, y además te pide el contexto en tu próxima respuesta"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Investigar</button>
                   <button class="chip" data-mode="retar" title="Analía cuestionará tu respuesta y buscará el ángulo contrario"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Retar</button>
                   <button class="chip" data-mode="auditar" title="Al cierre de cada componente, Analía revisa qué datos quedaron sin evidencia y qué falta por completar — sin detener la conversación"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>Auditar</button>
                 </div>
@@ -3013,6 +3018,7 @@ var MODULES = [
          nada guardado: solo crea lo que falta. */
       ensureCanvas();
       if (!state.canvasNotes) state.canvasNotes = {};
+      ensureResearch(); /* v17.15: la investigación externa también se inicializa en proyectos viejos, sin borrar nada guardado */
     }
     /* ---------- Ayudas v17 del coach (genéricas: valen para quien sea
        que esté usando la herramienta, con sus propias cifras) ---------- */
@@ -3432,6 +3438,21 @@ var MODULES = [
       if (!out.canvas.pinned && cb.pinned) out.canvas.pinned = cb.pinned;
       if (!out.canvas.pinnedFrom && cb.pinnedFrom) out.canvas.pinnedFrom = cb.pinnedFrom;
       if (canvasChanged) { changed = true; adoptedFromB = true; }
+      /* v17.15 · La investigación externa también se fusiona: la unión
+         de las búsquedas de ambas copias (máximo 2, las más recientes),
+         para que una búsqueda hecha en otra pestaña o en otro equipo
+         no se pierda jamás. */
+      var ra = (a.research && Array.isArray(a.research.searches)) ? a.research.searches : [];
+      var rb = (b.research && Array.isArray(b.research.searches)) ? b.research.searches : [];
+      var rByKey = {};
+      ra.concat(rb).forEach(function (s) { if (s && s.q && s.at) rByKey[s.q + "||" + s.at] = s; });
+      var rMerged = Object.keys(rByKey).map(function (k) { return rByKey[k]; }).sort(function (x, y) { return (x.at || "") < (y.at || "") ? -1 : 1; });
+      if (rMerged.length > RESEARCH_MAX_SEARCHES) rMerged = rMerged.slice(rMerged.length - RESEARCH_MAX_SEARCHES);
+      if (JSON.stringify(rMerged) !== JSON.stringify(ra)) {
+        changed = true;
+        if (rMerged.some(function (s) { return rb.some(function (x) { return x.q === s.q && x.at === s.at; }); })) adoptedFromB = true;
+      }
+      out.research = { searches: rMerged };
       var ta = a.task13 || null, tb = b.task13 || null;
       if (tb && tb.report && (!ta || !ta.report || (tb.reportedAt || "") > (ta.reportedAt || ""))) { out.task13 = JSON.parse(JSON.stringify(tb)); changed = true; adoptedFromB = true; }
       else if (tb && tb.text && (!ta || !ta.text)) { out.task13 = JSON.parse(JSON.stringify(tb)); changed = true; adoptedFromB = true; }
@@ -4382,6 +4403,128 @@ var MODULES = [
       }
       return "";
     }
+    /* ---------- v17.15 · Investigar con datos externos ----------
+       El botón «Investigar» también mira hacia afuera: consulta el
+       intermediario (un Worker gratuito que guarda la clave de
+       búsqueda como secreto; la clave NUNCA aparece en esta página)
+       y trae hasta 5 referencias con su fuente. Solo se consulta
+       cuando el cliente toca «Investigar», nunca automático, y como
+       máximo 2 búsquedas por proyecto: los resultados quedan
+       guardados en el proyecto (local + nube, como el resto del
+       estado) y no se vuelve a consultar en cada renderizado. Si el
+       intermediario falla, viene vacío o no hay red, no se inventa
+       nada: sigue el mensaje honesto «Sin datos de mercado
+       verificados». */
+    var SEARCH_WORKER_URL = "https://analia-busqueda.yeinermendozaarte.workers.dev/search";
+    var RESEARCH_MAX_SEARCHES = 2;
+    function ensureResearch() {
+      if (!state) return null;
+      if (!state.research || !Array.isArray(state.research.searches)) state.research = { searches: [] };
+      return state.research;
+    }
+    function researchSearches() {
+      var r = ensureResearch();
+      return r ? r.searches : [];
+    }
+    /* La consulta se arma solo con datos reales del proyecto: lo que
+       vende (C0 Q6), el sector y «precio Colombia». Si no hay nada
+       con qué buscar, no se inventa: devuelve null. */
+    function buildResearchQuery() {
+      if (!state) return null;
+      var parts = [];
+      var vende = lastAnswerText("M0", 6);
+      if (vende && !isUncertain(vende)) parts.push(String(vende).replace(/\s+/g, " ").trim().slice(0, 80));
+      var sector = (state.project && state.project.sector) || "";
+      if (sector.trim()) parts.push(sector.trim());
+      parts.push("precio Colombia");
+      var q = parts.join(" ").replace(/\s+/g, " ").trim();
+      /* Sin qué vender ni sector, la consulta sería solo «precio
+         Colombia»: demasiado genérica para gastar una búsqueda. */
+      return parts.length > 1 ? q : null;
+    }
+    /* El precio propio del usuario, con la misma lectura que
+       marketLines (C0 Q5 última cifra, respaldo C0 Q6 y C6 Q1). */
+    function ownPrice() {
+      var q5nums = extractMoneyAll(lastAnswerText("M0", 5));
+      var p = q5nums.length ? q5nums[q5nums.length - 1] : extractMoney(lastAnswerText("M0", 6));
+      if (p == null) p = extractMoney(state.answers.M6 ? (state.answers.M6[1] || "") : "");
+      return p;
+    }
+    /* La línea de mercado con los resultados externos: título, fragmento
+       y enlace a la fuente de cada referencia, y el contraste con el
+       precio del usuario solo cuando ese precio está en sus respuestas.
+       Devuelve null si nunca hubo una búsqueda con resultados: en ese
+       caso la sección de mercado sigue con su mensaje honesto. */
+    function researchMarketLine() {
+      var done = researchSearches();
+      if (!done.length) return null;
+      var latest = done[done.length - 1];
+      var p = ownPrice();
+      var html = "<p>Busqué en el mercado «" + esc(latest.q) + "» y esto fue lo que encontré, con su fuente:</p><ul class=\"research-list\">";
+      latest.results.forEach(function (r) {
+        html += '<li><a href="' + esc(r.link) + '" target="_blank" rel="noopener">' + esc(r.title) + "</a>" + (r.snippet ? "<span> — " + esc(r.snippet) + "</span>" : "") + "</li>";
+      });
+      html += "</ul>";
+      if (p != null) html += "<p>Tu precio es $" + p.toLocaleString("es-CO") + ": míralo frente a lo que muestran estas referencias y dime si lo que cobras se sostiene con lo que el mercado ya ofrece.</p>";
+      else html += "<p>Todavía no me diste tu precio: cuando me lo des, yo lo pongo frente a estas referencias.</p>";
+      html += '<p class="research-note">Búsqueda ' + done.length + " de 2 en este proyecto · " + esc(new Date(latest.at).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })) + "</p>";
+      return { h: "Lo que encontré en el mercado", p: "", html: html };
+    }
+    /* Consulta al intermediario. Se dispara solo desde el botón
+       «Investigar». Las búsquedas con resultados cuentan para el
+       límite de 2 por proyecto; un fallo no gasta el cupo y no se
+       guarda nada, para que el cliente pueda reintentarlo. */
+    function runExternalResearch() {
+      if (!state) return;
+      if (tabStale) { toast("Esta pestaña quedó en solo lectura: recarga para ver lo más reciente antes de investigar."); return; }
+      ensureAnswers();
+      var done = researchSearches();
+      if (done.length >= RESEARCH_MAX_SEARCHES) {
+        toast("Ya usé tus dos búsquedas en este proyecto: te muestro lo que ya traje en tu sección de mercado.");
+        renderChat(); renderSidebar();
+        return;
+      }
+      var q = buildResearchQuery();
+      if (!q) {
+        toast("Todavía no me contaste qué vendes ni tu sector: respóndeme eso primero y yo busco después.");
+        return;
+      }
+      var last = done.length ? done[done.length - 1] : null;
+      if (last && last.q === q) {
+        toast("Ya busqué esto mismo: te muestro lo que traje en tu sección de mercado.");
+        renderChat(); renderSidebar();
+        return;
+      }
+      toast("Voy a mirar hacia afuera: busco en el mercado lo que ya existe sobre lo que vendes y tus precios.");
+      var ctrl = null;
+      try { ctrl = new AbortController(); } catch (e) { ctrl = null; }
+      var timer = null;
+      var url = SEARCH_WORKER_URL + "?q=" + encodeURIComponent(q);
+      var fetchP;
+      try {
+        fetchP = ctrl ? fetch(url, { signal: ctrl.signal }) : fetch(url);
+        if (ctrl) timer = setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 15000);
+      } catch (e) {
+        toast("No pude llegar al mercado esta vez: revisa tu conexión y vuelve a tocar «Investigar» cuando quieras.");
+        return;
+      }
+      fetchP.then(function (res) {
+        if (timer) clearTimeout(timer);
+        if (!res || !res.ok) throw new Error("http " + (res && res.status));
+        return res.json();
+      }).then(function (data) {
+        var results = (data && Array.isArray(data.results)) ? data.results.filter(function (r) { return r && r.title && r.link; }).slice(0, 5) : [];
+        if (!results.length) throw new Error("sin resultados");
+        var rec = { q: q, at: new Date().toISOString(), results: results.map(function (r) { return { title: String(r.title), link: String(r.link), snippet: String(r.snippet || "") }; }) };
+        researchSearches().push(rec);
+        persist();
+        renderChat(); renderSidebar();
+        toast("Ya miré hacia afuera: traje " + results.length + " referencia(s) con su fuente. Las dejé en tu sección de mercado.");
+      }).catch(function () {
+        if (timer) clearTimeout(timer);
+        toast("No pude traer datos del mercado esta vez: sigo con lo que tú me contaste, sin inventar nada.");
+      });
+    }
     function marketLines() {
       var p = state.project;
       var a = state.answers.M0 || [];
@@ -4429,12 +4572,17 @@ var MODULES = [
       } else {
         lines.push({ h: "Cómo llega tu cliente hoy", p: "Sin datos verificados: todavía no me contaste por qué vía llega hoy tu cliente." });
       }
+      /* 4. Lo que encontré en el mercado: solo búsquedas reales hechas
+         al tocar «Investigar». Sin búsqueda, esta línea no aparece y
+         los mensajes honestos de arriba siguen mandando. */
+      var rLine = researchMarketLine();
+      if (rLine) lines.push(rLine);
       return lines;
     }
     function marketInterludeBubble() {
       var lines = marketLines();
       var inner = '<span class="qtag">Antes de cerrar, yo te comparto lo que veo</span><strong>Lo que yo veo de tu mercado, ' + esc(state.project.name) + ":</strong> esto no es una pregunta — es la lectura que yo hago de tu mercado con tu sector y con lo que tú ya me contaste.";
-      lines.forEach(function (l) { inner += "<h4>" + esc(l.h) + "</h4><p>" + esc(l.p) + "</p>"; });
+      lines.forEach(function (l) { inner += "<h4>" + esc(l.h) + "</h4>" + (l.html || "<p>" + esc(l.p) + "</p>"); });
       inner += "<p><strong>Con este contexto sobre la mesa, vamos a la pregunta que define todo.</strong></p>";
       return analiaBubbleCls(inner, "market");
     }
@@ -5140,6 +5288,9 @@ var MODULES = [
         document.querySelectorAll("[data-mode]").forEach(function (c) { c.classList.remove("on"); });
         chip.classList.add("on");
         toast("Modo " + chip.textContent.trim() + " activado: se aplicará a tu próxima respuesta.");
+        /* v17.15: «Investigar» también mira hacia afuera en el acto:
+           consulta el mercado con los datos reales del proyecto. */
+        if (mode === "investigar") runExternalResearch();
       });
     });
 
@@ -6063,7 +6214,7 @@ var MODULES = [
     function briefContextoHtml(m) {
       var h = "<h2>1. Radiografía inicial</h2>" + qaIndices(m, [0, 1, 2, 3, 4, 5, 6, 7]);
       h += "<h2>2. Contexto de la industria</h2>";
-      marketLines().forEach(function (l) { h += "<h3>" + esc(l.h) + "</h3><p>" + esc(l.p) + "</p>"; });
+      marketLines().forEach(function (l) { h += "<h3>" + esc(l.h) + "</h3>" + (l.html || "<p>" + esc(l.p) + "</p>"); });
       h += "<h2>3. Señales de alerta</h2>";
       var gaps = [];
       m.questions.forEach(function (q, qi) {
