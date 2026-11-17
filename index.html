@@ -464,7 +464,6 @@
       .ficha-field.empty .fval { color: var(--muted); font-style: italic; }
       .ficha-field.hipotesis { background: rgba(201, 154, 46, .14); border-color: rgba(201, 154, 46, .55); }
       .ficha-field .hip-tag { display: inline-block; font-size: 11px; font-weight: 800; color: var(--warn); border: 1px solid rgba(201, 154, 46, .55); border-radius: 99px; padding: 1px 8px; margin-left: 5px; white-space: nowrap; }
-      .ficha-note { margin-top: 12px; font-size: 12.5px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 10px; line-height: 1.5; }
 
       /* ---------- v17.9 · Lienzo vivo: barra, leyenda, estados ---------- */
       .canvas-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 14px 0 12px; }
@@ -3868,8 +3867,7 @@ var MODULES = [
         return '<div class="na-note" style="border-color:var(--danger)"><strong>Tu acceso venció el ' + esc(fmtDateISO(p.paidUntil)) + '.</strong> Para seguir con tu diagnóstico, renueva tu acceso por un año con el pago por PSE, Nequi, Daviplata o tarjeta. <button class="btn small primary" data-pay-go type="button">Pagar para seguir</button></div>';
       if (p.status === "reported")
         return '<div class="na-note"><strong>Yo ya registré tu pago por ' + esc(p.method || "PSE") + '</strong> de ' + esc(fmtMoney(p.amount)) + ' (transacción ' + esc(p.transactionId || "—") + ', ' + esc(fmtDateISO(p.reportedAt)) + '). Quedó <strong>pendiente de verificación</strong>: en cuanto se confirme, se activa tu acceso por un año y seguimos con tu diagnóstico.</div>';
-      var adminNote = (window.__isAdmin ? '<br><span style="color:var(--muted)">Solo para ti, como administrador: tú ves todo sin pagar, por diseño. Los clientes pagan después del Brief: el primer componente (C0) es gratis y del C1 en adelante necesitan el acceso de un año. Si un componente se bloquea, puede ser por secuencia (el anterior sin cerrar) y no por pago.</span>' : "");
-      return '<div class="na-note"><strong>El primer bloque es gratis.</strong> Para seguir con tu diagnóstico, activa tu acceso por un año: <strong>$96.999</strong> por negocio, o <strong>$77.000</strong> el primer año si eres de los primeros 10 clientes fundadores. Yo te cobro por PSE, Nequi, Daviplata o tarjeta con Wompi: pagas en la página de Wompi y luego registras tu pago aquí mismo. <button class="btn small primary" data-pay-go type="button">Pagar para seguir</button>' + adminNote + '</div>';
+      return '<div class="na-note"><strong>El primer bloque es gratis.</strong> Para seguir con tu diagnóstico, activa tu acceso por un año: <strong>$96.999</strong> por negocio, o <strong>$77.000</strong> el primer año si eres de los primeros 10 clientes fundadores. Yo te cobro por PSE, Nequi, Daviplata o tarjeta con Wompi: pagas en la página de Wompi y luego registras tu pago aquí mismo. <button class="btn small primary" data-pay-go type="button">Pagar para seguir</button></div>';
     }
     /* ---------- Widget de Wompi (PSE, Nequi, Daviplata y tarjeta) ---------- */
     function copyText(str, okMsg) {
@@ -4003,7 +4001,7 @@ var MODULES = [
       var p = ensurePayment();
       var sel = ui.payPlan || "fundador";
       var t = "";
-      t += analiaBubble("<strong>Hola, soy Analía.</strong> El primer bloque fue gratis, y ya lo cerramos juntos. Para seguir con tu diagnóstico, yo necesito que actives tu acceso: un año completo para este negocio, con los 15 bloques, tus informes y tu seguimiento. La regla es la misma para todas las cuentas: el primer bloque (C0) es gratis; desde el segundo bloque (C1) en adelante se exige el pago por un año. La única cuenta exenta es la del administrador.");
+      t += analiaBubble("<strong>Hola, soy Analía.</strong> El primer bloque fue gratis, y ya lo cerramos juntos. Para seguir con tu diagnóstico, yo necesito que actives tu acceso: un año completo para este negocio, con los 15 bloques, tus informes y tu seguimiento. El primer bloque (C0) es gratis; desde el segundo bloque (C1) en adelante se exige el pago por un año.");
       if (p.status === "reported") {
         t += analiaBubbleCls('<span class="qtag">Tu pago ya está registrado</span><strong>Yo ya registré tu pago por ' + esc(p.method || "PSE") + ' de ' + esc(fmtMoney(p.amount)) + '.</strong><br>Transacción: ' + esc(p.transactionId || "—") + ' · ' + esc(fmtDateISO(p.reportedAt)) + '.<br>Quedó <strong>pendiente de verificación</strong>: en cuanto se confirme, se activa tu acceso por un año y seguimos con tu diagnóstico. No tienes que pagar de nuevo.', "pay");
       } else {
@@ -4914,7 +4912,7 @@ var MODULES = [
           (v.status === "empty" ? "aún no respondido" : esc(v.text) + (v.status === "hipotesis" ? ' <span class="hip-tag">— hipótesis</span>' : "")) +
           "</div></div>";
       });
-      h += '</div><div class="ficha-note">El lienzo de 9 bloques queda en gris, con un aviso: «Se activa al cerrar el Brief». Solo la propuesta de valor aparece como borrador, en amarillo.</div>';
+      h += '</div>';
       return h;
     }
 
@@ -4932,7 +4930,7 @@ var MODULES = [
         $("progressPanel").innerHTML = fh;
         var bvc0 = $("btnViewCanvas");
         if (bvc0) bvc0.addEventListener("click", function () { ui.canvasHighlight = null; showView("canvas"); });
-        syncBriefPanel(); /* v17.10: en M0 la ficha siempre visible */
+        syncBriefPanel(); /* v17.16: en M0 aplica el estado del pliegue de la ficha */
         return;
       }
       var step = answeredCount(m.id);
@@ -5202,13 +5200,17 @@ var MODULES = [
       var b = $("btnObjectives");
       if (b) b.setAttribute("aria-expanded", open ? "true" : "false");
     }
-    /* v17.10: durante el Brief la Ficha de contexto SIEMPRE se ve.
-       En M0 el panel se abre aunque la preferencia guardada diga
-       «closed», y el botón dice «Ficha de contexto» en vez de
-       «Objetivos». La preferencia guardada NO se sobrescribe: solo se
-       ignora mientras dura el Brief; al salir de M0 vuelve a mandar
-       lo que el usuario dejó guardado. También cubre el Brief ya
+    /* v17.16: la flecha de la Ficha de contexto pliega y despliega
+       de verdad. En M0 el panel se abre por defecto al entrar al
+       Brief, pero el clic lo pliega y el pliegue sobrevive a los
+       re-renderizados (renderProgressPanel llama aquí en cada
+       render): el estado vive en briefPanelOpen, una variable, no
+       en la preferencia guardada «analia-obj-panel», que sigue
+       mandando fuera de M0. Al salir del Brief y volver a entrar,
+       la ficha se abre de nuevo. También cubre el Brief ya
        completado que se vuelve a consultar en solo lectura. */
+    var briefPanelOpen = true;
+    var briefPanelLastModule = null;
     function syncBriefPanel() {
       var b = $("btnObjectives");
       var inBrief = !!state && ui.module === "M0";
@@ -5216,10 +5218,16 @@ var MODULES = [
         var label = inBrief ? "Ficha de contexto" : "Objetivos";
         b.innerHTML = label + ' <span class="chev">▾</span>';
         b.title = inBrief
-          ? "La Ficha de contexto del Brief siempre se ve mientras estés en C0"
+          ? "Mostrar u ocultar la Ficha de contexto"
           : "Mostrar u ocultar los objetivos del componente y la opción de marcar el bloque como no aplica";
       }
-      if (inBrief) { applyObjPanel(true); return; }
+      if (inBrief) {
+        if (briefPanelLastModule !== "M0") briefPanelOpen = true; /* al entrar al Brief, la ficha se abre */
+        briefPanelLastModule = "M0";
+        applyObjPanel(briefPanelOpen);
+        return;
+      }
+      briefPanelLastModule = ui.module;
       var saved = "closed";
       try { saved = localStorage.getItem(OBJ_KEY) || "closed"; } catch (e) {}
       applyObjPanel(saved === "open");
@@ -5232,7 +5240,7 @@ var MODULES = [
     applyCanvasSide(); /* v17.14: lienzo junto al chat, abierto por defecto en escritorio */
     var objBtn = $("btnObjectives");
     if (objBtn) objBtn.addEventListener("click", function () {
-      if (ui.module === "M0") { syncBriefPanel(); return; } /* en el Brief la ficha siempre se ve: no se oculta ni se toca la preferencia guardada */
+      if (ui.module === "M0") { briefPanelOpen = !briefPanelOpen; syncBriefPanel(); return; } /* v17.16: en el Brief la flecha pliega y despliega la ficha; la preferencia guardada no se toca */
       var open = $("view-chat").classList.contains("hide-objectives");
       applyObjPanel(open);
       try { localStorage.setItem(OBJ_KEY, open ? "open" : "closed"); } catch (e) {}
