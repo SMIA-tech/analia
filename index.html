@@ -245,6 +245,16 @@
         display: grid; place-items: center; font-family: "Lora", Georgia, serif; font-weight: 700; font-size: 19px;
       }
       .avatar.sm { width: 34px; height: 34px; font-size: 15px; }
+      /* v17.20 · Avatar de Analía: video en la bienvenida y foto redonda en el chat. */
+      .avatar-stage { display: flex; flex-direction: column; align-items: center; gap: 12px; margin: 22px 0; }
+      .avatar-stage video, .avatar-stage img.avatar-still { width: min(260px, 72vw); aspect-ratio: 2 / 3; object-fit: cover; border-radius: 16px; border: 1px solid var(--line); background: var(--panel); box-shadow: 0 10px 30px rgba(30, 51, 37, .18); }
+      .avatar-outfits { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+      .avatar-outfits-label { font-size: 13.5px; font-weight: 700; color: var(--ink-2); }
+      .avatar-outfit-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+      .avatar-outfit-btns button { font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+      .avatar-outfit-btns button:hover { border-color: var(--accent); }
+      .avatar-outfit-btns button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+      .chat-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid var(--line); flex: none; }
       .analia-card p { margin: 0; color: var(--ink-2); }
       .analia-card p + p { margin-top: 8px; }
       .form-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
@@ -307,14 +317,17 @@
       .msg .bubble.task { background: var(--panel-2); border: 1.5px solid var(--gold); font-size: 14.5px; }
       .msg .bubble.task .qtag { color: var(--gold); }
       .composer { border-top: 1px solid var(--line); padding: 14px 0 18px; }
-      .mode-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
-      .composer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+      /* v17.20 · Los botones van DEBAJO de la caja de escritura y en
+         poco espacio: una fila compacta en escritorio, envolvente en
+         móvil sin crecer de más. */
+      .mode-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 0; }
+      .composer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; margin-bottom: 0; }
       .composer-actions .mode-chips { margin-bottom: 0; }
       .composer-actions .quick-replies { margin-left: auto; margin-bottom: 0; }
       .chip {
         border: 1px solid var(--line); background: var(--panel); color: var(--ink-2);
-        border-radius: 99px; padding: 5px 13px; font-size: 13px; font-weight: 700; min-height: 2.25rem;
-        display: inline-flex; align-items: center; gap: 6px;
+        border-radius: 99px; padding: 3px 10px; font-size: 12.5px; font-weight: 700; min-height: 1.9rem;
+        display: inline-flex; align-items: center; gap: 5px;
       }
       .chip svg { flex: none; }
       .chip:hover { color: var(--ink); border-color: var(--muted); }
@@ -804,8 +817,8 @@
       .chat-search input:focus { outline: 2px solid var(--accent); border-color: transparent; }
       .msg.dim { opacity: .32; }
       .msg.hit .bubble { outline: 2px solid var(--gold-bright); }
-      .quick-replies { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
-      .qr-chip { border: 1px dashed var(--line); background: transparent; color: var(--ink-2); border-radius: 99px; padding: 5px 13px; font-size: 13px; font-weight: 600; min-height: 2.1rem; }
+      .quick-replies { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 0; }
+      .qr-chip { border: 1px dashed var(--line); background: transparent; color: var(--ink-2); border-radius: 99px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; min-height: 1.9rem; }
       .qr-chip:hover { border-color: var(--accent); color: var(--accent); }
       .edit-btn { border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 700; padding: 2px 6px; min-height: 0; float: right; }
       .edit-btn:hover { color: var(--accent); }
@@ -1020,6 +1033,21 @@
             <p class="lede">Trabajaremos como lo hace un buen consultor: componente a componente, con preguntas directas, objetivos claros y documentos al final de cada etapa. Al terminar tendrás tu modelo de negocio completo, un diagnóstico con sus tensiones, un decálogo de decisiones y un plan para ejecutar.</p>
           </div>
 
+          <div class="avatar-stage">
+            <video id="avatarVideo" autoplay muted loop playsinline poster="assets/analia-verde.webp" aria-label="Analía trabajando en su computador">
+              <source src="assets/analia-verde.mp4" type="video/mp4">
+            </video>
+            <img id="avatarStill" class="avatar-still" src="assets/analia-verde.webp" alt="Analía trabajando en su computador" hidden>
+            <div class="avatar-outfits">
+              <span class="avatar-outfits-label" id="avatarOutfitsLabel">Elige el traje de Analía</span>
+              <div class="avatar-outfit-btns" role="group" aria-labelledby="avatarOutfitsLabel">
+                <button type="button" data-outfit="verde" class="on">Verde oscuro</button>
+                <button type="button" data-outfit="terracota">Terracota</button>
+                <button type="button" data-outfit="crema">Crema</button>
+              </div>
+            </div>
+          </div>
+
           <div class="analia-card">
             <div class="avatar">A</div>
             <div>
@@ -1106,7 +1134,8 @@
             </div>
           </div>
           <div class="chat-top" id="chatTop">
-            <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <img class="chat-avatar" id="chatAvatarImg" src="assets/analia-verde.webp" alt="Analía" width="40" height="40">
               <h1 style="font-size:23px;margin:0" id="chatTitle">Conversación</h1>
               <span style="color:var(--muted);font-size:13.5px" id="chatSubtitle"></span>
               <button class="btn small obj-toggle" id="btnObjectives" type="button" aria-expanded="false" title="Mostrar u ocultar los objetivos del componente y la opción de marcar el bloque como no aplica">Objetivos <span class="chev">▾</span></button>
@@ -1121,6 +1150,12 @@
               <div class="composer" id="composer">
                 <div class="nudge" id="nudge"></div>
                 <div class="evidence-panel" id="evidencePanel" hidden></div>
+                <div class="composer-row">
+                  <textarea id="answerBox" rows="2" placeholder="Escribe tu respuesta con calma. Mientras más concreta, mejor el diagnóstico…"></textarea>
+                  <button class="btn primary send" id="btnSend" aria-label="Enviar respuesta">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                  </button>
+                </div>
                 <div class="composer-actions">
                 <div class="mode-chips" role="group" aria-label="Modos de exigencia de Analía">
                   <button class="chip" data-mode="investigar" title="Analía mira hacia afuera: busca en el mercado referencias de tu sector y tus precios, con su fuente, y además te pide el contexto en tu próxima respuesta"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Investigar</button>
@@ -1133,12 +1168,6 @@
                   <button class="qr-chip" type="button" data-qr="Esto no aplica">Esto no aplica</button>
                   <button class="qr-chip" type="button" id="btnShowFull" hidden>Ver completo</button>
                 </div>
-                </div>
-                <div class="composer-row">
-                  <textarea id="answerBox" rows="2" placeholder="Escribe tu respuesta con calma. Mientras más concreta, mejor el diagnóstico…"></textarea>
-                  <button class="btn primary send" id="btnSend" aria-label="Enviar respuesta">
-                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-                  </button>
                 </div>
               </div>
             </div>
@@ -2892,7 +2921,7 @@ var MODULES = [
     }
 ];
     var PROBES = {
-      investigar: "Modo Investigar: antes de seguir, miremos hacia afuera. ¿Qué sabes del contexto que respalde o contradiga lo que acabas de decir — tendencias del sector, referentes que ya lo intentaron, lo que hoy ofrece el mercado? Dame ese panorama, no solo tu caso.",
+      investigar: "Antes de seguir, cuéntame qué sabes tú de tu contexto: tendencias de tu sector, referentes que ya lo intentaron, lo que hoy ofrece el mercado. Tu lectura me ayuda a contrastar lo que yo encuentre afuera: no es mi investigación, es lo que tú ya sabes.",
       retar: "Modo Retar: voy a cuestionar tu respuesta. ¿Cuál es el ángulo contrario? Si alguien que no cree en tu modelo leyera esto, ¿qué atacaría primero — y cómo le respondes con hechos, no con entusiasmo?",
     };
 
@@ -3085,10 +3114,21 @@ var MODULES = [
       return /(no (lo )?s[eé]|no tengo (idea|claro)|todav[ií]a no (lo )?s[eé]|pendiente|no aplica|no estoy segur[oa]|no lo tengo claro)/i.test(String(text || ""));
     }
     function extractMoney(text) {
-      var m = String(text || "").match(/\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d{4,})/);
-      if (!m) return null;
-      var v = parseInt(m[1].replace(/[.,]/g, ""), 10);
-      return isNaN(v) ? null : v;
+      var s = String(text || "");
+      var m = s.match(/\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d{4,})/);
+      if (m) {
+        var v = parseInt(m[1].replace(/[.,]/g, ""), 10);
+        return isNaN(v) ? null : v;
+      }
+      /* v17.20 · Un cero legítimo también es una cifra: $0 o 0 pesos
+         antes se leían como «sin dato». Sin el signo o la palabra que
+         lo ancla, un número suelto en el texto no es un precio. */
+      var z = s.match(/\$\s*(\d[\d.,]*)|(\d[\d.,]*)\s*(?:pesos|COP)\b/i);
+      if (z) {
+        var zv = parseInt((z[1] || z[2]).replace(/[.,]/g, ""), 10);
+        return isNaN(zv) ? null : zv;
+      }
+      return null;
     }
     /* Contradicciones entre bloques, con las cifras de ESTE usuario.
        Compara lo que ya dijo en ingresos, precios y costos. */
@@ -3133,8 +3173,13 @@ var MODULES = [
     }
     function newProjectId() { return "p" + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36); }
     function ensureStore() {
-      if (!store) store = { app: "analia", version: 3, activeProjectId: null, projects: {} };
+      if (!store) store = { app: "analia", version: 3, activeProjectId: null, projects: {}, deleted: {} };
       if (!store.projects) store.projects = {};
+      /* v17.20 · Lápidas de borrado: los proyectos eliminados dejan una
+         marca con fecha, para que la fusión con la nube no los resucite.
+         Sin lápida, un borrado local se perdía: la copia guardada seguía
+         trayendo el proyecto y persist() marcaba la pestaña como vieja. */
+      if (!store.deleted) store.deleted = {};
       return store;
     }
     function registerProject(proj, makeActive) {
@@ -3353,6 +3398,15 @@ var MODULES = [
       if (Array.isArray(rec.steps)) return rec.steps;
       return rec.probe ? [{ probe: rec.probe, answer: rec.answer || "", kind: "probe", at: rec.at || null }] : [];
     }
+    /* Comparación estable por contenido: mismo orden de claves siempre,
+       para que dos objetos iguales no parezcan distintos por el orden en
+       que se crearon sus claves. */
+    function stableStringify(v) {
+      if (v === null || typeof v !== "object") return JSON.stringify(v);
+      if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
+      var keys = Object.keys(v).sort();
+      return "{" + keys.map(function (k) { return JSON.stringify(k) + ":" + stableStringify(v[k]); }).join(",") + "}";
+    }
     function mergeFollowups(fuA, fuB) {
       var out = {};
       var mids = {};
@@ -3368,12 +3422,28 @@ var MODULES = [
           var n = Math.max(stepsA.length, stepsB.length), steps = [];
           for (var i = 0; i < n; i++) {
             var sa = stepsA[i] || null, sb = stepsB[i] || null;
-            if (!sa && sb) { steps.push(sb); continue; }
-            if (!sb && sa) { steps.push(sa); continue; }
+            if (!sa && sb) { steps.push(JSON.parse(JSON.stringify(sb))); continue; }
+            if (!sb && sa) { steps.push(JSON.parse(JSON.stringify(sa))); continue; }
             var r = mergeAnswer(sa.answer || "", sb.answer || "", sa.at || null, sb.at || null, null);
-            steps.push({ probe: sa.probe || sb.probe || "", answer: r.text, kind: sa.kind || sb.kind || "chain", at: r.at || sa.at || sb.at || null });
+            var st = { probe: sa.probe || sb.probe || "", answer: r.text, kind: sa.kind || sb.kind || "chain" };
+            var atVal = r.at || sa.at || sb.at || null;
+            if (atVal) st.at = atVal;
+            steps.push(st);
           }
-          out[mid][qi] = { steps: steps, chainSkipped: !!((ra && ra.chainSkipped) || (rb && rb.chainSkipped)), probeMode: (ra && ra.probeMode) || (rb && rb.probeMode) || null, probeDone: !!((ra && ra.probeDone) || (rb && rb.probeDone)) };
+          /* v17.20 · CAUSA RAÍZ del falso positivo de una sola pestaña:
+             el rebuild anterior añadía SIEMPRE probeMode: null,
+             probeDone: false y at: null, claves que fuRec no crea. Así,
+             fusionar una copia consigo misma ya difería y cada persist()
+             marcaba la pestaña como vieja (aviso «Otra pestaña tiene
+             avances más recientes» con 0 respuestas faltantes). Ahora el
+             registro fusionado conserva la forma del original: las marcas
+             solo aparecen si algún lado las trae de verdad. */
+          var rec = { steps: steps };
+          if ((ra && ra.chainSkipped) || (rb && rb.chainSkipped)) rec.chainSkipped = true;
+          var pm = (ra && ra.probeMode) || (rb && rb.probeMode) || null;
+          if (pm) rec.probeMode = pm;
+          if ((ra && ra.probeDone) || (rb && rb.probeDone)) rec.probeDone = true;
+          out[mid][qi] = rec;
         });
       });
       return out;
@@ -3450,22 +3520,29 @@ var MODULES = [
           if (r.text.trim() !== aT) { changed = true; if (r.side === "b") adoptedFromB = true; }
           out.answers[m.id][qi] = r.text;
           var at = r.at || (r.side === "b" ? b.savedAt : a.savedAt) || null;
-          if (r.text && at) out.answerMeta[key] = { at: at };
-          else delete out.answerMeta[key];
+          /* v17.20 · Se conservan las demás marcas del metadato (p. ej.
+             edited): el rebuild anterior las borraba en silencio. */
+          if (r.text && at) {
+            var prevMeta = (a.answerMeta && a.answerMeta[key]) || (b.answerMeta && b.answerMeta[key]) || {};
+            var nm = {};
+            Object.keys(prevMeta).forEach(function (mk) { nm[mk] = prevMeta[mk]; });
+            nm.at = at;
+            out.answerMeta[key] = nm;
+          } else delete out.answerMeta[key];
         }
       });
       var fuMerged = mergeFollowups(a.followups, b.followups);
-      if (JSON.stringify(fuMerged) !== JSON.stringify(a.followups || {})) { changed = true; adoptedFromB = true; }
+      if (stableStringify(fuMerged) !== stableStringify(a.followups || {})) { changed = true; adoptedFromB = true; }
       out.followups = fuMerged;
       var notesMerged = mergeCanvasNotes(a.canvasNotes, b.canvasNotes);
-      if (JSON.stringify(notesMerged) !== JSON.stringify(a.canvasNotes || {})) { changed = true; adoptedFromB = true; }
+      if (stableStringify(notesMerged) !== stableStringify(a.canvasNotes || {})) { changed = true; adoptedFromB = true; }
       out.canvasNotes = notesMerged;
       var ca = a.canvas || {}, cb = b.canvas || {};
       var hist = {};
       (ca.history || []).concat(cb.history || []).forEach(function (v) { if (v && v.v != null) hist[v.v] = v; });
       var histArr = Object.keys(hist).map(function (k) { return hist[k]; }).sort(function (x, y) { return x.v - y.v; });
       if (histArr.length > 25) histArr = histArr.slice(histArr.length - 25);
-      var canvasChanged = JSON.stringify(histArr) !== JSON.stringify(ca.history || []);
+      var canvasChanged = stableStringify(histArr) !== stableStringify(ca.history || []);
       out.canvas = JSON.parse(JSON.stringify(ca));
       out.canvas.history = histArr;
       out.canvas.v = histArr.length ? histArr[histArr.length - 1].v : (ca.v || 0);
@@ -3483,7 +3560,7 @@ var MODULES = [
       ra.concat(rb).forEach(function (s) { if (s && s.q && s.at) rByKey[s.q + "||" + s.at] = s; });
       var rMerged = Object.keys(rByKey).map(function (k) { return rByKey[k]; }).sort(function (x, y) { return (x.at || "") < (y.at || "") ? -1 : 1; });
       if (rMerged.length > RESEARCH_MAX_SEARCHES) rMerged = rMerged.slice(rMerged.length - RESEARCH_MAX_SEARCHES);
-      if (JSON.stringify(rMerged) !== JSON.stringify(ra)) {
+      if (stableStringify(rMerged) !== stableStringify(ra)) {
         changed = true;
         if (rMerged.some(function (s) { return rb.some(function (x) { return x.q === s.q && x.at === s.at; }); })) adoptedFromB = true;
       }
@@ -3495,7 +3572,7 @@ var MODULES = [
       var na = a.notApplicable || {}, nb = b.notApplicable || {};
       out.notApplicable = {};
       Object.keys(na).concat(Object.keys(nb)).forEach(function (k) { out.notApplicable[k] = na[k] || nb[k]; });
-      if (JSON.stringify(out.notApplicable) !== JSON.stringify(na)) { changed = true; adoptedFromB = true; }
+      if (stableStringify(out.notApplicable) !== stableStringify(na)) { changed = true; adoptedFromB = true; }
       var cn = {};
       [a.coachNotes, b.coachNotes].forEach(function (c) {
         if (!c) return;
@@ -3507,7 +3584,7 @@ var MODULES = [
           });
         });
       });
-      if (JSON.stringify(cn) !== JSON.stringify(a.coachNotes || {})) { changed = true; adoptedFromB = true; }
+      if (stableStringify(cn) !== stableStringify(a.coachNotes || {})) { changed = true; adoptedFromB = true; }
       out.coachNotes = cn;
       var il = [];
       [a.indicatorLog, b.indicatorLog].forEach(function (arr) {
@@ -3515,7 +3592,7 @@ var MODULES = [
           if (!il.some(function (x) { return JSON.stringify(x) === JSON.stringify(it); })) il.push(it);
         });
       });
-      if (JSON.stringify(il) !== JSON.stringify(a.indicatorLog || [])) { changed = true; adoptedFromB = true; }
+      if (stableStringify(il) !== stableStringify(a.indicatorLog || [])) { changed = true; adoptedFromB = true; }
       out.indicatorLog = il;
       var pa = a.payment || {}, pb = b.payment || {};
       var pay = null;
@@ -3532,7 +3609,7 @@ var MODULES = [
           if (!ph.some(function (x) { return ((x && (x.transactionId || x.reference || x.reportedAt)) || JSON.stringify(x)) === key2; })) ph.push(it);
         });
       });
-      if (JSON.stringify(ph) !== JSON.stringify(a.paymentHistory || [])) { changed = true; adoptedFromB = true; }
+      if (stableStringify(ph) !== stableStringify(a.paymentHistory || [])) { changed = true; adoptedFromB = true; }
       out.paymentHistory = ph;
       var fields = ["name", "founder", "sector", "stage", "size"];
       fields.forEach(function (f) {
@@ -3543,17 +3620,35 @@ var MODULES = [
           if (winner === "b") { out.project[f] = vb; changed = true; adoptedFromB = true; }
         }
       });
-      if (b.archived && !a.archived) { out.archived = true; changed = true; adoptedFromB = true; }
+      /* v17.20 · Archivado con última escritura: antes, archivado=true era
+         pegajoso y siempre ganaba, así que una restauración nunca se podía
+         guardar (persist() veía la copia guardada archivada, marcaba la
+         pestaña como vieja y no escribía nada) y la nube la revertía. Ahora
+         gana el lado con la marca de archivado más reciente (archivedAt,
+         con savedAt como respaldo): restaurar es más nuevo que archivar. */
+      var aArchAt = a.archivedAt || a.savedAt || "", bArchAt = b.archivedAt || b.savedAt || "";
+      if (!!b.archived !== !!a.archived && bArchAt > aArchAt) { out.archived = !!b.archived; changed = true; adoptedFromB = true; }
+      out.archivedAt = (bArchAt > aArchAt) ? (b.archivedAt || a.archivedAt || null) : (a.archivedAt || b.archivedAt || null);
       out.savedAt = (a.savedAt && b.savedAt) ? (a.savedAt > b.savedAt ? a.savedAt : b.savedAt) : (a.savedAt || b.savedAt || null);
       return { proj: out, changed: changed, fromA: fromA, fromB: fromB, adoptedFromB: adoptedFromB };
     }
     function mergeStores(sa, sb) {
       var A = toStoreShape(sa), B = toStoreShape(sb);
       var out = { app: "analia", version: 3, activeProjectId: A.activeProjectId || B.activeProjectId, projects: {} };
+      /* v17.20 · Las lápidas de borrado se unen de ambos lados y mandan
+         sobre cualquier copia del proyecto: un proyecto borrado en un
+         lado no vuelve por fusión, ni en local ni en la nube. */
+      var tomb = {};
+      [A.deleted, B.deleted].forEach(function (d) {
+        if (!d) return;
+        Object.keys(d).forEach(function (id) { if (!tomb[id] || (d[id] || "") > tomb[id]) tomb[id] = d[id]; });
+      });
+      out.deleted = tomb;
       var changed = false, fromA = 0, fromB = 0, adoptedFromB = false;
       var ids = {};
       [A, B].forEach(function (s) { if (s && s.projects) Object.keys(s.projects).forEach(function (id) { ids[id] = true; }); });
       Object.keys(ids).forEach(function (id) {
+        if (tomb[id]) return; /* borrado en algún lado: no se resucita */
         var pa = A.projects[id], pb = B.projects[id];
         if (pa && pb) {
           var m = mergeProjects(pa, pb);
@@ -3569,6 +3664,7 @@ var MODULES = [
           changed = true; adoptedFromB = true;
         }
       });
+      if (stableStringify(tomb) !== stableStringify(A.deleted || {})) changed = true;
       var actA = A.projects[A.activeProjectId], actB = B.projects[B.activeProjectId];
       var sA = actA ? projectContentScore(actA).answered : -1, sB = actB ? projectContentScore(actB).answered : -1;
       if (sB > sA && B.activeProjectId && out.projects[B.activeProjectId]) out.activeProjectId = B.activeProjectId;
@@ -3793,13 +3889,65 @@ var MODULES = [
     function taskReported() { var t = state && state.task13; return !!(t && t.report && t.report.trim()); }
     /* La evidencia de C13 es VERIFICABLE por el usuario: foto, enlace, o
        los números inicial y final del indicador. La aporta el usuario y
-       queda registrada; Analía no inventa verificación externa. */
-    function taskHasEvidence() {
+       queda registrada; Analía no inventa verificación externa.
+       v17.20 · Un reporte honesto de 0 personas cerraba C13 igual que
+       uno real: bastaba enviar el reporte. Ahora la evidencia debe
+       demostrar ejecución real: cuántas personas reales, con nombre y
+       apellido en el conteo, y los números inicial y final. */
+    function taskPeopleCount() {
+      var t = state && state.task13;
+      var raw = t && t.evidence ? t.evidence.people : null;
+      if (raw == null || String(raw).trim() === "") return null;
+      var n = parseInt(String(raw).trim(), 10);
+      return isNaN(n) ? null : n;
+    }
+    /* Respaldo: si el panel de evidencia no trae el conteo, se lee del
+       propio reporte («hablé con 3 personas», «0 personas», «cero
+       personas»). Un 0 declarado es 0, no «sin dato». */
+    var PEOPLE_WORDS = { una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, cero: 0, ninguna: 0, ningun: 0, "ningún": 0 };
+    function taskPeopleFromReport() {
+      var t = state && state.task13;
+      var rep = (t && t.report) || "";
+      if (!rep.trim()) return null;
+      var m = rep.match(/(\d+)\s+personas?/i);
+      if (m) { var n = parseInt(m[1], 10); return isNaN(n) ? null : n; }
+      var w = rep.match(/\b(una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|cero|ninguna|ningun|ningún)\s+personas?\b/i);
+      if (w) return PEOPLE_WORDS[w[1].toLowerCase()];
+      if (/no hablé con nadie|no hablo con nadie|con nadie/i.test(rep)) return 0;
+      return null;
+    }
+    function taskPeopleTotal() {
+      var c = taskPeopleCount();
+      return c != null ? c : taskPeopleFromReport();
+    }
+    /* ¿El reporte declara que NO se ejecutó? Frases explícitas de
+       no-ejecución: un reporte honesto de ese tipo nunca cierra C13,
+       aunque traiga números. */
+    function reportDeclaresNoExecution() {
+      var t = state && state.task13;
+      var rep = ((t && t.report) || "").toLowerCase();
+      if (!rep.trim()) return false;
+      return /(no se pudo|no pude|no pudimos|no lo ejecut|no ejecut|no lo hice|no lo logr|no se ejecut|sin ejecutar|no se hizo|no lo complet)/.test(rep);
+    }
+    /* Estado de la ejecución: "none" (sin reporte), "noexec" (reporte de
+       no-ejecución o 0 personas), "partial" (1–2 personas: hubo ejecución
+       pero incompleta) o "verified" (≥3 personas + números inicial y
+       final + sin declaración de no-ejecución). */
+    function taskExecutionState() {
+      if (!taskReported()) return "none";
+      if (reportDeclaresNoExecution()) return "noexec";
+      var people = taskPeopleTotal();
+      if (people != null && people === 0) return "noexec";
+      if (people != null && people >= 1 && people < 3) return "partial";
       var t = state && state.task13;
       var ev = t && t.evidence;
-      if (!ev) return false;
-      if (ev.photoName || ev.link) return true;
-      return !!(ev.initial && ev.final);
+      var hasNumbers = !!(ev && ev.initial && String(ev.initial).trim() && ev.final && String(ev.final).trim());
+      if (people != null && people >= 3 && hasNumbers) return "verified";
+      if (people != null && people >= 3 && !hasNumbers) return "partial";
+      return "partial";
+    }
+    function taskHasEvidence() {
+      return taskExecutionState() === "verified";
     }
     function taskComplete13() { return taskReported() && taskHasEvidence(); }
     function taskPendingReport() { return !!state && moduleComplete("M13") && !pendingStep("M13") && taskAssigned() && !taskReported(); }
@@ -4104,8 +4252,10 @@ var MODULES = [
       MODULES.forEach(function (m) { done += answeredCount(m.id); });
       return Math.round(done / total * 100);
     }
-    function solidityLabel(score) {
-      if (score === 0) return "Sin iniciar";
+    function solidityLabel(score, started) {
+      /* v17.20 · Un 0 con respuestas no es «sin iniciar»: es frágil.
+         Sin respuestas, sigue siendo «sin iniciar». */
+      if (score === 0) return started ? "Frágil — en construcción" : "Sin iniciar";
       if (score < 45) return "Frágil — en construcción";
       if (score < 75) return "En desarrollo";
       return "Sólido";
@@ -4166,6 +4316,34 @@ var MODULES = [
       });
     }
 
+    /* v17.20 · UN conteo en todas partes: un componente cuenta solo
+       cuando está cerrado de verdad (moduleFullyComplete). La tarjeta
+       lista TODOS los proyectos, así que esta versión trabaja sobre el
+       proyecto dado, no sobre el activo. */
+    function projectFullyComplete(p, id) {
+      if (!p) return false;
+      if (p.notApplicable && p.notApplicable[id]) return true;
+      var m = mod(id);
+      if (!m) return false;
+      var arr = p.answers[id] || [];
+      for (var i = 0; i < m.questions.length; i++) { if (!(arr[i] && arr[i].trim())) return false; }
+      var fu = p.followups && p.followups[id];
+      if (fu) {
+        for (var qi in fu) {
+          var rec = fu[qi];
+          var steps = rec && rec.steps ? rec.steps : [];
+          for (var j = 0; j < steps.length; j++) if (!steps[j].answer) return false;
+        }
+      }
+      if (id === "M13") {
+        var t13 = p.task13 || {};
+        if (!(t13.report && t13.report.trim())) return false;
+        var savedState = state, ok = false;
+        try { state = p; ok = taskHasEvidence(); } finally { state = savedState; }
+        return ok;
+      }
+      return true;
+    }
     function renderProjectsPanel() {
       var list = $("projectsList");
       if (!list) return;
@@ -4176,7 +4354,7 @@ var MODULES = [
       ids.forEach(function (id) {
         var p = store.projects[id];
         var done = 0;
-        try { done = MODULES.filter(function (mm) { return (p.answers[mm.id] || []).filter(function (a) { return a && a.trim(); }).length === mm.questions.length; }).length; } catch (e) { done = 0; }
+        try { done = MODULES.filter(function (mm) { return projectFullyComplete(p, mm.id); }).length; } catch (e) { done = 0; }
         var arch = p.archived ? " · Archivado" : "";
         html += '<div class="proj-item' + (state && state.id === id ? " active" : "") + '">' +
           '<span class="pn">' + esc(p.project.name) + "<small>" + esc(p.project.sector || "") + " · " + done + "/15" + esc(arch) + "</small></span>" +
@@ -4203,16 +4381,20 @@ var MODULES = [
       }); });
       list.querySelectorAll("[data-proj-arch]").forEach(function (b) { b.addEventListener("click", function () {
         var id = b.getAttribute("data-proj-arch"); var p = store.projects[id]; if (!p) return;
-        p.archived = !p.archived; persist(); renderSidebar();
+        p.archived = !p.archived; p.archivedAt = new Date().toISOString(); /* v17.20: la fecha decide en la fusión — restaurar gana si es más reciente */
+        persist(); renderSidebar();
         toast(p.archived ? "Proyecto archivado: " + p.project.name + "." : "Proyecto restaurado: " + p.project.name + ".");
       }); });
       list.querySelectorAll("[data-proj-del]").forEach(function (b) { b.addEventListener("click", function () {
         var id = b.getAttribute("data-proj-del"); var p = store.projects[id]; if (!p) return;
         if (b.getAttribute("data-confirm") !== "1") { b.setAttribute("data-confirm", "1"); if (!b.getAttribute("data-label")) b.setAttribute("data-label", b.textContent); b.textContent = "¿Seguro?"; return; }
         if (!checkTabFresh()) { markTabStale("la copia guardada tiene respuestas que esta pestaña no tiene"); toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return; }
+        ensureStore();
+        store.deleted[id] = new Date().toISOString(); /* v17.20 · Lápida: sin ella la nube resucitaba el proyecto en la siguiente entrada */
         delete store.projects[id];
         if (state && state.id === id) { var rest = Object.keys(store.projects); state = rest.length ? store.projects[rest[0]] : null; store.activeProjectId = state ? state.id : null; }
-        persist(); renderSidebar(); showView(state ? "resumen" : "welcome");
+        persist(); if (window.__cloudSaveNow) window.__cloudSaveNow(); /* la lápida sube a la nube de inmediato */
+        renderSidebar(); showView(state ? "resumen" : "welcome");
         toast("Proyecto eliminado: " + p.project.name + ".");
       }); });
     }
@@ -4238,9 +4420,17 @@ var MODULES = [
       renderSaveStatus();
     }
     function deliverableCount() {
-      var n = completedModules() * 2; // documento principal + ficha por componente
-      if (completedModules() === MODULES.length) n += 3; // cierre
-      else if (completedModules() >= 10) n += 1; // canvas maestro parcial disponible desde M10
+      /* v17.20 · El distintivo es SIEMPRE el conteo de la lista de
+         Informes, con sus mismas reglas: 2 por componente con las
+         preguntas respondidas, +1 el lienzo desde C10, +2 el decálogo
+         y el plan cuando hay avance. Antes era una fórmula con
+         moduleFullyComplete y se desfasaba de la lista (29 frente a
+         31 descargables). */
+      if (!state) return 0;
+      var n = 0;
+      MODULES.forEach(function (m) { if (moduleComplete(m.id)) n += 2; });
+      if (moduleComplete("M10") || completedModules() === MODULES.length) n += 1;
+      if (completedModules() > 0) n += 2;
       return n;
     }
 
@@ -4315,7 +4505,7 @@ var MODULES = [
       var t = String(text || "");
       /* Un "no sé" honesto queda como pendiente, nunca como sólido. */
       if (isUncertain(t)) return { label: "Pendiente — todavía no lo sabes", miss: miss.length ? miss : ["el dato concreto: todavía no lo tienes"] };
-      var hasNum = /\d/.test(t);
+      var hasNum = /\d/.test(t) || /\bcero\b/.test(t); /* v17.20 · «cero» escrito también es un número */
       var hasDate = /\b(20\d\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i.test(t);
       var hasSource = /(seg[uú]n|fuente|registro|factura|plataforma|lista|conteo|med[ií]|encuesta|reseña)/i.test(t);
       var hasExample = /(por ejemplo|ejemplo|un caso|el caso|cliente|cuando|vez que|la vez|pasada|pasado|ayer|la semana|el mes)/i.test(t);
@@ -4399,15 +4589,43 @@ var MODULES = [
         '<span class="qtag">Tu tarea de cierre</span>' +
         "<strong>El plan ya está escrito. Ahora sale del papel.</strong> Con tus propias respuestas, yo te asigno UNA tarea concreta:<br><br>" +
         esc(tk.text).replace(/\n/g, "<br>") + "<br><br>" +
-        "<strong>Cómo me lo reportas:</strong> cuando la tarea esté hecha, escríbeme el resultado aquí mismo, en este chat. Tu reporte trae <strong>datos, no opiniones</strong>: qué pasó exactamente, los números —cuántas personas, cuánto se movió tu indicador brújula, antes y después— y <strong>lo que dijeron las personas, con sus palabras</strong>. Y si tienes evidencia —una foto, un enlace o los números inicial y final—, yo te la pido aquí abajo, en el panel de evidencia.<br>" +
+        "<strong>Cómo me lo reportas:</strong> cuando la tarea esté hecha, escríbeme el resultado aquí mismo, en este chat. Tu reporte trae <strong>datos, no opiniones</strong>: qué pasó exactamente, los números —cuántas personas, cuánto se movió tu indicador brújula, antes y después— y <strong>lo que dijeron las personas, con sus palabras</strong>. Y tu evidencia —cuántas personas reales (mínimo 3) y los números inicial y final de tu indicador, y si tienes, una foto o un enlace— yo te la pido aquí abajo, en el panel de evidencia. Si no se pudo ejecutar, dímelo con franqueza: el bloque sigue abierto y lo reintentamos, no se cierra con un reporte de no-ejecución.<br>" +
         "Yo solo doy por cerrado este bloque cuando me reportes ese resultado: entonces se activa tu siguiente bloque, Medición y seguimiento, que se alimenta de lo que tú viviste.", 
         "task");
     }
     function taskDoneBubbles() {
       var tk = state.task13;
+      var people = taskPeopleTotal();
+      var ev = tk.evidence || {};
+      var cambio = (ev.initial && ev.final) ? (" Tu indicador pasó de " + esc(ev.initial) + " a " + esc(ev.final) + ".") : "";
       return taskAssignBubble(tk) +
         userBubble(tk.report) +
-        analiaBubbleCls("✅ <strong>Reporte recibido: la tarea quedó cumplida.</strong> Con este resultado, yo doy por cerrado este bloque — no solo armaste el plan: lo pusiste en marcha y me trajiste los datos de vuelta.<br><strong>Y este resultado alimenta tu Medición y seguimiento:</strong> tus números y lo que dijeron las personas son el punto de partida de tu línea base y de tus reglas de decisión. Al abrir ese bloque lo verás citado como tu primer dato real de medición.", "objdone");
+        analiaBubbleCls("✅ <strong>Reporte recibido: la tarea quedó cumplida.</strong> Hablaste con " + (people != null ? esc(String(people)) + " personas reales" : "las personas que pedía la tarea") + " y me trajiste los datos de vuelta." + cambio + " Con este resultado, yo doy por cerrado este bloque — no solo armaste el plan: lo pusiste en marcha y me trajiste los datos de vuelta.<br><strong>Y este resultado alimenta tu Medición y seguimiento:</strong> tus números y lo que dijeron las personas son el punto de partida de tu línea base y de tus reglas de decisión. Al abrir ese bloque lo verás citado como tu primer dato real de medición.", "objdone");
+    }
+    /* Burbujas de C13 cuando el reporte NO verifica la ejecución: el
+       bloque sigue abierto y Analía dice con claridad qué falta, con
+       camino para reintentarlo o pedir más días. Nunca «completada». */
+    function taskNotClosedBubbles() {
+      var tk = state.task13;
+      var st = taskExecutionState();
+      var people = taskPeopleTotal();
+      var ev = tk.evidence || {};
+      var inner = "";
+      if (st === "noexec") {
+        inner = "✅ <strong>Reporte recibido, y te lo agradezco por honesto.</strong> Me dices que la tarea no se pudo ejecutar" + (people === 0 ? " (0 personas)" : "") + ", y eso queda registrado tal cual: <strong>C13 sigue abierto, no queda completado.</strong> La tarea sigue pendiente y tienes dos caminos: intentarlo de nuevo cuando puedas, o pedirme más días para ejecutarla. Tú eliges.";
+      } else {
+        var falta = [];
+        if (people == null) falta.push("el conteo de personas reales en el panel de evidencia");
+        else if (people < 3) falta.push("hablar con " + (3 - people) + " persona(s) más para llegar a las 3");
+        if (!(ev.initial && String(ev.initial).trim() && ev.final && String(ev.final).trim())) falta.push("los números inicial y final de tu indicador en el panel de evidencia");
+        inner = "✅ <strong>Reporte recibido: vas por buen camino, pero C13 todavía no cierra.</strong> Ya me contaste qué pasó" + (people != null ? " — hablaste con " + esc(String(people)) + " persona(s) real(es)" : "") + ", y eso queda registrado. Para darlo por verificado me falta: " + esc(falta.join("; ")) + ". Cuando lo tengas, repórtame el resultado completo aquí mismo y yo lo verifico.";
+      }
+      return taskAssignBubble(tk) +
+        userBubble(tk.report) +
+        analiaBubbleCls(inner, "task") +
+        systemBubble("⏳ <strong>C13 todavía no cierra.</strong> Tu reporte quedó guardado, pero la ejecución no está verificada todavía." +
+          ' &nbsp;<button class="btn small" id="btnTaskRetry" type="button">Reintentarlo</button>' +
+          ' &nbsp;<button class="btn small" id="btnTaskExtend" type="button">Pedir más días</button>');
     }
 
     /* ---------- Interludio de mercado de M0 ----------
@@ -4421,9 +4639,20 @@ var MODULES = [
        respuesta, así que hay que distinguirlas por el orden en que se
        mencionan (primero la alternativa, después el precio propio). */
     function extractMoneyAll(text) {
-      var out = [], m, re = /\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d{4,})/g;
-      while ((m = re.exec(String(text || ""))) !== null) out.push(parseInt(m[1].replace(/[.,]/g, ""), 10));
-      return out;
+      var s = String(text || "");
+      var found = [], spans = [], m;
+      var re = /\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d{4,})/g;
+      while ((m = re.exec(s)) !== null) { found.push({ v: parseInt(m[1].replace(/[.,]/g, ""), 10), i: m.index }); spans.push([m.index, m.index + m[0].length]); }
+      /* v17.20 · Ceros legítimos ($0, 0 pesos) también cuentan, en el
+         orden en que aparecen en el texto. */
+      var rz = /\$\s*(\d[\d.,]*)|(\d[\d.,]*)\s*(?:pesos|COP)\b/gi;
+      while ((m = rz.exec(s)) !== null) {
+        var inside = spans.some(function (sp) { return m.index >= sp[0] && m.index < sp[1]; });
+        if (inside) continue;
+        found.push({ v: parseInt((m[1] || m[2]).replace(/[.,]/g, ""), 10), i: m.index });
+      }
+      found.sort(function (a, b) { return a.i - b.i; });
+      return found.map(function (x) { return x.v; }).filter(function (v) { return !isNaN(v); });
     }
     /* Busca la fuente declarada de una pregunta: en la respuesta principal
        o en cualquiera de sus repreguntas. Devuelve el texto que la
@@ -4455,6 +4684,7 @@ var MODULES = [
     function ensureResearch() {
       if (!state) return null;
       if (!state.research || !Array.isArray(state.research.searches)) state.research = { searches: [] };
+      if (state.research.seenAt == null) state.research.seenAt = ""; /* v17.20: la última búsqueda mostrada en el chat */
       return state.research;
     }
     function researchSearches() {
@@ -4505,6 +4735,19 @@ var MODULES = [
       html += '<p class="research-note">Búsqueda ' + done.length + " de 4 en este proyecto · " + esc(new Date(latest.at).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })) + "</p>";
       return { h: "Lo que encontré en el mercado", p: "", html: html };
     }
+    /* v17.20 · Los resultados se muestran EN el chat donde estás, no en
+       una sección que no se ve desde ahí. showResearchInChat vuelve a
+       mostrar la última búsqueda guardada (pone seenAt en blanco). */
+    function showResearchInChat() {
+      var r = ensureResearch();
+      if (r) r.seenAt = "";
+      renderChat(); renderSidebar();
+    }
+    function researchBubbleHtml() {
+      var line = researchMarketLine();
+      if (!line) return "";
+      return analiaBubbleCls('<span class="qtag">Lo que encontré en el mercado</span>' + (line.html || ""), "market");
+    }
     /* Consulta al intermediario. Se dispara solo desde el botón
        «Investigar». Las búsquedas con resultados cuentan para el
        límite de 4 por proyecto; un fallo no gasta el cupo y no se
@@ -4515,8 +4758,8 @@ var MODULES = [
       ensureAnswers();
       var done = researchSearches();
       if (done.length >= RESEARCH_MAX_SEARCHES) {
-        toast("Ya usé tus cuatro búsquedas en este proyecto: te muestro lo que ya traje en tu sección de mercado.");
-        renderChat(); renderSidebar();
+        toast("Ya usé tus cuatro búsquedas en este proyecto: te muestro aquí mismo lo que ya traje.");
+        showResearchInChat();
         return;
       }
       var q = buildResearchQuery();
@@ -4526,8 +4769,8 @@ var MODULES = [
       }
       var last = done.length ? done[done.length - 1] : null;
       if (last && last.q === q) {
-        toast("Ya busqué esto mismo: te muestro lo que traje en tu sección de mercado.");
-        renderChat(); renderSidebar();
+        toast("Ya busqué esto mismo: te lo muestro aquí mismo, en este chat.");
+        showResearchInChat();
         return;
       }
       toast("Voy a mirar hacia afuera: busco en el mercado lo que ya existe sobre lo que vendes y tus precios.");
@@ -4552,11 +4795,16 @@ var MODULES = [
         if (!results.length) throw new Error("sin resultados");
         var rec = { q: q, at: new Date().toISOString(), results: results.map(function (r) { return { title: String(r.title), link: String(r.link), snippet: String(r.snippet || "") }; }) };
         researchSearches().push(rec);
+        ensureResearch().seenAt = ""; /* v17.20: la burbuja con los resultados se muestra en el chat actual al renderizar */
         persist();
         renderChat(); renderSidebar();
-        toast("Ya miré hacia afuera: traje " + results.length + " referencia(s) con su fuente. Las dejé en tu sección de mercado.");
+        toast("Ya miré hacia afuera: traje " + results.length + " referencia(s) con su fuente. Te las muestro aquí mismo, en este chat.");
       }).catch(function () {
         if (timer) clearTimeout(timer);
+        /* v17.20 · El fallo no es silencioso: además del aviso, queda
+           una burbuja honesta en el hilo. No gasta cupo. */
+        ui.researchError = true;
+        renderChat(); renderSidebar();
         toast("No pude traer datos del mercado esta vez: sigo con lo que tú me contaste, sin inventar nada.");
       });
     }
@@ -4623,12 +4871,17 @@ var MODULES = [
     }
 
     /* ---------- v17: tipeo de Analía + búsqueda en el hilo ---------- */
-    var typingTimer = null, typingState = null;
+    var typingTimer = null, typingState = null, typingPending = null;
     function finishTyping() {
       if (typingTimer) { clearTimeout(typingTimer); typingTimer = null; }
       if (typingState) {
         typingState.el.innerHTML = typingState.full;
         typingState = null;
+      } else if (typingPending) {
+        /* «Ver completo» tocado antes de que empezara el tipeo: se
+           restaura el texto completo sin esperar. */
+        typingPending.el.innerHTML = typingPending.full;
+        typingPending = null;
       }
       var b = $("btnShowFull"); if (b) b.hidden = true;
     }
@@ -4645,9 +4898,17 @@ var MODULES = [
       var th = $("thread");
       th.appendChild(ind);
       th.scrollTop = th.scrollHeight;
+      /* v17.20 · Más rápido y «Ver completo» desde el primer instante:
+         la burbuja se vacía AHORA (antes el texto completo se veía un
+         instante y luego desaparecía para tipear) y el botón ya está
+         disponible. El texto final queda idéntico. */
+      bubble.innerHTML = '<span class="typing-cursor"></span>';
+      typingPending = { el: bubble, full: full };
       var b = $("btnShowFull"); if (b) b.hidden = false;
       setTimeout(function () {
         if (ind.parentNode) ind.parentNode.removeChild(ind);
+        if (!typingPending || typingPending.el !== bubble) return;
+        typingPending = null;
         var parts = full.split(/(<[^>]+>)/g).filter(function (p) { return p !== ""; });
         var tokens = [];
         parts.forEach(function (p) {
@@ -4655,7 +4916,6 @@ var MODULES = [
           else p.split(/(\s+)/).forEach(function (w) { if (w) tokens.push(w); });
         });
         typingState = { el: bubble, full: full, tokens: tokens, idx: 0 };
-        bubble.innerHTML = '<span class="typing-cursor"></span>';
         var stepFn = function () {
           if (!typingState) return;
           var st = typingState;
@@ -4664,13 +4924,13 @@ var MODULES = [
           var html = st.tokens.slice(0, st.idx).join("");
           st.el.innerHTML = html + '<span class="typing-cursor"></span>';
           th.scrollTop = th.scrollHeight;
-          var delay = 30 + Math.random() * 45;
-          if (/[.,;:!?]$/.test(tok.trim())) delay += 140;
-          if (/,$/.test(tok.trim())) delay += 60;
+          var delay = 12 + Math.random() * 18;
+          if (/[.,;:!?]$/.test(tok.trim())) delay += 60;
+          if (/,$/.test(tok.trim())) delay += 25;
           typingTimer = setTimeout(stepFn, delay);
         };
-        typingTimer = setTimeout(stepFn, 120);
-      }, 450);
+        typingTimer = setTimeout(stepFn, 60);
+      }, 150);
     }
     function applySearch(q) {
       var th = $("thread"); if (!th) return;
@@ -4691,7 +4951,8 @@ var MODULES = [
       var saved = loadEvidence();
       panel.hidden = false;
       panel.innerHTML = '<h4>Tu evidencia de la tarea</h4>' +
-        '<p>Para cerrar este bloque yo necesito tu evidencia, no solo tu palabra: anota aquí los números inicial y final de tu indicador y, si tienes, una foto o un enlace. Sin evidencia, C13 no queda completado. La foto queda guardada solo en este navegador.</p>' +
+        '<p>Para cerrar este bloque yo necesito tu evidencia, no solo tu palabra: cuántas personas reales hablaron contigo (mínimo 3) y los números inicial y final de tu indicador. Con 0 personas, o si me reportas que no se pudo ejecutar, el bloque sigue abierto: lo reintentamos o pedimos más días. La foto queda guardada solo en este navegador.</p>' +
+        '<div class="field"><label for="evPeople">¿Con cuántas personas reales hablaste?</label><input id="evPeople" type="number" min="0" step="1" placeholder="Ej.: 3" value="' + esc(ev.people != null ? String(ev.people) : "") + '" /></div>' +
         '<div class="field"><label for="evInitial">Número inicial de tu indicador</label><input id="evInitial" type="text" placeholder="Ej.: 0 reservas" value="' + esc(ev.initial || "") + '" /></div>' +
         '<div class="field"><label for="evFinal">Número final de tu indicador</label><input id="evFinal" type="text" placeholder="Ej.: 3 reservas" value="' + esc(ev.final || "") + '" /></div>' +
         '<div class="field"><label for="evLink">Enlace (opcional)</label><input id="evLink" type="url" placeholder="https://…" value="' + esc(ev.link || "") + '" /></div>' +
@@ -4717,12 +4978,13 @@ var MODULES = [
       });
       $("evSave").addEventListener("click", function () {
         var tk = ensureTask13();
-        tk.evidence = { initial: $("evInitial").value.trim(), final: $("evFinal").value.trim(), link: $("evLink").value.trim(), photoName: photoName };
-        saveEvidenceMeta({ initial: tk.evidence.initial, final: tk.evidence.final, link: tk.evidence.link, photoName: photoName, photoDataUrl: photoData });
+        tk.evidence = { people: $("evPeople").value.trim(), initial: $("evInitial").value.trim(), final: $("evFinal").value.trim(), link: $("evLink").value.trim(), photoName: photoName };
+        saveEvidenceMeta({ people: tk.evidence.people, initial: tk.evidence.initial, final: tk.evidence.final, link: tk.evidence.link, photoName: photoName, photoDataUrl: photoData });
         persist();
         $("evMsg").textContent = "✓ Evidencia guardada en este navegador.";
         renderChat();
         if (taskComplete13()) toast("Evidencia guardada: tu Ejecución quedó completada en su totalidad. Tu Medición y seguimiento ya está activo.");
+        else if (taskReported()) toast("Evidencia guardada. Todavía no se verifica la ejecución: revisa cuántas personas y los números inicial y final.");
       });
     }
     function renderChat() {
@@ -4742,7 +5004,7 @@ var MODULES = [
       var blocker = executionBlocker(m.id);
       var isLocked = !!blocker && !moduleFullyComplete(m.id);
       $("chatTitle").textContent = codeOf(m.id) + " · " + m.name;
-      $("chatSubtitle").textContent = state.project.name + " — " + answeredCount(m.id) + " de " + m.questions.length + " preguntas respondidas" + (isLocked ? " · Solo lectura" : "") + (m.id === "M13" && taskPendingReport() ? " · Tarea de cierre asignada: falta el reporte del resultado" : "") + (m.id === "M13" && taskReported() ? (taskHasEvidence() ? " · Tarea de cierre reportada" : " · Tarea reportada: falta la evidencia") : "");
+      $("chatSubtitle").textContent = state.project.name + " — " + answeredCount(m.id) + " de " + m.questions.length + " preguntas respondidas" + (isLocked ? " · Solo lectura" : "") + (m.id === "M13" && taskPendingReport() ? " · Tarea de cierre asignada: falta el reporte del resultado" : "") + (m.id === "M13" && taskReported() ? (taskExecutionState() === "verified" ? " · Tarea de cierre verificada" : taskExecutionState() === "noexec" ? " · Tarea reportada: sin ejecución" : " · Tarea reportada: falta verificar la ejecución") : "");
       renderTabs();
       if (paymentGateApplies(m.id)) { renderPaywall(m); return; }
       var t = "";
@@ -4827,10 +5089,14 @@ var MODULES = [
           }
           if (!taskReported()) {
             t += taskAssignBubble(assignTask13());
-            t += systemBubble("⏳ <strong>C13 todavía no cierra.</strong> Ejecuta la tarea y escribe su resultado aquí abajo, en este mismo chat. Solo con ese reporte y con tu evidencia (foto, enlace o números inicial y final) C13 queda completado en su totalidad y se activa C14 · Medición y seguimiento." +
+            t += systemBubble("⏳ <strong>C13 todavía no cierra.</strong> Ejecuta la tarea y escribe su resultado aquí abajo, en este mismo chat. Solo con ese reporte y con tu evidencia (mínimo 3 personas reales y los números inicial y final de tu indicador) C13 queda completado en su totalidad y se activa C14 · Medición y seguimiento." +
               ' &nbsp;<button class="btn small" id="btnRedo">Rehacer componente</button>');
           } else {
-            t += analiaBubbleCls("✅ <strong>Reporte recibido, pero C13 todavía no cierra.</strong> Ya me contaste qué pasó, y eso queda registrado. Para darlo por verificado me falta tu evidencia: una foto, un enlace, o los números inicial y final de tu indicador. Anótala arriba, en el panel «Tu evidencia de la tarea». Sin ella, yo no doy por cerrada la ejecución.", "task");
+            /* v17.20 · El reporte llegó pero la ejecución no se verifica:
+               se dice con claridad qué falta (personas o números) y se
+               ofrecen los dos caminos — reintentar o pedir más días —.
+               Nunca se imprime «completada» para un reporte sin ejecución. */
+            t += taskNotClosedBubbles();
           }
         } else {
           if (gaps.length) {
@@ -4842,6 +5108,25 @@ var MODULES = [
           t += systemBubble("✓ <strong>" + esc(m.name) + " completado.</strong> Tus informes de este bloque ya están en la sección Informes." +
             (next ? ' &nbsp;<button class="btn small primary" id="btnNextMod">Seguir con ' + codeOf(next.id) + " · " + esc(next.name) + "</button>" : ' &nbsp;<button class="btn small primary" id="btnGoPlan">Ver mi plan de negocio</button>') +
             ' &nbsp;<button class="btn small" id="btnRedo">Rehacer componente</button>');
+        }
+      }
+      /* v17.20 · Investigar en el chat actual: la última búsqueda sin
+         mostrar aparece aquí mismo, aunque ya hayas avanzado de
+         componente; y si la búsqueda falló, se dice con honestidad
+         en el hilo, no solo con un aviso. */
+      if (ui.researchError) {
+        ui.researchError = false;
+        t += analiaBubbleCls('<span class="qtag">Lo que encontré en el mercado</span><strong>No pude traer datos del mercado esta vez.</strong> Intenté buscar referencias con su fuente y no llegó nada: puede ser la conexión o el servicio. Sigo con lo que tú me contaste, sin inventar nada. Puedes volver a tocar «Investigar» cuando quieras: un fallo no gasta tu cupo de búsquedas.', "market");
+      } else {
+        var rSearch = ensureResearch();
+        var rDone = researchSearches();
+        if (rDone.length) {
+          var rLatest = rDone[rDone.length - 1];
+          if (rLatest && rLatest.at && (rLatest.at > (rSearch.seenAt || ""))) {
+            t += researchBubbleHtml();
+            rSearch.seenAt = rLatest.at;
+            persistLocalOnly();
+          }
         }
       }
       $("thread").innerHTML = t;
@@ -4873,6 +5158,28 @@ var MODULES = [
           if (!br.getAttribute("data-label")) br.setAttribute("data-label", br.textContent);
           br.textContent = "¿Seguro? Se borran las respuestas de este componente — toca de nuevo para confirmar";
         }
+      });
+      /* v17.20 · C13 sin ejecución verificada: reintentar o pedir más días. */
+      var btr = $("btnTaskRetry");
+      if (btr) btr.addEventListener("click", function () {
+        if (tabStale) { toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return; }
+        var tk = ensureTask13();
+        if (!tk.reportHistory) tk.reportHistory = [];
+        tk.reportHistory.push({ report: tk.report, reportedAt: tk.reportedAt || "", people: taskPeopleTotal() });
+        tk.report = ""; tk.reportedAt = "";
+        if (tk.evidence) { tk.evidence.people = ""; tk.evidence.final = ""; }
+        persist(); renderSidebar(); renderChat();
+        toast("Listo para reintentarlo: tu reporte anterior quedó guardado en el historial. Cuando ejecutes la tarea, repórtame el resultado completo aquí mismo.");
+      });
+      var bte = $("btnTaskExtend");
+      if (bte) bte.addEventListener("click", function () {
+        if (tabStale) { toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return; }
+        var tk2 = ensureTask13();
+        var now = new Date();
+        tk2.assignedAt = now.toISOString();
+        tk2.due = task13Due(now);
+        persist(); renderSidebar(); renderChat();
+        toast("Te doy 7 días más: tu nueva fecha límite es " + tk2.due + ".");
       });
       renderProgressPanel();
       renderEvidencePanel();
@@ -5081,6 +5388,14 @@ var MODULES = [
         var rec = fuRec(m.id, pend.qi);
         rec.steps[pend.idx].answer = text;
         rec.steps[pend.idx].at = new Date().toISOString(); /* v17.14: la repregunta también lleva fecha, para fusionar por pregunta */
+        /* v17.20 · El modo se consume con ESTA respuesta, como prometía
+           el aviso: si se activó Retar o Investigar mientras había una
+           repregunta pendiente, la sonda queda anotada en este registro
+           y el modo se limpia — no queda pegado ni se dispara de nuevo. */
+        if (ui.activeMode === "investigar" || ui.activeMode === "retar") {
+          if (!rec.probeMode) rec.probeMode = ui.activeMode;
+          clearActiveMode();
+        }
         pushNextStep(m, pend.qi);
         canvasAfterAnswer(); /* v17.9: la repregunta también puede cambiar el lienzo */
         persist();
@@ -5089,17 +5404,20 @@ var MODULES = [
       }
       if (m.id === "M13" && moduleComplete(m.id) && taskPendingReport()) {
         /* El texto que llega con la tarea pendiente ES el reporte del
-           resultado: se guarda en el proyecto como una respuesta más y,
-           con él, C13 queda completado en su totalidad y C14 se activa. */
+           resultado: se guarda en el proyecto como una respuesta más.
+           v17.20 · C13 NO se cierra por enviar el reporte: solo se
+           cierra cuando la ejecución se verifica (≥3 personas reales +
+           números inicial y final, sin declaración de no-ejecución). */
         var tkRep = ensureTask13();
         tkRep.report = text;
         tkRep.reportedAt = new Date().toISOString();
-        ui.activeMode = null;
-        document.querySelectorAll("[data-mode]").forEach(function (c) { c.classList.remove("on"); });
+        clearActiveMode();
         persist();
         renderSidebar(); renderChat();
-        if (taskHasEvidence()) toast("Reporte recibido: tu Ejecución quedó completada en su totalidad. Tu Medición y seguimiento ya está activo.");
-        else toast("Reporte recibido. Para cerrar C13 me falta tu evidencia: anótala en el panel «Tu evidencia de la tarea» (foto, enlace o números inicial y final).");
+        var stRep = taskExecutionState();
+        if (stRep === "verified") toast("Reporte recibido: hablaste con " + taskPeopleTotal() + " personas y tu indicador pasó de " + (tkRep.evidence.initial || "—") + " a " + (tkRep.evidence.final || "—") + ". Tu Ejecución quedó completada en su totalidad. Tu Medición y seguimiento ya está activo.");
+        else if (stRep === "noexec") toast("Reporte recibido, y te lo agradezco por honesto: la tarea no se ejecutó, así que C13 sigue abierto. Reinténtala o pídeme más días desde el aviso de abajo.");
+        else toast("Reporte recibido. Todavía no se verifica la ejecución: anota en el panel de evidencia cuántas personas reales (mínimo 3) y los números inicial y final de tu indicador.");
         return;
       }
       var step = answeredCount(m.id);
@@ -5120,10 +5438,7 @@ var MODULES = [
         if (ui.activeMode === "investigar" || ui.activeMode === "retar") r.probeMode = ui.activeMode;
         pushNextStep(m, step);
       }
-      if (ui.activeMode) {
-        ui.activeMode = null;
-        document.querySelectorAll("[data-mode]").forEach(function (c) { c.classList.remove("on"); });
-      }
+      if (ui.activeMode) clearActiveMode();
       canvasAfterAnswer(); /* v17.9: cada cambio real crea una versión nueva del lienzo */
       persist();
       renderSidebar(); renderChat();
@@ -5148,7 +5463,7 @@ var MODULES = [
     function evidenceMissing(text, q, stage) {
       var t = String(text || "").toLowerCase();
       var stg = stage || currentStage();
-      var hasNumber = /\d/.test(text) || /\$|%|por ciento/.test(t);
+      var hasNumber = /\d/.test(text) || /\$|%|por ciento|\bcero\b/.test(t); /* v17.20 · «cero» escrito también es un número: 0 clientes no es falta de dato */
       var hasExample = /(por ejemplo|ejemplo|un caso|el caso|cliente|cuando|vez que|la vez|pasada|pasado|ayer|la semana|el mes)/.test(t);
       var hasFreqCost = /(cada|por mes|al mes|mensual|semanal|por semana|veces|cuesta|costo|precio|pesos|horas|minutos|días|dias)/.test(t);
       if (q && q.sinNumero) {
@@ -5330,12 +5645,19 @@ var MODULES = [
       });
       $("editArea").focus();
     });
+    /* v17.20 · Un solo lugar limpia el modo activo (Retar / Investigar):
+       la variable Y la clase «on» del chip, para que el aviso no quede
+       pegado después de consumirse ni lo re-dispare un re-render. */
+    function clearActiveMode() {
+      ui.activeMode = null;
+      document.querySelectorAll("[data-mode]").forEach(function (c) { c.classList.remove("on"); });
+    }
     document.querySelectorAll("[data-mode]").forEach(function (chip) {
       chip.addEventListener("click", function () {
         var mode = chip.getAttribute("data-mode");
         var chipBlocker = executionBlocker(ui.module);
         if (chipBlocker) { toast("Componente en solo lectura: los modos se activan cuando completes " + codeOf(chipBlocker.id) + " en su totalidad."); return; }
-        if (ui.activeMode === mode) { ui.activeMode = null; chip.classList.remove("on"); return; }
+        if (ui.activeMode === mode) { clearActiveMode(); return; }
         ui.activeMode = mode;
         document.querySelectorAll("[data-mode]").forEach(function (c) { c.classList.remove("on"); });
         chip.classList.add("on");
@@ -5368,8 +5690,8 @@ var MODULES = [
         "<span>Fecha límite de tu tarea: <b>" + esc(dueTxt) + "</b> <span class='" + (dl && dl.days <= 2 && !t.report ? "due-soon" : "") + "'>" + esc(daysTxt) + "</span></span>" +
         "<span>Tu indicador semanal: <b>" + esc(ind) + "</b></span>" +
         "<span>Último valor registrado: <b>" + lastTxt + "</b></span></div>";
-      if (t.evidence && (t.evidence.initial || t.evidence.final || t.evidence.link || t.evidence.photoName)) {
-        h += '<p style="font-size:13.5px;color:var(--muted)">Evidencia de la tarea — inicial: <b>' + esc(t.evidence.initial || "—") + "</b> · final: <b>" + esc(t.evidence.final || "—") + "</b>" + (t.evidence.link ? ' · <a href="' + esc(t.evidence.link) + '" target="_blank" rel="noopener">enlace</a>' : "") + (t.evidence.photoName ? " · foto: " + esc(t.evidence.photoName) + " (guardada solo en este navegador)" : "") + "</p>";
+      if (t.evidence && (t.evidence.people != null && String(t.evidence.people).trim() !== "" || t.evidence.initial || t.evidence.final || t.evidence.link || t.evidence.photoName)) {
+        h += '<p style="font-size:13.5px;color:var(--muted)">Evidencia de la tarea — personas reales: <b>' + esc(t.evidence.people != null && String(t.evidence.people).trim() !== "" ? String(t.evidence.people) : "—") + "</b> · inicial: <b>" + esc(t.evidence.initial || "—") + "</b> · final: <b>" + esc(t.evidence.final || "—") + "</b>" + (t.evidence.link ? ' · <a href="' + esc(t.evidence.link) + '" target="_blank" rel="noopener">enlace</a>' : "") + (t.evidence.photoName ? " · foto: " + esc(t.evidence.photoName) + " (guardada solo en este navegador)" : "") + "</p>";
       }
       h += '<div class="field"><label for="indValue" style="font-size:13px;font-weight:700">Registrar el valor de esta semana</label><input id="indValue" type="text" placeholder="Ej.: 3 reservas" /> <button class="btn small primary" id="btnIndSave" type="button">Registrar valor semanal</button></div></div>';
       return h;
@@ -5420,7 +5742,7 @@ var MODULES = [
         if (state.notApplicable && state.notApplicable[m.id]) pill = '<span class="pill ok">No aplica · registrado</span>';
         if (m.id === "M13" && moduleComplete("M13") && !taskReported()) pill = '<span class="pill mid">Tarea asignada · falta el reporte del resultado</span>';
         if (m.id === "M13" && moduleComplete("M13") && taskReported() && !taskHasEvidence()) pill = '<span class="pill mid">Reporte recibido · falta la evidencia</span>';
-        var sTxt = "Solidez estimada: " + solidityLabel(s) + (rowLocked ? " · Se activa al completar " + codeOf(rowBlocker.id) + " en su totalidad" : "") + (rowLocked && c > 0 ? " · Ya lleva " + c + "/" + m.questions.length + " preguntas" : "") + (m.id === "M13" && moduleComplete("M13") && !taskReported() ? " · La tarea de cierre ya fue asignada: C13 se completa en su totalidad cuando reportes su resultado en la Conversación" : "") + (m.id === "M13" && moduleComplete("M13") && taskReported() && !taskHasEvidence() ? " · Tu reporte ya llegó: para cerrar C13 falta la evidencia (foto, enlace o números inicial y final) en la Conversación" : "");
+        var sTxt = "Solidez estimada: " + solidityLabel(s, c > 0) + (rowLocked ? " · Se activa al completar " + codeOf(rowBlocker.id) + " en su totalidad" : "") + (rowLocked && c > 0 ? " · Ya lleva " + c + "/" + m.questions.length + " preguntas" : "") + (m.id === "M13" && moduleComplete("M13") && !taskReported() ? " · La tarea de cierre ya fue asignada: C13 se completa en su totalidad cuando reportes su resultado en la Conversación" : "") + (m.id === "M13" && moduleComplete("M13") && taskReported() && !taskHasEvidence() ? " · Tu reporte ya llegó: para cerrar C13 falta verificar la ejecución (mínimo 3 personas reales y los números inicial y final) en la Conversación" : "");
         html += '<div class="mod-row"><span class="code">' + codeOf(m.id) + '</span><div><div class="t">' + esc(m.name) + '</div><div class="s">' + esc(sTxt) + '</div></div><div class="right"><div class="mini-track"><div class="mini-fill" style="width:' + s + '%"></div></div>' + pill + '<button class="btn small" data-goto="' + m.id + '">' + (moduleFullyComplete(m.id) ? "Revisar" : rowLocked ? "Ver" : "Continuar") + "</button></div></div>";
       });
       $("resumenBody").innerHTML = html;
@@ -6331,7 +6653,7 @@ var MODULES = [
           '<div class="qa"><div class="q">Tarea asignada por Analía — construida con las respuestas de este componente</div><div class="a">' + esc(state.task13.text) + '</div><div class="recm">Asignada el ' + esc(state.task13.assignedAt ? new Date(state.task13.assignedAt).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" }) : "—") + " · Fecha límite del reporte: " + esc(state.task13.due || "—") + "</div></div>" +
           '<div class="qa"><div class="q">Reporte del resultado — qué pasó, los números y lo que dijeron las personas</div><div class="a">' + esc(state.task13.report && state.task13.report.trim() ? state.task13.report : "— Pendiente: sin este reporte, C13 no queda completado en su totalidad —") + "</div></div>" +
           "<p>Este resultado alimenta directamente el componente C14 · Medición y seguimiento: es el primer dato real del sistema de medición.</p>" +
-        (state.task13.evidence ? "<h2>Evidencia registrada de la ejecución</h2><p>Número inicial del indicador: <strong>" + esc(state.task13.evidence.initial || "—") + "</strong> · Número final: <strong>" + esc(state.task13.evidence.final || "—") + "</strong>" + (state.task13.evidence.link ? ' · Enlace: <a href="' + esc(state.task13.evidence.link) + '">' + esc(state.task13.evidence.link) + "</a>" : "") + (state.task13.evidence.photoName ? " · Foto: " + esc(state.task13.evidence.photoName) + " (guardada solo en el navegador del usuario)" : "") + "</p>" : "<p><strong>Pendiente:</strong> todavía no hay evidencia registrada de la ejecución (foto, enlace o números inicial y final). Sin ella, C13 no queda completado en su totalidad.</p>");
+        (state.task13.evidence ? "<h2>Evidencia registrada de la ejecución</h2><p>Personas reales con las que se habló: <strong>" + esc(state.task13.evidence.people != null && String(state.task13.evidence.people).trim() !== "" ? String(state.task13.evidence.people) : "—") + "</strong> · Número inicial del indicador: <strong>" + esc(state.task13.evidence.initial || "—") + "</strong> · Número final: <strong>" + esc(state.task13.evidence.final || "—") + "</strong>" + (state.task13.evidence.link ? ' · Enlace: <a href="' + esc(state.task13.evidence.link) + '">' + esc(state.task13.evidence.link) + "</a>" : "") + (state.task13.evidence.photoName ? " · Foto: " + esc(state.task13.evidence.photoName) + " (guardada solo en el navegador del usuario)" : "") + "</p>" : "<p><strong>Pendiente:</strong> todavía no hay evidencia registrada de la ejecución (personas reales y números inicial y final). Sin ella, C13 no queda completado en su totalidad.</p>");
       }
       if (m.id === "M14" && taskReported()) {
         built = "<h2>El primer dato real: el resultado de la tarea de C13</h2>" +
@@ -6341,7 +6663,7 @@ var MODULES = [
       }
       var body = built +
         "<h2>Lectura de Analía</h2>" +
-        '<p><span class="score">Solidez estimada: ' + s + " / 100 — " + esc(solidityLabel(s)) + "</span></p>" +
+        '<p><span class="score">Solidez estimada: ' + s + " / 100 — " + esc(solidityLabel(s, answeredCount(m.id) > 0)) + "</span></p>" +
         "<p>Esta estimación mide la validación con evidencia: cada respuesta suma solo si trae cifras, casos, fuentes o fechas. Lo pendiente o sin evidencia baja la solidez aunque el texto sea largo y completo. Es una brújula para decidir dónde mirar primero, no una auditoría contable ni de mercado.</p>" +
         '<div class="alert"><strong>Alerta principal del componente:</strong> ' + esc(m.alert) + "</div>" +
         "<h2>Objetivos del componente</h2><ul>" + m.objectives.map(function (o) { return "<li>" + esc(o) + "</li>"; }).join("") + "</ul>";
@@ -6675,6 +6997,64 @@ var MODULES = [
     $("btnNew").addEventListener("click", goCreateProject);
     $("btnNewProject").addEventListener("click", goCreateProject);
 
+    /* ---------- Avatar de Analía (v17.20) ----------
+       Video en bucle en la bienvenida (escribe en su laptop y mueve el
+       mouse) con selector de traje; foto fija redonda en el encabezado
+       del chat. Los archivos viven en assets/ junto a index.html y se
+       referencian por ruta relativa: nada de video incrustado, el
+       archivo sigue siendo ligero. Si el video no carga, se muestra
+       la foto fija. */
+    var AVATAR_OUTFITS = { verde: "verde", terracota: "terracota", crema: "crema" };
+    var AVATAR_KEY = "analia-avatar-outfit";
+    function avatarOutfit() {
+      var saved = null;
+      try { saved = window.localStorage.getItem(AVATAR_KEY); } catch (e) { saved = null; }
+      return AVATAR_OUTFITS[saved] ? saved : "verde";
+    }
+    function avatarStillSrc(outfit) { return "assets/analia-" + outfit + ".webp"; }
+    function avatarVideoSrc(outfit) { return "assets/analia-" + outfit + ".mp4"; }
+    function showAvatarStill() {
+      var v = $("avatarVideo"), s = $("avatarStill");
+      if (v) v.hidden = true;
+      if (s) s.hidden = false;
+    }
+    function applyAvatarOutfit(outfit) {
+      if (!AVATAR_OUTFITS[outfit]) outfit = "verde";
+      try { window.localStorage.setItem(AVATAR_KEY, outfit); } catch (e) {}
+      var v = $("avatarVideo"), s = $("avatarStill");
+      if (v) {
+        v.poster = avatarStillSrc(outfit);
+        var src = v.querySelector("source");
+        if (src) src.src = avatarVideoSrc(outfit);
+        else v.src = avatarVideoSrc(outfit);
+        v.hidden = false;
+        if (s) s.hidden = true;
+        try {
+          v.load();
+          var p = v.play();
+          if (p && p.catch) p.catch(function () { showAvatarStill(); });
+        } catch (e) { showAvatarStill(); }
+      }
+      if (s) s.src = avatarStillSrc(outfit);
+      var ca = $("chatAvatarImg");
+      if (ca) ca.src = avatarStillSrc(outfit);
+      document.querySelectorAll("[data-outfit]").forEach(function (b) {
+        b.classList.toggle("on", b.getAttribute("data-outfit") === outfit);
+      });
+    }
+    document.querySelectorAll("[data-outfit]").forEach(function (b) {
+      b.addEventListener("click", function () { applyAvatarOutfit(b.getAttribute("data-outfit")); });
+    });
+    (function () {
+      var v = $("avatarVideo");
+      if (v) {
+        v.addEventListener("error", showAvatarStill);
+        var src = v.querySelector("source");
+        if (src) src.addEventListener("error", showAvatarStill);
+      }
+    })();
+    applyAvatarOutfit(avatarOutfit());
+
     /* ---------------- Arranque ---------------- */
     $("formStart").addEventListener("submit", function (e) {
       e.preventDefault();
@@ -6734,7 +7114,7 @@ var MODULES = [
           if (now - at < 20000) fresh[id] = tabs[id];
         });
         var mine = state ? projectContentScore(state) : { answered: 0, evidence: 0 };
-        fresh[TAB_ID] = { at: now, answered: mine.answered, evidence: mine.evidence };
+        fresh[TAB_ID] = { at: now, project: state ? state.id : null, answered: mine.answered, evidence: mine.evidence };
         window.localStorage.setItem(TABS_KEY, JSON.stringify(fresh));
         var others = Object.keys(fresh).filter(function (id) { return id !== TAB_ID; });
         if (others.length && !tabWarningShown) {
@@ -6745,17 +7125,28 @@ var MODULES = [
         /* v17.14 · El latido también lleva contenido: si otra pestaña
            reporta más respuestas que esta, esta pestaña está vieja y se
            marca en solo lectura ANTES de escribir nada (respaldo por si
-           el evento storage no llegó). */
+           el evento storage no llegó).
+           v17.20 · El latido compara por PROYECTO y solo con el proyecto
+           ya cargado: antes comparaba conteos globales con state en null
+           (0 respuestas al arrancar) y marcaba vieja la pestaña por una
+           entrada fantasma de una recarga anterior o por otra pestaña en
+           otro proyecto. Y si ya no hay otra pestaña y la copia guardada
+           no trae nada nuevo, el aviso se quita solo: no queda pegado. */
+        if (!state) return;
         if (!tabStale) {
           for (var i = 0; i < others.length; i++) {
             var o = fresh[others[i]];
-            var oAns = (o && typeof o === "object" && typeof o.answered === "number") ? o.answered : 0;
+            if (!o || typeof o !== "object" || !o.project || o.project !== state.id) continue;
+            var oAns = (typeof o.answered === "number") ? o.answered : 0;
             if (oAns > mine.answered) {
               markTabStale("otra pestaña tiene " + oAns + " respuestas y esta tiene " + mine.answered);
               renderChat();
               break;
             }
           }
+        } else if (!others.length && checkTabFresh()) {
+          clearTabStale();
+          renderChat();
         }
       } catch (e) {}
     }
