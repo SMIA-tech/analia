@@ -414,6 +414,92 @@
       .cb-costos { grid-column: 1 / 6; grid-row: 3; }
       .cb-ingresos { grid-column: 6 / 11; grid-row: 3; }
 
+      /* ---------- v17.9 · Ficha de contexto (C0, panel derecho) ---------- */
+      .ficha-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
+      .ficha-field { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+      .ficha-field .flbl { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 800; }
+      .ficha-field .fval { font-size: 13.5px; margin-top: 3px; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: break-word; line-height: 1.45; }
+      .ficha-field.empty { background: var(--panel-3); }
+      .ficha-field.empty .fval { color: var(--muted); font-style: italic; }
+      .ficha-field.hipotesis { background: rgba(201, 154, 46, .14); border-color: rgba(201, 154, 46, .55); }
+      .ficha-field .hip-tag { display: inline-block; font-size: 11px; font-weight: 800; color: var(--warn); border: 1px solid rgba(201, 154, 46, .55); border-radius: 99px; padding: 1px 8px; margin-left: 5px; white-space: nowrap; }
+      .ficha-note { margin-top: 12px; font-size: 12.5px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 10px; line-height: 1.5; }
+
+      /* ---------- v17.9 · Lienzo vivo: barra, leyenda, estados ---------- */
+      .canvas-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 14px 0 12px; }
+      .canvas-version { font-size: 13px; font-weight: 800; color: var(--ink-2); }
+      .canvas-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); align-items: center; }
+      .canvas-legend .lg { white-space: nowrap; }
+      .canvas-legend .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+      .dot-validado { background: var(--ok); }
+      .dot-hipotesis { background: var(--gold-bright); }
+      .dot-problema { background: var(--danger); }
+      .dot-oportunidad { background: #2f6fb2; }
+      .canvas-actions { margin-left: auto; display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+      .canvas-actions select { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 9px; padding: 7px 9px; font: inherit; font-size: 13px; font-weight: 700; max-width: 230px; }
+      .locked-banner { background: rgba(201, 154, 46, .14); border: 1px solid rgba(201, 154, 46, .55); border-radius: 10px; padding: 12px 15px; font-size: 13.5px; color: var(--ink-2); margin: 12px 0; }
+      .locked-banner strong { color: var(--warn); }
+      .cblock { position: relative; cursor: pointer; }
+      .cblock .cb-head { display: flex; align-items: center; gap: 7px; }
+      .cblock .cb-icon { flex: none; display: inline-flex; color: var(--accent); }
+      .cblock .cb-icon svg { width: 16px; height: 16px; }
+      .cblock h4 { margin: 0; flex: 1; min-width: 0; }
+      .cblock .state-tag { flex: none; font-size: 10.5px; font-weight: 800; border-radius: 99px; padding: 2px 8px; white-space: nowrap; }
+      .cblock .cb-guide { font-size: 12px; color: var(--muted); font-style: italic; margin: 5px 0 8px; line-height: 1.4; }
+      .cblock.st-validado { border-left: 5px solid var(--ok); }
+      .cblock.st-hipotesis { border-left: 5px solid var(--gold-bright); }
+      .cblock.st-problema { border-left: 5px solid var(--danger); background: rgba(168, 58, 32, .05); }
+      .cblock.st-oportunidad { border-left: 5px solid #2f6fb2; background: rgba(47, 111, 178, .06); }
+      .cblock.st-vacio { opacity: .8; }
+      .state-tag.validado { background: rgba(46, 125, 70, .14); color: var(--ok); }
+      .state-tag.hipotesis { background: rgba(201, 154, 46, .16); color: var(--warn); }
+      .state-tag.problema { background: rgba(168, 58, 32, .12); color: var(--danger); }
+      .state-tag.oportunidad { background: rgba(47, 111, 178, .14); color: #2f6fb2; }
+      .state-tag.vacio { background: var(--panel-3); color: var(--muted); }
+      .cblock.linked { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
+      .cblock.dim { opacity: .4; }
+      .cblock.locked-grey { background: var(--panel-3); border-style: dashed; cursor: default; }
+      .cblock.locked-grey h4 { color: var(--muted); }
+      .cblock.draft { background: rgba(201, 154, 46, .16); border-color: rgba(201, 154, 46, .55); cursor: default; }
+      .cblock .draft-tag { flex: none; font-size: 10.5px; font-weight: 800; border-radius: 99px; padding: 2px 8px; background: rgba(201, 154, 46, .2); color: var(--warn); }
+      .cblock .cb-foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+      .cblock .cb-done { font-size: 11.5px; font-weight: 800; color: var(--ok); }
+      .cblock .move-tag { font-size: 11.5px; font-weight: 800; color: var(--warn); background: rgba(201, 154, 46, .16); border: 1px solid rgba(201, 154, 46, .5); border-radius: 99px; padding: 2px 9px; }
+      .cblock .cb-open { font-size: 12px; }
+      /* Notas adhesivas dentro de cada bloque */
+      .cnote { position: absolute; width: 158px; border-radius: 9px; padding: 8px 9px 7px; font-size: 12.5px; line-height: 1.4; color: var(--ink); box-shadow: 0 4px 14px rgba(60, 45, 10, .18); cursor: grab; z-index: 3; }
+      .cnote:active { cursor: grabbing; }
+      .cnote.note-validado { background: rgba(46, 125, 70, .16); border: 1px solid rgba(46, 125, 70, .45); }
+      .cnote.note-hipotesis { background: rgba(201, 154, 46, .2); border: 1px solid rgba(201, 154, 46, .55); }
+      .cnote.note-problema { background: rgba(168, 58, 32, .12); border: 1px solid rgba(168, 58, 32, .45); }
+      .cnote.note-oportunidad { background: rgba(47, 111, 178, .14); border: 1px solid rgba(47, 111, 178, .5); }
+      .cnote .cnote-bar { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+      .cnote .cnote-dots { display: flex; gap: 4px; }
+      .cnote .cnote-dot { width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .25); padding: 0; cursor: pointer; }
+      .cnote .cnote-del { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 14px; line-height: 1; cursor: pointer; padding: 0 2px; }
+      .cnote .cnote-text { overflow-wrap: break-word; white-space: pre-wrap; }
+      .cnote textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--input-bg); color: var(--ink); font: inherit; font-size: 12.5px; padding: 5px 6px; resize: vertical; min-height: 52px; }
+      /* Canvas Maestro: tres tarjetas bajo el lienzo */
+      .maestro { margin-top: 26px; }
+      .maestro h2 { font-size: 19px; margin: 0 0 4px; }
+      .maestro .maestro-sub { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+      .maestro-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+      .maestro-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+      .maestro-card h3 { margin: 0 0 8px; font-size: 15px; }
+      .maestro-card p { margin: 0 0 8px; font-size: 13.5px; color: var(--ink-2); line-height: 1.55; }
+      .maestro-card p:last-child { margin-bottom: 0; }
+      .maestro-card .missing { color: var(--warn); font-weight: 700; }
+      /* Vista de presentación: solo el lienzo, en grande */
+      body.presenting .sidebar, body.presenting .view-head, body.presenting .canvas-toolbar, body.presenting #canvasNote, body.presenting .maestro { display: none !important; }
+      body.presenting .app { grid-template-columns: 1fr; }
+      body.presenting #view-canvas { padding: 26px 30px; }
+      body.presenting .canvas-grid { min-width: 0; }
+      body.presenting .cblock { min-height: 170px; }
+      body.presenting .cblock p { font-size: 15px; }
+      body.presenting .cblock h4 { font-size: 14px; }
+      body.presenting .present-bar { display: flex !important; }
+      .present-bar { display: none; align-items: center; gap: 12px; margin-bottom: 14px; font-size: 14px; font-weight: 800; color: var(--ink); }
+
       .deliv { display: flex; gap: 14px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 17px; margin-bottom: 11px; }
       .deliv .ic { width: 42px; height: 42px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; flex: none; }
       .deliv h3 { margin: 0 0 3px; font-size: 16px; }
@@ -603,6 +689,15 @@
         body.printing #printArea .cover .brand { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; font-weight: bold; }
         body.printing #printArea .cover h1 { font-size: 34px; margin: 14px 0 6px; }
         body.printing #printArea .cover p { color: #555; }
+        /* Lienzo en la vista de impresión: rejilla clásica en una página. */
+        body.printing #printArea .canvas-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; min-width: 0; }
+        body.printing #printArea .cblock { border: 1px solid #bbb; border-radius: 8px; padding: 10px; min-height: 90px; background: #fff; }
+        body.printing #printArea .cblock h4 { font-size: 11px; margin: 0 0 4px; color: #b14e24; }
+        body.printing #printArea .cblock p { font-size: 12px; color: #333; }
+        body.printing #printArea .cb-guide, body.printing #printArea .cb-foot, body.printing #printArea .cnote { display: none; }
+        body.printing #printArea .maestro-card { border: 1px solid #bbb; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+        body.printing #printArea .maestro-card h3 { font-size: 15px; }
+        body.printing #printArea .maestro-card p { font-size: 12.5px; color: #333; }
       }
       @media (max-width: 900px) {
         .admin-grid { grid-template-columns: 1fr; }
@@ -894,8 +989,22 @@
             <h1>Modelo de negocio</h1>
             <p>Tu canvas se arma solo con las respuestas de la conversación. Cada bloque resume lo que definiste en su componente.</p>
           </div>
+          <div class="present-bar" id="presentBar"><span id="presentTitle">Canvas Maestro</span><button class="btn small" id="btnExitPresent" type="button">Salir de presentación</button></div>
           <div id="canvasEmpty"></div>
+          <div class="canvas-toolbar" id="canvasToolbar" hidden>
+            <span class="canvas-version" id="canvasVersionLabel"></span>
+            <span class="canvas-legend" id="canvasLegend"><span class="lg"><span class="dot dot-validado"></span>Validado</span><span class="lg"><span class="dot dot-hipotesis"></span>Hipótesis</span><span class="lg"><span class="dot dot-problema"></span>Problema</span><span class="lg"><span class="dot dot-oportunidad"></span>Oportunidad</span></span>
+            <span class="canvas-actions">
+              <select id="canvasVersionSel" aria-label="Versión del lienzo"></select>
+              <button class="btn small" id="btnCanvasRestore" type="button" hidden>Restaurar esta versión</button>
+              <button class="btn small" id="btnCanvasPresent" type="button">Presentar</button>
+              <button class="btn small" id="btnCanvasPDF" type="button">Descargar PDF</button>
+              <button class="btn small" id="btnCanvasPNG" type="button">Descargar imagen</button>
+            </span>
+          </div>
+          <div class="locked-banner" id="canvasLockedBanner" hidden></div>
           <div class="canvas-wrap" id="canvasWrap"><div class="canvas-grid" id="canvasGrid"></div></div>
+          <div id="canvasMaestro"></div>
           <p id="canvasNote" style="color:var(--muted);font-size:13px;margin-top:14px">¿Un bloque se ve vacío o débil? Vuelve a su componente en la Conversación y profundiza la respuesta: el canvas se actualiza al momento.</p>
         </section>
 
@@ -3935,6 +4044,7 @@ var MODULES = [
           if (state.followups[m.id]) delete state.followups[m.id];
           if (m.id === "M13") state.task13 = { text: "", assignedAt: "", due: "", report: "", reportedAt: "" };
           ui.awaitingProbe = null;
+          canvasAfterAnswer(); /* v17.9: reiniciar un componente rehace su bloque del lienzo */
           persist();
           renderSidebar(); renderChat();
           toast("Componente " + codeOf(m.id) + " reiniciado. A responder de nuevo, con lo que ya sabes.");
@@ -3976,8 +4086,67 @@ var MODULES = [
       document.querySelectorAll("[data-mode]").forEach(function (c) { c.disabled = isLocked; });
     }
 
+    /* ---------- v17.9 · Ficha de contexto del Brief (C0) ----------
+       La ficha vive en el panel derecho SOLO mientras se está en el
+       Brief: 9 campos que se llenan pregunta por pregunta con la
+       ÚLTIMA respuesta de cada pregunta (lastAnswerText). Lo no
+       respondido queda en gris como «aún no respondido». Un campo con
+       evidencia débil queda en amarillo con la marca «— hipótesis».
+       Negocio, Fundador, Sector y Etapa salen de los datos del
+       proyecto, capturados al crearlo. */
+    var FICHA_FIELDS = [
+      { label: "Negocio", kind: "project", field: "name" },
+      { label: "Fundador", kind: "project", field: "founder" },
+      { label: "Sector", kind: "project", field: "sector" },
+      { label: "Etapa", kind: "project", field: "stage" },
+      { label: "Qué vendes hoy", kind: "q", qi: 6 },
+      { label: "Cliente inicial", kind: "q", qi: 1 },
+      { label: "Problema", kind: "q", qi: 3 },
+      { label: "Alternativa", kind: "q", qi: 4, fallbackQi: 5 },
+      { label: "Precio", kind: "q", qi: 5, fallbackQi: 6 }
+    ];
+    function fichaFieldValue(f) {
+      if (f.kind === "project") {
+        var v = (state.project && state.project[f.field]) || "";
+        return { text: v, status: v ? "dato" : "empty" };
+      }
+      var t = lastAnswerText("M0", f.qi);
+      if (!t && f.fallbackQi != null) t = lastAnswerText("M0", f.fallbackQi);
+      if (!t || isUncertain(t)) return { text: "", status: "empty" };
+      var sol = solidityOf(t, mod("M0").questions[f.qi]);
+      return { text: t, status: sol.label === "Fuerte" ? "validado" : "hipotesis" };
+    }
+    function briefFichaHtml() {
+      var h = "<h3>Ficha de contexto</h3>" +
+        '<div class="pp-sub">Se llena pregunta por pregunta — no es el lienzo todavía</div>' +
+        '<div class="ficha-grid">';
+      FICHA_FIELDS.forEach(function (f) {
+        var v = fichaFieldValue(f);
+        var cls = v.status === "empty" ? " empty" : v.status === "hipotesis" ? " hipotesis" : "";
+        h += '<div class="ficha-field' + cls + '"><div class="flbl">' + esc(f.label) + '</div><div class="fval">' +
+          (v.status === "empty" ? "aún no respondido" : esc(v.text) + (v.status === "hipotesis" ? ' <span class="hip-tag">— hipótesis</span>' : "")) +
+          "</div></div>";
+      });
+      h += '</div><div class="ficha-note">El lienzo de 9 bloques queda en gris, con un aviso: «Se activa al cerrar el Brief». Solo la propuesta de valor aparece como borrador, en amarillo.</div>';
+      return h;
+    }
+
     function renderProgressPanel() {
       var m = mod(ui.module);
+      /* v17.9: durante el Brief el panel derecho muestra la Ficha de
+         contexto en lugar de la lista de objetivos (que sigue solo en
+         la barra lateral según v17.8). */
+      if (m.id === "M0") {
+        var fh = briefFichaHtml();
+        var na0 = state.notApplicable && state.notApplicable[m.id];
+        if (na0) fh += '<div class="na-note">Marcaste este bloque como <strong>no aplica</strong> para tu negocio: «' + esc(na0.reason || "sin motivo") + '». Yo lo registro así y no te lo vuelvo a pedir.<br><button class="btn small" id="btnUndoNA" type="button">Quitar la marca de no aplica</button></div>';
+        else fh += '<div style="margin-top:14px"><button class="btn small" id="btnNotApplicable" type="button">Este bloque no aplica para mi negocio</button></div>';
+        fh += '<div style="margin-top:10px"><button class="btn small" id="btnViewCanvas" type="button">Ver el lienzo</button></div>';
+        $("progressPanel").innerHTML = fh;
+        var bvc0 = $("btnViewCanvas");
+        if (bvc0) bvc0.addEventListener("click", function () { ui.canvasHighlight = null; showView("canvas"); });
+        return;
+      }
       var step = answeredCount(m.id);
       var html = "<h3>Tu progreso · " + codeOf(m.id) + "</h3>" +
         '<div class="pp-sub">Objetivos del componente — se marcan con tus respuestas</div>' +
@@ -4002,7 +4171,14 @@ var MODULES = [
       if (na) html += '<div class="na-note">Marcaste este bloque como <strong>no aplica</strong> para tu negocio: «' + esc(na.reason || "sin motivo") + '». Yo lo registro así y no te lo vuelvo a pedir.<br><button class="btn small" id="btnUndoNA" type="button">Quitar la marca de no aplica</button></div>';
       else if (!moduleFullyComplete(m.id)) html += '<div style="margin-top:14px"><button class="btn small" id="btnNotApplicable" type="button">Este bloque no aplica para mi negocio</button></div>';
       html += '<div class="pp-module-meta" style="border-top:1px dashed var(--line);padding-top:12px"><strong>Alerta principal:</strong> ' + esc(m.alert) + "</div>";
+      /* v17.9: ir del componente a su bloque del lienzo (y viceversa). */
+      var blk = null;
+      CANVAS_MAP.forEach(function (b) { if (b.mod === m.id) blk = b; });
+      if (blk) html += '<div style="margin-top:10px"><button class="btn small" id="btnViewCanvas" type="button">Ver este bloque en el lienzo</button></div>';
+      else if (m.id === "M1") html += '<div style="margin-top:10px"><button class="btn small" id="btnViewCanvas" type="button">Ver el lienzo</button></div>';
       $("progressPanel").innerHTML = html;
+      var bvc = $("btnViewCanvas");
+      if (bvc) bvc.addEventListener("click", function () { ui.canvasHighlight = blk ? blk.key : null; showView("canvas"); });
     }
 
     function hideNudge() { $("nudge").classList.remove("show"); $("nudge").innerHTML = ""; }
@@ -4076,6 +4252,7 @@ var MODULES = [
         var rec = fuRec(m.id, pend.qi);
         rec.steps[pend.idx].answer = text;
         pushNextStep(m, pend.qi);
+        canvasAfterAnswer(); /* v17.9: la repregunta también puede cambiar el lienzo */
         persist();
         renderSidebar(); renderChat();
         return;
@@ -4117,6 +4294,7 @@ var MODULES = [
         ui.activeMode = null;
         document.querySelectorAll("[data-mode]").forEach(function (c) { c.classList.remove("on"); });
       }
+      canvasAfterAnswer(); /* v17.9: cada cambio real crea una versión nueva del lienzo */
       persist();
       renderSidebar(); renderChat();
       if (moduleComplete(m.id) && !pendingStep(m.id)) {
@@ -4251,6 +4429,7 @@ var MODULES = [
         state.answers[mid][qi] = val;
         if (!state.answerMeta) state.answerMeta = {};
         state.answerMeta[mid + ":" + qi] = { at: new Date().toISOString(), edited: true };
+        canvasAfterAnswer(); /* v17.9: editar una respuesta también puede cambiar el lienzo */
         persist(); renderSidebar(); renderChat();
         toast("Respuesta actualizada: solo cambió esa respuesta, el resto sigue igual.");
       });
@@ -4384,6 +4563,479 @@ var MODULES = [
       return Math.round(s / started.length) + " / 100";
     }
 
+    /* ---------------- Lienzo vivo v17.9 ----------------
+       Un solo lienzo en una página con los 9 bloques en el orden
+       clásico: Propuesta de valor en el centro, más grande, uniendo
+       las dos mitades. A la derecha el mercado (Segmentos, Canales,
+       Relación, Ingresos); a la izquierda lo necesario para servirlo
+       (Recursos, Actividades, Socios, Costes).
+       - Estado de cada bloque: se calcula con lo que Analía ya mide
+         (certeza declarada en C1 + solidez con evidencia):
+         Validado (verde) = certeza Alta, o solidez Fuerte con certeza
+         declarada; Oportunidad (azul) = evidencia fuerte sin certeza
+         Alta todavía; Hipótesis (amarillo) = Media/Supuesto o Por
+         validar; Problema (rojo) = contenido sin evidencia (Débil).
+         Sin texto, el bloque está vacío. Nada se inventa: sin datos,
+         no hay color.
+       - Conexiones: al hacer clic en un bloque se resaltan sus
+         bloques conectados. Cuando una respuesta cambia un bloque,
+         sus conectados quedan marcados «Se mueve — revisar» hasta
+         que se revisan.
+       - Versiones: cada cambio real en el contenido de un bloque
+         crea una versión nueva con fecha. El historial vive en el
+         proyecto (local/Firestore, como el resto) y nunca se borra
+         al rehacer el lienzo. Ver una versión anterior es solo
+         lectura; restaurarla crea una versión nueva con ese
+         contenido y la deja como actual.
+       - Notas adhesivas: viven en state.canvasNotes, se guardan con
+         el proyecto y sobreviven al recargar.
+       - Compartir con enlace NO está implementado: las reglas de
+         Firestore solo dejan leer proyectos/{uid} a su dueño o al
+         administrador, así que un enlace para un hotel o un socio
+         necesitaría un documento público de compartido + cambio de
+         reglas + carga por token en la URL. No se muestra ningún
+         enlace que no funcione. */
+    var CANVAS_M1_QI = { segmentos: 0, propuesta: 1, canales: 2, relaciones: 3, ingresos: 4, recursos: 5, actividades: 6, socios: 7, costos: 8 };
+    var CANVAS_CONNECTIONS = {
+      segmentos: ["propuesta", "canales", "relaciones", "ingresos"],
+      propuesta: ["segmentos", "actividades", "recursos", "socios", "costos"],
+      canales: ["segmentos", "relaciones", "ingresos"],
+      relaciones: ["segmentos", "canales", "propuesta"],
+      ingresos: ["segmentos", "canales", "propuesta", "costos"],
+      actividades: ["propuesta", "recursos", "socios", "costos"],
+      recursos: ["actividades", "socios", "propuesta", "costos"],
+      socios: ["actividades", "recursos", "propuesta", "costos"],
+      costos: ["actividades", "recursos", "socios", "ingresos", "propuesta"]
+    };
+    var CANVAS_GUIDE = {
+      socios: "¿Sin qué socio no podrías entregar?",
+      actividades: "¿Qué haces cada semana que sostiene la venta?",
+      recursos: "¿Qué recurso, si falta, te detiene esta semana?",
+      propuesta: "¿Qué dolor resuelves y por qué te eligen a ti?",
+      relaciones: "¿Cómo te relacionas antes, durante y después de la venta?",
+      canales: "¿Por dónde te encuentra y te paga tu cliente?",
+      segmentos: "¿Quién te paga y vuelve, con nombre y caso?",
+      costos: "¿Cuánto te cuesta cada venta, en pesos?",
+      ingresos: "¿Por qué te pagan y cuánto entra por cada vía?"
+    };
+    var CANVAS_ICONS = {
+      socios: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.4"/><path d="M2.8 20c.8-3.2 3.3-5 6.2-5s5.4 1.8 6.2 5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.6 14.7c2.8.3 5 1.9 5.7 4.3"/></svg>',
+      actividades: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>',
+      recursos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-4 9 4v8l-9 4-9-4z"/><path d="M3 8l9 4 9-4M12 12v8"/></svg>',
+      propuesta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.6 6.6L21 11l-6.4 2.4L12 20l-2.6-6.6L3 11l6.4-2.4z"/></svg>',
+      relaciones: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C7 16.5 3 13 3 8.8 3 6 5.2 4 7.8 4c1.7 0 3.2.9 4.2 2.3C13 4.9 14.5 4 16.2 4 18.8 4 21 6 21 8.8c0 4.2-4 7.7-9 12.2z"/></svg>',
+      canales: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6"/></svg>',
+      segmentos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>',
+      costos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M16.8 5.6c-.8-1.3-2.6-2.1-4.8-2.1-2.9 0-5 1.6-5 3.8 0 5 10 2.6 10 7.2 0 2.2-2.1 3.9-5 3.9-2.2 0-4-.8-4.8-2.1"/></svg>',
+      ingresos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 9.5h.01M18 14.5h.01"/></svg>'
+    };
+    var CANVAS_STATE_LABEL = { validado: "Validado", hipotesis: "Hipótesis", problema: "Problema", oportunidad: "Oportunidad", vacio: "Sin datos" };
+    var CANVAS_STATE_SCORE = { vacio: 0, problema: 1, hipotesis: 2, oportunidad: 3, validado: 4 };
+    function canvasGrade(key) {
+      var qi = CANVAS_M1_QI[key];
+      if (qi == null) return "";
+      var texts = [];
+      if (state.answers.M1 && state.answers.M1[qi]) texts.push(state.answers.M1[qi]);
+      fuSteps("M1", qi).forEach(function (s) { if (s.answer) texts.push(s.answer); });
+      for (var i = texts.length - 1; i >= 0; i--) {
+        var t = texts[i].toLowerCase();
+        if (/\balta\b/.test(t)) return "Alta";
+        if (/\bmedia\b/.test(t)) return "Media";
+        if (/\bsupuesto\b/.test(t)) return "Supuesto";
+      }
+      return "";
+    }
+    function blockCanvasState(b) {
+      var txt = blockText(b);
+      if (!txt) return { key: "vacio", label: CANVAS_STATE_LABEL.vacio, score: 0 };
+      var q = mod(b.mod).questions[b.qs[0]];
+      var sol = solidityOf(txt, q);
+      var grade = canvasGrade(b.key);
+      if (sol.label === "Débil") return { key: "problema", label: CANVAS_STATE_LABEL.problema, score: 1 };
+      if (grade === "Alta") return { key: "validado", label: CANVAS_STATE_LABEL.validado, score: 4 };
+      if (sol.label === "Fuerte") return { key: "oportunidad", label: CANVAS_STATE_LABEL.oportunidad, score: 3 };
+      return { key: "hipotesis", label: CANVAS_STATE_LABEL.hipotesis, score: 2 };
+    }
+    function ensureCanvas() {
+      if (!state) return null;
+      if (!state.canvas) state.canvas = { v: 0, at: "", history: [], pending: {}, viewing: null, pinned: null, pinnedFrom: null };
+      if (!Array.isArray(state.canvas.history)) state.canvas.history = [];
+      if (!state.canvas.pending) state.canvas.pending = {};
+      return state.canvas;
+    }
+    function canvasSnapshot() {
+      var blocks = {}, states = {};
+      CANVAS_MAP.forEach(function (b) {
+        blocks[b.key] = blockText(b);
+        states[b.key] = blockCanvasState(b).key;
+      });
+      return { blocks: blocks, states: states };
+    }
+    function canvasCurrentVersion() {
+      var c = ensureCanvas();
+      if (!c || !c.history.length) return null;
+      return c.history[c.history.length - 1];
+    }
+    function canvasVersionByNumber(v) {
+      var c = ensureCanvas();
+      if (!c) return null;
+      for (var i = 0; i < c.history.length; i++) if (c.history[i].v === v) return c.history[i];
+      return null;
+    }
+    function canvasCreateVersion(note) {
+      var c = ensureCanvas();
+      var snap = canvasSnapshot();
+      var v = (c.v || 0) + 1;
+      c.v = v;
+      var at = new Date().toISOString();
+      c.at = at;
+      c.history.push({ v: v, at: at, blocks: snap.blocks, states: snap.states, note: note || "" });
+      if (c.history.length > 25) c.history = c.history.slice(-25);
+      c.pinned = null; c.pinnedFrom = null; c.viewing = null;
+      return v;
+    }
+    function canvasEnsureFirstVersion() {
+      var c = ensureCanvas();
+      if (!c || canvasCurrentVersion()) return;
+      if (!CANVAS_MAP.some(function (b) { return blockText(b); })) return;
+      canvasCreateVersion("Primera versión");
+      persist();
+    }
+    /* Cada cambio real en el contenido de un bloque crea una versión
+       nueva y marca sus bloques conectados como «Se mueve — revisar». */
+    function canvasAfterAnswer() {
+      if (!state) return;
+      var c = ensureCanvas();
+      var snap = canvasSnapshot();
+      var last = canvasCurrentVersion();
+      var lastBlocks = last ? last.blocks : {};
+      var changed = CANVAS_MAP.filter(function (b) { return (snap.blocks[b.key] || "") !== (lastBlocks[b.key] || ""); });
+      if (!changed.length) return;
+      if (!last && !CANVAS_MAP.some(function (b) { return snap.blocks[b.key]; })) return;
+      canvasCreateVersion("");
+      changed.forEach(function (b) {
+        (CANVAS_CONNECTIONS[b.key] || []).forEach(function (ck) {
+          if (snap.blocks[ck]) c.pending[ck] = true;
+        });
+      });
+    }
+    function canvasRestoreVersion(k) {
+      var c = ensureCanvas();
+      var old = canvasVersionByNumber(k);
+      if (!old) return;
+      var blocks = {}, states = {};
+      CANVAS_MAP.forEach(function (b) { blocks[b.key] = old.blocks[b.key] || ""; states[b.key] = old.states[b.key] || "vacio"; });
+      var v = (c.v || 0) + 1;
+      c.v = v;
+      var at = new Date().toISOString();
+      c.at = at;
+      c.history.push({ v: v, at: at, blocks: blocks, states: states, note: "Restaurada de v" + k });
+      if (c.history.length > 25) c.history = c.history.slice(-25);
+      c.pinned = v; c.pinnedFrom = k; c.viewing = null;
+      c.pending = {};
+      persist();
+      renderCanvas();
+      toast("Lienzo restaurado a la versión v" + k + " (ahora v" + v + "). El historial se conserva.");
+    }
+    function fmtCanvasDate(iso) {
+      if (!iso) return "";
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      var months = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+      return d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear();
+    }
+    /* ---------- Notas adhesivas ---------- */
+    function canvasNotesFor(key) {
+      if (!state.canvasNotes) state.canvasNotes = {};
+      if (!state.canvasNotes[key]) state.canvasNotes[key] = [];
+      return state.canvasNotes[key];
+    }
+    function canvasFindNote(id) {
+      var found = null;
+      Object.keys(state.canvasNotes || {}).forEach(function (k) {
+        (state.canvasNotes[k] || []).forEach(function (n) { if (n.id === id) found = { note: n, key: k }; });
+      });
+      return found;
+    }
+    function canvasAddNote(key) {
+      var b = null;
+      CANVAS_MAP.forEach(function (bb) { if (bb.key === key) b = bb; });
+      var st = b ? blockCanvasState(b) : { key: "vacio" };
+      var note = { id: "n" + Date.now().toString(36) + Math.floor(Math.random() * 900 + 100), text: "", color: st.key === "vacio" ? "hipotesis" : st.key, x: 12, y: 66 };
+      canvasNotesFor(key).push(note);
+      persist();
+      ui.editNoteId = note.id;
+      renderCanvas();
+    }
+    function canvasNoteHtml(n, key) {
+      var dots = ["validado", "hipotesis", "problema", "oportunidad"].map(function (col) {
+        return '<button class="cnote-dot dot-' + col + '" type="button" data-note-color="' + col + '" title="' + CANVAS_STATE_LABEL[col] + '"></button>';
+      }).join("");
+      return '<div class="cnote note-' + n.color + '" data-note="' + n.id + '" data-block="' + key + '" style="left:' + (n.x || 12) + "px;top:" + (n.y || 66) + 'px">' +
+        '<div class="cnote-bar"><span class="cnote-dots">' + dots + '</span><button class="cnote-del" type="button" data-note-del title="Quitar nota">×</button></div>' +
+        '<div class="cnote-text">' + (n.text ? esc(n.text) : '<span style="opacity:.6">Escribe la nota…</span>') + "</div></div>";
+    }
+    function startNoteEdit(id) {
+      var found = canvasFindNote(id);
+      if (!found) return;
+      var el = document.querySelector('.cnote[data-note="' + id + '"] .cnote-text');
+      if (!el) return;
+      el.innerHTML = '<textarea id="cnoteEdit">' + esc(found.note.text || "") + "</textarea>";
+      var ta = $("cnoteEdit");
+      if (!ta) return;
+      ta.focus();
+      ta.addEventListener("blur", function () {
+        var val = ta.value.trim();
+        if (!val) {
+          var arr = canvasNotesFor(found.key);
+          for (var i = 0; i < arr.length; i++) if (arr[i].id === id) { arr.splice(i, 1); break; }
+        } else found.note.text = val;
+        persist();
+        renderCanvas();
+      });
+      ta.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ta.blur(); }
+        if (e.key === "Escape") { ta.blur(); }
+      });
+    }
+    function bindCanvasNotes() {
+      document.querySelectorAll("#canvasGrid .cnote").forEach(function (el) {
+        el.addEventListener("click", function (e) { e.stopPropagation(); });
+        var del = el.querySelector("[data-note-del]");
+        if (del) del.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var id = el.getAttribute("data-note"), key = el.getAttribute("data-block");
+          var arr = canvasNotesFor(key);
+          for (var i = 0; i < arr.length; i++) if (arr[i].id === id) { arr.splice(i, 1); break; }
+          persist();
+          renderCanvas();
+        });
+        el.querySelectorAll("[data-note-color]").forEach(function (dot) {
+          dot.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var found = canvasFindNote(el.getAttribute("data-note"));
+            if (!found) return;
+            found.note.color = dot.getAttribute("data-note-color");
+            persist();
+            renderCanvas();
+          });
+        });
+        el.addEventListener("pointerdown", function (e) {
+          if (e.target.closest("textarea") || e.target.closest(".cnote-dot") || e.target.closest(".cnote-del")) return;
+          e.stopPropagation();
+          e.preventDefault();
+          var block = el.closest(".cblock");
+          var startX = e.clientX, startY = e.clientY;
+          var r = el.getBoundingClientRect();
+          var grabX = startX - r.left, grabY = startY - r.top;
+          var moved = false;
+          var noteId = el.getAttribute("data-note"), fromKey = el.getAttribute("data-block");
+          function onMove(ev) {
+            if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 4) moved = true;
+            if (!moved) return;
+            var br = block.getBoundingClientRect();
+            var nx = Math.max(0, Math.min(ev.clientX - br.left - grabX, block.offsetWidth - el.offsetWidth - 4));
+            var ny = Math.max(0, Math.min(ev.clientY - br.top - grabY, block.offsetHeight - el.offsetHeight - 4));
+            el.style.left = nx + "px"; el.style.top = ny + "px";
+          }
+          function onUp(ev) {
+            document.removeEventListener("pointermove", onMove);
+            document.removeEventListener("pointerup", onUp);
+            if (!moved) { startNoteEdit(noteId); return; }
+            var wasHidden = el.style.visibility;
+            el.style.visibility = "hidden";
+            var under = document.elementFromPoint(ev.clientX, ev.clientY);
+            el.style.visibility = wasHidden;
+            var toBlock = under && under.closest ? under.closest(".cblock") : null;
+            var toKey = toBlock ? toBlock.getAttribute("data-key") : fromKey;
+            var found = canvasFindNote(noteId);
+            if (!found) return;
+            var arr = canvasNotesFor(fromKey);
+            for (var i = 0; i < arr.length; i++) if (arr[i].id === noteId) { arr.splice(i, 1); break; }
+            if (toBlock) {
+              var tr = toBlock.getBoundingClientRect();
+              found.note.x = Math.max(0, Math.min(ev.clientX - tr.left - grabX, toBlock.offsetWidth - el.offsetWidth - 4));
+              found.note.y = Math.max(0, Math.min(ev.clientY - tr.top - grabY, toBlock.offsetHeight - el.offsetHeight - 4));
+            } else {
+              found.note.x = parseInt(el.style.left, 10) || 0;
+              found.note.y = parseInt(el.style.top, 10) || 0;
+            }
+            canvasNotesFor(toKey).push(found.note);
+            persist();
+            renderCanvas();
+          }
+          document.addEventListener("pointermove", onMove);
+          document.addEventListener("pointerup", onUp);
+        });
+      });
+    }
+    /* ---------- Canvas Maestro: diagnóstico, tesis y brújula ---------- */
+    function findMoney(text) {
+      if (!text) return "";
+      var m = String(text).match(/\$\s?[\d.,]+|[\d]{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?/);
+      return m ? m[0] : "";
+    }
+    function canvasDiagnosisHtml(displayStates) {
+      var scored = CANVAS_MAP.map(function (b) {
+        var key = displayStates[b.key] || "vacio";
+        return { b: b, key: key, score: CANVAS_STATE_SCORE[key] == null ? 0 : CANVAS_STATE_SCORE[key] };
+      });
+      var weakest = scored[0], strongest = scored[0];
+      scored.forEach(function (s) { if (s.score < weakest.score) weakest = s; if (s.score > strongest.score) strongest = s; });
+      var risk = (mod(weakest.b.mod).alert || "").trim();
+      return "<h3>Diagnóstico de un vistazo</h3>" +
+        "<p><strong>Bloque más débil:</strong> " + esc(weakest.b.title) + " (" + esc(CANVAS_STATE_LABEL[weakest.key]) + ").</p>" +
+        "<p><strong>Bloque más fuerte:</strong> " + esc(strongest.b.title) + " (" + esc(CANVAS_STATE_LABEL[strongest.key]) + ").</p>" +
+        "<p><strong>Riesgo principal:</strong> " + (risk ? esc(risk) : "Sin riesgo declarado todavía.") + "</p>";
+    }
+    function canvasThesisHtml() {
+      var name = state.project.name || "Tu negocio";
+      var sells = excerptOf(lastAnswerText("M0", 6), 140);
+      var client = excerptOf(lastAnswerText("M0", 1), 140);
+      var price = findMoney(lastAnswerText("M0", 6)) || findMoney(lastAnswerText("M0", 5));
+      var margin = findMoney(lastAnswerText("M0", 7));
+      var alt = findMoney(lastAnswerText("M0", 4)) || findMoney(lastAnswerText("M0", 5));
+      var missing = [];
+      if (!sells) missing.push("qué vendes hoy");
+      if (!client) missing.push("quién es tu cliente inicial");
+      if (!price) missing.push("tu precio");
+      if (!margin) missing.push("tu margen neto por venta");
+      if (!alt) missing.push("lo que cuesta la alternativa");
+      var parts = [];
+      if (sells && client) parts.push("«" + name + "» vende " + sells + " a " + client);
+      else if (sells) parts.push("«" + name + "» vende " + sells);
+      if (price) parts.push("cobra " + price + " por venta");
+      if (margin) parts.push("y quedan " + margin + " netos por venta");
+      if (alt) parts.push("frente a " + alt + " que cuesta la alternativa");
+      var h = "<h3>Tesis del modelo</h3>";
+      if (!parts.length) {
+        h += "<p>Aún no hay cifras para formular la tesis.</p>" +
+          '<p class="missing">Falta: ' + esc(missing.join(" · ")) + ".</p>" +
+          "<p>Esta tesis sale de tus respuestas, no de una plantilla: si cambian las cifras, cambia la tesis.</p>";
+      } else {
+        h += "<p>" + esc(parts.join(", ")) + ".</p>";
+        if (missing.length) h += '<p class="missing">Falta para sostenerla del todo: ' + esc(missing.join(" · ")) + ".</p>";
+        h += "<p>Esta tesis sale de tus respuestas, no de una plantilla: si cambian las cifras, cambia la tesis.</p>";
+      }
+      return h;
+    }
+    function canvasCompassHtml() {
+      var ind = (state.answers.M13 && state.answers.M13[2]) ? excerptOf(state.answers.M13[2], 200) : "";
+      var base = (state.answers.M14 && state.answers.M14[1]) ? excerptOf(state.answers.M14[1], 200) : "";
+      var rep = (state.task13 && state.task13.report) ? excerptOf(state.task13.report, 200) : "";
+      var h = "<h3>Indicador brújula</h3>";
+      h += "<p><strong>Indicador:</strong> " + (ind ? esc(ind) : "Aún no definido en C13.") + "</p>";
+      h += "<p><strong>Línea base y meta a 90 días:</strong> " + (base ? esc(base) : "Aún no registradas en C14.") + "</p>";
+      h += "<p><strong>Último reporte de ejecución:</strong> " + (rep ? esc(rep) : "Aún sin mediciones registradas.") + "</p>";
+      return h;
+    }
+    /* ---------- Exportar el lienzo ---------- */
+    function canvasPrintPDF() {
+      var c = ensureCanvas();
+      var display = canvasDisplaySnapshot();
+      var html = "<h2>Canvas Maestro — " + esc(state.project.name) + "</h2>" +
+        '<p class="meta">Versión v' + (c.v || 0) + " · " + esc(todayStr()) + " · " + esc(state.project.founder) + " · " + esc(state.project.sector) + "</p>" +
+        '<div class="canvas-grid" style="min-width:0">' + CANVAS_MAP.map(function (b) {
+          var txt = display.blocks[b.key] || "";
+          var st = display.states[b.key] || "vacio";
+          return '<div class="cblock ' + b.cls + '"><h4>' + esc(b.title) + " · " + esc(CANVAS_STATE_LABEL[st]) + "</h4><p>" + (txt ? esc(txt) : "Sin datos todavía.") + "</p></div>";
+        }).join("") + "</div>";
+      var maestro = $("canvasMaestro").innerHTML;
+      if (maestro) html += "<h2>Canvas Maestro · Diagnóstico, tesis y brújula</h2>" + maestro;
+      printDoc({ title: "Canvas Maestro", html: html });
+    }
+    function canvasDisplaySnapshot() {
+      var c = ensureCanvas();
+      var viewing = c.viewing ? canvasVersionByNumber(c.viewing) : null;
+      var pinned = !viewing && c.pinned ? canvasVersionByNumber(c.pinned) : null;
+      var display = viewing || pinned;
+      if (display) return { blocks: display.blocks, states: display.states, version: display };
+      var snap = canvasSnapshot();
+      return { blocks: snap.blocks, states: snap.states, version: null };
+    }
+    function canvasSetPresent(on) {
+      document.body.classList.toggle("presenting", !!on);
+      var t = $("presentTitle");
+      if (t && on) {
+        var c = ensureCanvas();
+        t.textContent = "Canvas Maestro — " + state.project.name + " · v" + (c.v || 0) + " · " + todayStr();
+      }
+    }
+    function pngWrap(ctx, text, maxW) {
+      var words = String(text || "").split(/\s+/).filter(function (w) { return w; });
+      var lines = [], line = "";
+      words.forEach(function (w) {
+        var t = line ? line + " " + w : w;
+        if (line && ctx.measureText(t).width > maxW) { lines.push(line); line = w; }
+        else line = t;
+      });
+      if (line) lines.push(line);
+      return lines;
+    }
+    function canvasExportPNG() {
+      try {
+        var display = canvasDisplaySnapshot();
+        var c = ensureCanvas();
+        var W = 1600, H = 1080;
+        var cv = document.createElement("canvas");
+        cv.width = W; cv.height = H;
+        var ctx = cv.getContext("2d");
+        ctx.fillStyle = "#f6efe0"; ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = "#1e3325"; ctx.font = "bold 34px Georgia, serif";
+        ctx.fillText("Canvas Maestro — " + state.project.name, 50, 62);
+        ctx.font = "16px Georgia, serif"; ctx.fillStyle = "#41493c";
+        ctx.fillText("Analía · Versión v" + (c.v || 0) + " · " + todayStr(), 50, 90);
+        var cols = [
+          { x: 50, w: 290 }, { x: 352.5, w: 290 }, { x: 655, w: 290 }, { x: 957.5, w: 290 }, { x: 1260, w: 290 }
+        ];
+        var boxes = {
+          socios: { x: cols[0].x, y: 115, w: 290, h: 330 },
+          actividades: { x: cols[1].x, y: 115, w: 290, h: 159 },
+          recursos: { x: cols[1].x, y: 286, w: 290, h: 159 },
+          propuesta: { x: cols[2].x, y: 115, w: 290, h: 330 },
+          relaciones: { x: cols[3].x, y: 115, w: 290, h: 159 },
+          canales: { x: cols[3].x, y: 286, w: 290, h: 159 },
+          segmentos: { x: cols[4].x, y: 115, w: 290, h: 330 },
+          costos: { x: 50, y: 457, w: 742.5, h: 190 },
+          ingresos: { x: 807.5, y: 457, w: 742.5, h: 190 }
+        };
+        var stateColor = { validado: "#2e7d46", hipotesis: "#c99a2e", problema: "#a83a20", oportunidad: "#2f6fb2", vacio: "#7c7460" };
+        CANVAS_MAP.forEach(function (b) {
+          var box = boxes[b.key];
+          var st = display.states[b.key] || "vacio";
+          var txt = (display.blocks[b.key] || "").replace(/\s+/g, " ").trim();
+          if (txt.length > 520) txt = txt.slice(0, 517) + "…";
+          ctx.fillStyle = "#fffdf6";
+          ctx.strokeStyle = "#ddd0ab"; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.roundRect(box.x, box.y, box.w, box.h, 10); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = stateColor[st] || "#7c7460";
+          ctx.fillRect(box.x, box.y + 10, 6, box.h - 20);
+          ctx.fillStyle = "#b14e24"; ctx.font = "bold 17px Georgia, serif";
+          ctx.fillText(b.title.toUpperCase(), box.x + 18, box.y + 30);
+          ctx.fillStyle = "#7c7460"; ctx.font = "italic 14px Georgia, serif";
+          ctx.fillText(CANVAS_STATE_LABEL[st], box.x + 18, box.y + 52);
+          ctx.fillStyle = "#41493c"; ctx.font = "15px Georgia, serif";
+          var lines = pngWrap(ctx, txt || "Sin datos todavía.", box.w - 36);
+          var maxLines = box.h > 300 ? 11 : 6;
+          lines.slice(0, maxLines).forEach(function (ln, i) { ctx.fillText(ln, box.x + 18, box.y + 76 + i * 21); });
+        });
+        ctx.fillStyle = "#7c7460"; ctx.font = "14px Georgia, serif";
+        ctx.fillText("Leyenda:  Verde = Validado · Amarillo = Hipótesis · Rojo = Problema · Azul = Oportunidad", 50, 690);
+        ctx.fillText("Generado por Analía el " + todayStr() + " · Proyecto: " + state.project.name + " · " + state.project.founder, 50, 716);
+        cv.toBlob(function (blob) {
+          if (!blob) { toast("No se pudo generar la imagen; usa la descarga en PDF."); return; }
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url; a.download = "Analia-Canvas-v" + (c.v || 0) + ".png";
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+          toast("Imagen del lienzo descargada.");
+        }, "image/png");
+      } catch (e) {
+        toast("No se pudo generar la imagen; usa la descarga en PDF.");
+      }
+    }
+
     /* ---------------- Canvas ---------------- */
     function blockText(b) {
       var parts = [];
@@ -4393,10 +5045,21 @@ var MODULES = [
       });
       return parts.join("\n");
     }
+    /* ---------------- Lienzo vivo v17.9 ----------------
+       - Mientras el Brief (C0) no esté completo: el lienzo queda
+         en gris con el aviso «Se activa al cerrar el Brief» y solo
+         la Propuesta de valor asoma como borrador en amarillo.
+       - Brief cerrado: un solo lienzo en una página con los 9
+         bloques, estados por color, conexiones, notas, versiones y
+         el Canvas Maestro (diagnóstico, tesis, brújula) cuando los
+         9 bloques tienen contenido. */
     function renderCanvas() {
       if (!state) {
+        $("canvasToolbar").hidden = true;
+        $("canvasLockedBanner").hidden = true;
         $("canvasWrap").style.display = "none";
         $("canvasNote").style.display = "none";
+        $("canvasMaestro").innerHTML = "";
         $("canvasEmpty").innerHTML = emptyStateHTML(
           "Modelo de negocio · Sin proyecto todavía",
           "Tu canvas se dibujará aquí",
@@ -4409,16 +5072,161 @@ var MODULES = [
         bindCreateButtons($("canvasEmpty"));
         return;
       }
-      $("canvasWrap").style.display = "";
-      $("canvasNote").style.display = "";
-      $("canvasEmpty").innerHTML = "";
-      var html = "";
+      var c = ensureCanvas();
+      var briefDone = moduleFullyComplete("M0");
+      var empty = $("canvasEmpty"), toolbar = $("canvasToolbar"), banner = $("canvasLockedBanner");
+      var wrap = $("canvasWrap"), grid = $("canvasGrid"), maestro = $("canvasMaestro"), note = $("canvasNote");
+      /* --- Lienzo en gris mientras el Brief no esté completo --- */
+      if (!briefDone) {
+        empty.innerHTML = "";
+        toolbar.hidden = true;
+        maestro.innerHTML = "";
+        note.style.display = "none";
+        banner.hidden = false;
+        banner.innerHTML = "<strong>Se activa al cerrar el Brief.</strong> Completa la Ficha de contexto en la conversación para continuar: el lienzo de 9 bloques se llenará con tus respuestas.";
+        var draft = excerptOf(lastAnswerText("M0", 3) || lastAnswerText("M0", 0), 220);
+        var html = "";
+        CANVAS_MAP.forEach(function (b) {
+          if (b.key === "propuesta") {
+            html += '<div class="cblock ' + b.cls + ' draft"><div class="cb-head"><span class="cb-icon">' + CANVAS_ICONS.propuesta + '</span><h4>' + esc(b.title) + '</h4><span class="draft-tag">Borrador</span></div>' +
+              '<div class="cb-guide">' + esc(CANVAS_GUIDE.propuesta) + "</div>" +
+              (draft ? "<p>" + esc(draft) + "</p>" : '<p class="empty">Aún no hay nada para esbozarla: responde el Brief y yo la esbozo aquí.</p>') + "</div>";
+          } else {
+            html += '<div class="cblock ' + b.cls + ' locked-grey"><div class="cb-head"><span class="cb-icon">' + CANVAS_ICONS[b.key] + '</span><h4>' + esc(b.title) + "</h4></div>" +
+              '<div class="cb-guide">' + esc(CANVAS_GUIDE[b.key]) + "</div>" + '<p class="empty">Se activa al cerrar el Brief.</p></div>';
+          }
+        });
+        grid.innerHTML = html;
+        wrap.style.display = "";
+        return;
+      }
+      /* --- Lienzo vivo --- */
+      canvasEnsureFirstVersion();
+      empty.innerHTML = "";
+      banner.hidden = true;
+      wrap.style.display = "";
+      note.style.display = "";
+      var display = canvasDisplaySnapshot();
+      var viewing = display.version;
+      var label = "Canvas Maestro · v" + (c.v || 0) + " · " + fmtCanvasDate(c.at);
+      if (viewing) label = "Viendo la versión v" + viewing.v + " del " + fmtCanvasDate(viewing.at) + " — solo lectura";
+      else if (c.pinned) label = "Versión actual: v" + c.pinned + " (restaurada de v" + c.pinnedFrom + ")";
+      toolbar.hidden = false;
+      $("canvasVersionLabel").innerHTML = "<strong>" + esc(label) + "</strong>";
+      var sel = $("canvasVersionSel");
+      var opts = '<option value="">Actual · v' + (c.v || 0) + " · " + fmtCanvasDate(c.at) + "</option>";
+      for (var i = c.history.length - 1; i >= 0; i--) {
+        var v = c.history[i];
+        opts += '<option value="' + v.v + '"' + (viewing && viewing.v === v.v ? " selected" : "") + ">v" + v.v + " · " + fmtCanvasDate(v.at) + (v.note ? " · " + esc(v.note) : "") + "</option>";
+      }
+      sel.innerHTML = opts;
+      sel.onchange = function () {
+        c.viewing = sel.value ? parseInt(sel.value, 10) : null;
+        persist();
+        renderCanvas();
+      };
+      $("btnCanvasRestore").hidden = !viewing;
+      $("btnCanvasPresent").onclick = function () { canvasSetPresent(true); };
+      $("btnExitPresent").onclick = function () { canvasSetPresent(false); };
+      $("btnCanvasPDF").onclick = canvasPrintPDF;
+      $("btnCanvasPNG").onclick = canvasExportPNG;
+      $("btnCanvasRestore").onclick = function () { if (viewing) canvasRestoreVersion(viewing.v); };
+      var readOnly = !!viewing;
+      var gridHtml = "";
       CANVAS_MAP.forEach(function (b) {
-        var txt = blockText(b);
-        html += '<div class="cblock ' + b.cls + (txt ? "" : " vacio") + '"><h4>' + esc(b.title) + "</h4>" +
-          (txt ? "<p>" + esc(txt) + "</p>" : '<p class="empty">Vacío — todavía falta construir este bloque en ' + esc(mod(b.mod).name) + '. Ve a ese bloque en la Conversación y yo te hago las preguntas.</p>') + "</div>";
+        var txt = display.blocks[b.key] || "";
+        var stKey = display.states[b.key] || "vacio";
+        var stLabel = CANVAS_STATE_LABEL[stKey];
+        var done = moduleFullyComplete(b.mod);
+        var pending = !!c.pending[b.key];
+        var notesHtml = "";
+        if (!readOnly) {
+          canvasNotesFor(b.key).forEach(function (n) { notesHtml += canvasNoteHtml(n, b.key); });
+        }
+        gridHtml += '<div class="cblock ' + b.cls + " st-" + stKey + (pending ? " pending-review" : "") + '" data-key="' + b.key + '">' +
+          '<div class="cb-head"><span class="cb-icon">' + CANVAS_ICONS[b.key] + '</span><h4>' + esc(b.title) + '</h4><span class="st-tag st-' + stKey + '">' + esc(stLabel) + "</span></div>" +
+          '<div class="cb-guide">' + esc(CANVAS_GUIDE[b.key]) + "</div>" +
+          (txt ? "<p>" + esc(txt) + "</p>" : '<p class="empty">Sin datos todavía. Responde en el chat y yo lo escribo aquí.</p>') +
+          '<div class="cb-foot"><span class="cb-done">' + (done ? "Componente cerrado · " + esc(codeOf(b.mod)) : "Componente abierto · " + esc(codeOf(b.mod))) + "</span>" +
+          (pending ? '<span class="move-tag">Se mueve — revisar</span>' : "") + "</div>" +
+          (readOnly ? "" : '<div class="cb-actions"><button class="btn small" type="button" data-open-mod="' + b.mod + '">Abrir en el chat</button> <button class="btn small ghost" type="button" data-block="' + b.key + '" data-note-add>+ Nota</button>' + (pending ? ' <button class="btn small" type="button" data-block="' + b.key + '" data-note-review>Revisado</button>' : "") + "</div>") +
+          notesHtml + "</div>";
       });
-      $("canvasGrid").innerHTML = html;
+      grid.innerHTML = gridHtml;
+      /* --- Canvas Maestro: diagnóstico, tesis y brújula --- */
+      var allFilled = CANVAS_MAP.every(function (b) { return display.blocks[b.key]; });
+      if (allFilled && !viewing) {
+        maestro.innerHTML = '<div class="maestro"><h2>Canvas Maestro</h2><p class="muted">Los 9 bloques ya tienen contenido. Esto es lo que dice tu modelo, con tus cifras.</p></div>' +
+          '<div class="maestro-cards">' +
+          '<div class="maestro-card">' + canvasDiagnosisHtml(display.states) + "</div>" +
+          '<div class="maestro-card">' + canvasThesisHtml() + "</div>" +
+          '<div class="maestro-card">' + canvasCompassHtml() + "</div></div>";
+      } else {
+        maestro.innerHTML = "";
+      }
+      bindCanvasGrid();
+      if (ui.editNoteId) {
+        var nid = ui.editNoteId;
+        ui.editNoteId = null;
+        startNoteEdit(nid);
+      }
+      if (!window.__canvasEscBound) {
+        window.__canvasEscBound = true;
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape" && document.body.classList.contains("presenting")) canvasSetPresent(false);
+        });
+      }
+    }
+    function bindCanvasGrid() {
+      var grid = $("canvasGrid");
+      if (!grid) return;
+      grid.querySelectorAll("[data-open-mod]").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          ui.module = btn.getAttribute("data-open-mod");
+          ui.awaitingProbe = null; ui.pendingShort = null; hideNudge();
+          showView("chat");
+        });
+      });
+      grid.querySelectorAll("[data-note-add]").forEach(function (btn) {
+        btn.addEventListener("click", function (e) { e.stopPropagation(); canvasAddNote(btn.getAttribute("data-block")); });
+      });
+      grid.querySelectorAll("[data-note-review]").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var c = ensureCanvas();
+          delete c.pending[btn.getAttribute("data-block")];
+          persist(); renderCanvas();
+          toast("Bloque revisado: ya no está marcado como «se mueve».");
+        });
+      });
+      grid.querySelectorAll(".cblock").forEach(function (el) {
+        el.addEventListener("click", function (e) {
+          if (e.target.closest(".cnote") || e.target.closest("button") || e.target.closest("textarea")) return;
+          var key = el.getAttribute("data-key");
+          ui.canvasSelected = ui.canvasSelected === key ? null : key;
+          applyCanvasSelection();
+        });
+      });
+      bindCanvasNotes();
+      if (ui.canvasHighlight) {
+        var key = ui.canvasHighlight;
+        ui.canvasHighlight = null;
+        ui.canvasSelected = key;
+        applyCanvasSelection();
+        var el = grid.querySelector('[data-key="' + key + '"]');
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+      } else if (ui.canvasSelected) applyCanvasSelection();
+    }
+    function applyCanvasSelection() {
+      var sel = ui.canvasSelected;
+      document.querySelectorAll("#canvasGrid .cblock").forEach(function (el) {
+        var key = el.getAttribute("data-key");
+        el.classList.remove("linked", "dim");
+        if (!sel) return;
+        if (key === sel || (CANVAS_CONNECTIONS[sel] || []).indexOf(key) >= 0) el.classList.add("linked");
+        else el.classList.add("dim");
+      });
     }
     </script>
 
