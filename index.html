@@ -172,6 +172,9 @@
       .progress-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
       .save-status { font-size: 11.5px; margin-top: 5px; min-height: 1em; color: var(--ok); }
       .sidebar .save-status { color: #9fc48f; }
+      /* v17.11: aviso cuando otra pestaña guardó una copia más reciente. */
+      .tab-notice { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--warn); background: rgba(201,154,46,.14); border-radius: 11px; font-size: 13px; color: var(--ink); }
+      .tab-notice .btn { margin-top: 8px; margin-right: 6px; }
       nav.main-nav { display: flex; flex-direction: column; gap: 3px; }
       .nav-item {
         display: flex; align-items: center; gap: 10px; width: 100%;
@@ -800,6 +803,7 @@
           <div class="progress-track"><div class="progress-fill" id="pFill" style="width:0%"></div></div>
           <div class="progress-note" id="pNote">0 de 15 componentes completados</div>
           <div class="save-status" id="saveStatus" role="status"></div>
+          <div class="tab-notice" id="tabNotice" style="display:none" role="alert">Otra pestaña guardó cambios más recientes — recarga para verlos. <button class="btn small" id="btnTabReload" type="button">Recargar</button> <button class="btn small" id="btnTabDismiss" type="button">Seguir aquí</button></div>
         </div>
 
         <nav class="main-nav" aria-label="Principal">
@@ -3039,10 +3043,14 @@ var MODULES = [
       if (window.__cloudSave) window.__cloudSave();
       renderSaveStatus();
     }
-    function persistLocalOnly() {
+    /* keepStamp: si es true, NO actualiza savedAt. Se usa al adoptar la
+       copia de la nube en syncOnLogin: esa copia conserva su fecha
+       original, para que en la próxima entrada no parezca más nueva
+       que la nube de la que vino (v17.11). */
+    function persistLocalOnly(keepStamp) {
       if (!state) return;
       try {
-        state.savedAt = new Date().toISOString();
+        if (!keepStamp) state.savedAt = new Date().toISOString();
         ensureStore();
         store.projects[state.id] = state;
         store.activeProjectId = state.id;
@@ -3050,6 +3058,23 @@ var MODULES = [
         storageOK = true;
       } catch (e) { storageOK = false; }
       renderSaveStatus();
+    }
+    /* v17.11: fecha más reciente de guardado de una tienda o de un
+       proyecto (forma tienda {projects:{...}} o proyecto único con
+       savedAt). Las fechas ISO se comparan como texto: la mayor es
+       la más reciente. Devuelve la fecha o null si no hay ninguna. */
+    function newestSavedAt(data) {
+      if (!data) return null;
+      var best = null;
+      function consider(v) { if (typeof v === "string" && v && (!best || v > best)) best = v; }
+      if (data.projects && typeof data.projects === "object") {
+        Object.keys(data.projects).forEach(function (id) {
+          var p = data.projects[id];
+          if (p) consider(p.savedAt);
+        });
+      }
+      consider(data.savedAt);
+      return best;
     }
     function clearPersisted() {
       /* v17: borra solo el proyecto activo de la tienda; los demás quedan. */
@@ -3084,6 +3109,13 @@ var MODULES = [
     function loadPersisted() {
       return readPersisted(lsKey());
     }
+    /* v17.11: el indicador dice la verdad sobre la nube. El estado
+       real lo lleva window.__cloudStatus (definido por el bloque de
+       Firebase): "unknown" (aún no se intentó subir), "pending"
+       (subida en curso o reintentando), "ok" (la nube lo confirmó) o
+       "failed" (se agotaron los reintentos). Nunca dice que todo está
+       guardado si la nube no lo confirmó. En modo demo (o sin sesión)
+       no hay nube: lo honesto es «Guardado en este equipo». */
     function renderSaveStatus() {
       var el = $("saveStatus");
       if (!el) return;
@@ -3094,7 +3126,21 @@ var MODULES = [
       }
       var when = state.savedAt ? new Date(state.savedAt) : null;
       var hora = when ? when.toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" }) : "";
-      el.textContent = "✓ Guardado automáticamente" + (hora ? " · " + hora : "") + ". Puedes cerrar y volver: tu proyecto seguirá aquí.";
+      var enNube = currentUid && currentUid !== "demo";
+      if (!enNube) {
+        el.textContent = "✓ Guardado en este equipo" + (hora ? " · " + hora : "") + ". Solo en este navegador.";
+        return;
+      }
+      var cs = (typeof window.__cloudStatus === "function") ? window.__cloudStatus() : "unknown";
+      if (cs === "ok") {
+        el.textContent = "✓ Guardado en la nube" + (hora ? " · " + hora : "") + ". Puedes cerrar y volver: tu proyecto seguirá aquí.";
+      } else if (cs === "pending") {
+        el.textContent = "Sin subir todavía — reintentando… (guardado en este equipo ✓" + (hora ? " · " + hora : "") + ")";
+      } else if (cs === "failed") {
+        el.textContent = "No se pudo subir a la nube — se reintentará al próximo cambio. (guardado en este equipo ✓" + (hora ? " · " + hora : "") + ")";
+      } else {
+        el.textContent = "✓ Guardado en este equipo" + (hora ? " · " + hora : "") + ".";
+      }
     }
 
     /* ---------------- Métricas ---------------- */
@@ -5723,11 +5769,75 @@ var MODULES = [
       toast("Proyecto creado. Soy Analía: empecemos por el Brief, " + founder.split(" ")[0] + ".");
     });
     (function () { var el = $("welcomeTime"); if (el) el.textContent = "Son " + totalQuestions() + " preguntas: a 1–2 minutos por pregunta, todo el diagnóstico te toma " + totalEstText() + "; cada bloque, entre 5 y 20 minutos. Tú vas a tu ritmo: yo guardo tu borrador y retomas donde quedaste."; })();
-    /* Red de seguridad: guarda también al cerrar u ocultar la pestaña. */
-    window.addEventListener("beforeunload", function () { persist(); });
+    /* Red de seguridad: guarda también al cerrar u ocultar la pestaña.
+       v17.11: además de la copia local (sincrónica), la nube se escribe
+       DE INMEDIATO con __cloudSaveNow, sin esperar el temporizador de
+       900 ms: al cerrar, ese temporizador nunca se ejecuta y los
+       últimos cambios se perdían. Es el mejor intento posible con el
+       SDK en ese momento: si el navegador corta la escritura, la copia
+       local queda y la próxima entrada la sube (regla de la más nueva). */
+    function saveOnHide() {
+      persist();
+      if (window.__cloudSaveNow) window.__cloudSaveNow();
+    }
+    window.addEventListener("beforeunload", saveOnHide);
     document.addEventListener("visibilitychange", function () {
-      if (document.visibilityState === "hidden") persist();
+      if (document.visibilityState === "hidden") saveOnHide();
     });
+    document.addEventListener("pagehide", saveOnHide);
+
+    /* ---------- v17.11: varias pestañas a la vez ----------
+       El evento storage avisa cuando OTRA pestaña guarda este mismo
+       proyecto: si lo que llega es más reciente que lo que tengo en
+       pantalla, se muestra el aviso con botón de recarga en lugar de
+       pisarlo en silencio. Además, cada pestaña deja un latido en
+       localStorage: si hay otra pestaña de Analía abierta, se avisa
+       una vez por sesión para no trabajar en dos a la vez. */
+    var TAB_ID = "tab-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    var TABS_KEY = "analia.tabs";
+    var tabWarningShown = false;
+    function tabHeartbeat() {
+      try {
+        var tabs = {};
+        try { tabs = JSON.parse(window.localStorage.getItem(TABS_KEY) || "{}") || {}; } catch (e) { tabs = {}; }
+        var now = Date.now(), fresh = {};
+        Object.keys(tabs).forEach(function (id) { if (now - tabs[id] < 20000) fresh[id] = tabs[id]; });
+        fresh[TAB_ID] = now;
+        window.localStorage.setItem(TABS_KEY, JSON.stringify(fresh));
+        var others = Object.keys(fresh).filter(function (id) { return id !== TAB_ID; });
+        if (others.length && !tabWarningShown) {
+          tabWarningShown = true;
+          toast("Hay otra pestaña de Analía abierta: trabaja en una sola a la vez para no pisar tus avances.");
+        }
+        if (!others.length) tabWarningShown = false;
+      } catch (e) {}
+    }
+    window.addEventListener("beforeunload", function () {
+      try {
+        var tabs = JSON.parse(window.localStorage.getItem(TABS_KEY) || "{}") || {};
+        delete tabs[TAB_ID];
+        window.localStorage.setItem(TABS_KEY, JSON.stringify(tabs));
+      } catch (e) {}
+    });
+    setInterval(tabHeartbeat, 5000);
+    tabHeartbeat();
+    window.addEventListener("storage", function (e) {
+      if (!e || e.key !== lsKey() || !e.newValue) return;
+      var incoming = null;
+      try { incoming = JSON.parse(e.newValue); } catch (err) { return; }
+      var incNewest = newestSavedAt(incoming);
+      var myNewest = state ? state.savedAt : null;
+      if (incNewest && (!myNewest || incNewest > myNewest)) {
+        var n = $("tabNotice");
+        if (n) n.style.display = "";
+      }
+    });
+    (function () {
+      var btr = $("btnTabReload");
+      if (btr) btr.addEventListener("click", function () { window.location.reload(); });
+      var btd = $("btnTabDismiss");
+      if (btd) btd.addEventListener("click", function () { var n = $("tabNotice"); if (n) n.style.display = "none"; });
+    })();
 
     /* Modo demo (v17): sin cuenta, datos solo en este navegador. Se define
        aquí, fuera del bloque de Firebase, para que funcione aunque la
@@ -5851,20 +5961,62 @@ var MODULES = [
       var isAdmin = false;
       var booted = false;   // la sincronización inicial ya ocurrió
 
-      /* ---------- Sincronización del proyecto con Firestore ---------- */
+      /* ---------- Sincronización del proyecto con Firestore ----------
+         v17.11: el estado real de la nube vive en window.__cloudStatus
+         ("unknown" | "pending" | "ok" | "failed") y se muestra en el
+         indicador de guardado: nunca se dice «guardado» si la nube no
+         lo confirmó. Un fallo ya no se traga en silencio: reintenta 3
+         veces (2 s, 5 s, 15 s) y, si se agotan, queda «failed» hasta el
+         próximo cambio. __cloudSaveNow escribe DE INMEDIATO, sin el
+         temporizador de 900 ms: lo usan el cierre y la entrada, donde
+         esperar es perder. */
       var saveTimer = null;
+      var cloudStatus = "unknown";
+      var cloudRetries = 0;
+      var cloudRetryTimer = null;
+      var CLOUD_RETRY_DELAYS = [2000, 5000, 15000];
+      window.__cloudStatus = function () { return cloudStatus; };
+      function setCloudStatus(s) {
+        cloudStatus = s;
+        if (typeof renderSaveStatus === "function") renderSaveStatus();
+      }
+      function writeCloudNow() {
+        if (!me || !state) return;
+        clearTimeout(saveTimer);
+        setCloudStatus("pending");
+        db.collection("proyectos").doc(me.uid).set({
+          email: me.email,
+          nombreProyecto: state.project ? state.project.name : "",
+          data: JSON.stringify(store || state),
+          actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(function () {
+          cloudRetries = 0;
+          setCloudStatus("ok");
+        }).catch(function () {
+          if (cloudRetries < CLOUD_RETRY_DELAYS.length) {
+            var delay = CLOUD_RETRY_DELAYS[cloudRetries];
+            cloudRetries++;
+            setCloudStatus("pending");
+            clearTimeout(cloudRetryTimer);
+            cloudRetryTimer = setTimeout(function () { writeCloudNow(); }, delay);
+          } else {
+            setCloudStatus("failed");
+          }
+        });
+      }
       window.__cloudSave = function () {
         if (!me || !state) return;
         clearTimeout(saveTimer);
-        saveTimer = setTimeout(function () {
-          if (!me || !state) return;
-          db.collection("proyectos").doc(me.uid).set({
-            email: me.email,
-            nombreProyecto: state.project ? state.project.name : "",
-            data: JSON.stringify(store || state),
-            actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
-          }).catch(function () { /* sin conexión: queda la copia local */ });
-        }, 900);
+        clearTimeout(cloudRetryTimer);
+        cloudRetries = 0;
+        setCloudStatus("pending");
+        saveTimer = setTimeout(function () { writeCloudNow(); }, 900);
+      };
+      window.__cloudSaveNow = function () {
+        if (!me || !state) return;
+        clearTimeout(saveTimer);
+        clearTimeout(cloudRetryTimer);
+        writeCloudNow();
       };
       window.__cloudClear = function () {
         if (!me) return;
@@ -5894,32 +6046,62 @@ var MODULES = [
         return state;
       }
 
-      /* Al entrar: la nube manda. Si la nube está vacía, sube la copia de
-         este navegador (la del usuario o la anterior sin cuenta): así un
-         proyecto local se migra a la cuenta sin perder nada. */
+      /* Al entrar: gana la copia MÁS NUEVA (v17.11). Antes «la nube
+         mandaba» siempre, sin comparar fechas: si se cerraba la
+         pestaña antes de que la nube recibiera lo último, en la
+         siguiente entrada la nube vieja pisaba la copia local más
+         nueva y las respuestas recientes se perdían. Ahora se compara
+         la fecha de guardado (savedAt) de cada lado: si la nube es
+         más nueva se toma la nube; si lo local es más nuevo se
+         conserva lo local Y SE SUBE a la nube de inmediato; si no hay
+         forma de saber cuál es más nueva, se conserva lo local y se
+         avisa, nunca se borra en silencio. Si la nube está vacía, sube
+         la copia de este navegador (la del usuario o la anterior sin
+         cuenta): así un proyecto local se migra a la cuenta sin
+         perder nada. */
       function syncOnLogin(user) {
         currentUid = user.uid;
         var localUser = readPersisted(lsKey());
         var localLegacy = readPersisted(LS_KEY);
         db.collection("proyectos").doc(user.uid).get().then(function (snap) {
-          var cloud = null;
+          var cloudRaw = null;
           if (snap.exists && snap.data() && snap.data().data) {
-            try { cloud = validProject(JSON.parse(snap.data().data)); } catch (e) { cloud = null; }
+            try { cloudRaw = JSON.parse(snap.data().data); } catch (e) { cloudRaw = null; }
           }
-          if (cloud) {
-            state = cloud;
+          var hasLocal = !!(localUser || localLegacy);
+          var cloudNewest = newestSavedAt(cloudRaw);
+          var localNewest = newestSavedAt(localUser || localLegacy);
+          var cloudWins = false, undecided = false;
+          if (cloudRaw && hasLocal) {
+            if (cloudNewest && localNewest) cloudWins = cloudNewest > localNewest;
+            else if (!cloudNewest && !localNewest) undecided = true;
+            else if (cloudNewest && !localNewest) undecided = true;
+            else cloudWins = false; /* solo lo local trae fecha: gana lo local */
+          } else if (cloudRaw && !hasLocal) {
+            cloudWins = true;
+          }
+          if (cloudWins) {
+            var cloud = null;
+            try { cloud = validProject(cloudRaw); } catch (e) { cloud = null; }
+            if (cloud) {
+              state = cloud;
+              persistLocalOnly(true); /* no tocar savedAt: la copia viene de la nube */
+              toast("Tu proyecto se sincronizó desde tu cuenta: " + state.project.name + ".");
+            } else {
+              state = localUser || localLegacy || null;
+              if (state) window.__cloudSaveNow();
+            }
+          } else if (hasLocal) {
+            state = localUser || localLegacy;
+            if (localLegacy && !localUser) {
+              try { window.localStorage.removeItem(LS_KEY); } catch (e) {}
+            }
             persistLocalOnly();
-            toast("Tu proyecto se sincronizó desde tu cuenta: " + state.project.name + ".");
-          } else if (localUser) {
-            state = localUser;
-            window.__cloudSave();
-            toast("Tu proyecto de este navegador se subió a tu cuenta: " + state.project.name + ".");
-          } else if (localLegacy) {
-            state = localLegacy;
-            try { window.localStorage.removeItem(LS_KEY); } catch (e) {}
-            persistLocalOnly();
-            window.__cloudSave();
-            toast("Tu proyecto se migró a tu cuenta: " + state.project.name + ". Desde ahora se sincroniza en la nube.");
+            window.__cloudSaveNow();
+            if (undecided) toast("No pude comparar las fechas de tus dos copias: conservé la de este navegador y la subí a tu cuenta: " + state.project.name + ".");
+            else if (cloudRaw) toast("Tu copia de este navegador es más reciente: se subió a tu cuenta: " + state.project.name + ".");
+            else if (localLegacy && !localUser) toast("Tu proyecto se migró a tu cuenta: " + state.project.name + ". Desde ahora se sincroniza en la nube.");
+            else toast("Tu proyecto de este navegador se subió a tu cuenta: " + state.project.name + ".");
           } else {
             state = null;
           }
