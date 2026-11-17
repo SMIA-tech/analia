@@ -267,6 +267,9 @@
         color: var(--ink); padding: 10px 12px; font: inherit; font-size: 15px;
       }
       .field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+      /* v17.23: casilla de cortesía en el formulario de crear usuario. */
+      .field .check-label { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; cursor: pointer; }
+      .field input[type="checkbox"] { width: auto; padding: 0; margin-top: 2px; flex: none; }
       .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
       .form-row.three { grid-template-columns: repeat(3, 1fr); }
       .route { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 24px 0 4px; }
@@ -1255,6 +1258,9 @@
                 <div class="field">
                   <label for="newUserPass">Clave inicial (mínimo 6 caracteres)</label>
                   <input id="newUserPass" type="text" placeholder="Ej.: clave-temporal-2026" required minlength="6" />
+                </div>
+                <div class="field">
+                  <label class="check-label" for="newUserCourtesy"><input id="newUserCourtesy" type="checkbox" /> <span>Cuenta de cortesía — acceso por 20 días. Sirve para probar Analía en un negocio real; al cumplirse los 20 días, la persona debe activar su acceso por un año.</span></label>
                 </div>
                 <button class="btn primary" type="submit" id="btnCreateUser" style="width:100%">Crear usuario</button>
               </form>
@@ -4012,6 +4018,7 @@ var MODULES = [
     }
     function paymentIsActive() {
       if (demoMode) return true;
+      if (courtesyIsActive()) return true; /* v17.23: la cortesía vigente abre el acceso sin pago */
       var p = state && state.payment;
       if (!p || p.status !== "active" || !p.paidUntil) return false;
       return new Date(p.paidUntil).getTime() > Date.now();
@@ -4024,6 +4031,21 @@ var MODULES = [
       var p = state && state.payment;
       if (!p || !p.paidUntil) return null;
       return Math.ceil((new Date(p.paidUntil).getTime() - Date.now()) / 86400000);
+    }
+    /* ---------- Cuentas de cortesía (v17.23) ----------
+       El administrador crea la cuenta con acceso por 20 días contados
+       desde su creación; mientras la cortesía esté vigente, el pago no
+       se exige. Al vencer, la persona activa su acceso por un año; su
+       trabajo queda intacto. */
+    function courtesyIsActive() {
+      return window.__courtesy === true && !!window.__courtesyUntil && new Date(window.__courtesyUntil).getTime() > Date.now();
+    }
+    function courtesyExpired() {
+      return window.__courtesy === true && !!window.__courtesyUntil && new Date(window.__courtesyUntil).getTime() <= Date.now();
+    }
+    function courtesyDaysLeft() {
+      if (!window.__courtesyUntil) return null;
+      return Math.ceil((new Date(window.__courtesyUntil).getTime() - Date.now()) / 86400000);
     }
     function paymentPlanOf(p) { return (p && p.plan && PAYMENT_PLANS[p.plan]) ? PAYMENT_PLANS[p.plan] : PAYMENT_PLANS.estandar; }
     function fmtMoney(n) { return "$" + Number(n || 0).toLocaleString("es-CO"); }
@@ -4049,6 +4071,11 @@ var MODULES = [
         return '<div class="na-note" style="border-color:var(--ok)"><strong>Tu acceso está activo</strong> hasta el ' + esc(fmtDateISO(p.paidUntil)) + ' (' + esc(paymentPlanOf(p).label) + ' · ' + esc(fmtMoney(p.amount)) + '). Faltan ' + dl + ' días.</div>';
       if (p.status === "active" && dl != null && dl <= 30 && dl >= 0)
         return '<div class="na-note" style="border-color:var(--warn)"><strong>Tu acceso vence pronto:</strong> te quedan ' + dl + ' días, hasta el ' + esc(fmtDateISO(p.paidUntil)) + '. Renuévalo desde la Conversación para no quedarte a mitad del diagnóstico.</div>';
+      /* v17.23: aviso de cortesía. Si ya pagó, manda el aviso del pago (arriba); si reportó un pago, manda ese aviso (abajo). */
+      if (courtesyIsActive())
+        return '<div class="na-note" style="border-color:var(--ok)"><strong>Acceso de cortesía:</strong> te quedan ' + courtesyDaysLeft() + ' días, hasta el ' + esc(fmtDateISO(window.__courtesyUntil)) + '.</div>';
+      if (courtesyExpired() && !paymentIsActive() && p.status !== "reported")
+        return '<div class="na-note" style="border-color:var(--danger)"><strong>Tu acceso de cortesía terminó el ' + esc(fmtDateISO(window.__courtesyUntil)) + '.</strong> Para seguir con tu diagnóstico, activa tu acceso por un año.</div>';
       if (paymentExpired() || (p.status === "active" && dl != null && dl < 0))
         return '<div class="na-note" style="border-color:var(--danger)"><strong>Tu acceso venció el ' + esc(fmtDateISO(p.paidUntil)) + '.</strong> Para seguir con tu diagnóstico, renueva tu acceso por un año con el pago por PSE, Nequi, Daviplata o tarjeta. <button class="btn small primary" data-pay-go type="button">Pagar para seguir</button></div>';
       if (p.status === "reported")
@@ -7550,7 +7577,8 @@ var MODULES = [
 
       /* ---------- Sesión ---------- */
       function lockScreen(msg) {
-        me = null; isAdmin = false; window.__isAdmin = false; currentUid = null; booted = false; demoMode = false;
+        me = null; isAdmin = false; window.__isAdmin = false; window.__courtesy = false; window.__courtesyUntil = null; /* v17.23: al cerrar sesión se borra la cortesía */
+        currentUid = null; booted = false; demoMode = false;
         document.body.classList.add("locked");
         $("accountBox").hidden = true;
         $("navAdmin").style.display = "none";
@@ -7576,6 +7604,8 @@ var MODULES = [
               ref.get().then(function (snap2) {
                 if (snap2.exists) {
                   var d2 = snap2.data() || {};
+                  window.__courtesy = d2.cortesia === true; /* v17.23 */
+                  window.__courtesyUntil = (d2.cortesia === true && d2.cortesiaHasta) ? d2.cortesiaHasta : null;
                   if (d2.activo === false) { auth.signOut(); lockScreen("Tu cuenta está desactivada. Habla con el administrador para reactivarla."); return; }
                   enterAs(user, isAdm || d2.rol === "admin");
                 } else {
@@ -7587,6 +7617,8 @@ var MODULES = [
             return;
           }
           var d = snap.data() || {};
+          window.__courtesy = d.cortesia === true; /* v17.23: la cortesía se lee del documento del usuario */
+          window.__courtesyUntil = (d.cortesia === true && d.cortesiaHasta) ? d.cortesiaHasta : null;
           if (d.activo === false) {
             auth.signOut();
             lockScreen("Tu cuenta está desactivada. Habla con el administrador para reactivarla.");
@@ -7596,6 +7628,7 @@ var MODULES = [
         }).catch(function () {
           // Firestore no respondió: entra con la copia local si es el admin
           // o si ya había entrado antes en este navegador.
+          window.__courtesy = false; window.__courtesyUntil = null; /* v17.23: sin la nube no se puede verificar la cortesía */
           enterAs(user, (user.email || "").toLowerCase() === ADMIN_EMAIL);
           toast("No se pudo verificar tu cuenta en la nube; entraste con la copia local.");
         });
@@ -7721,6 +7754,8 @@ var MODULES = [
         if (!isAdmin) return;
         var email = $("newUserEmail").value.trim().toLowerCase();
         var pass = $("newUserPass").value;
+        var isCourtesy = !!$("newUserCourtesy") && $("newUserCourtesy").checked; /* v17.23 */
+        var courtesyUntil = isCourtesy ? new Date(Date.now() + 20 * 86400000).toISOString() : null; /* 20 días desde la creación */
         var msg = $("createUserMsg");
         var btn = $("btnCreateUser");
         btn.disabled = true; btn.textContent = "Creando…";
@@ -7729,12 +7764,16 @@ var MODULES = [
         // administrador en la instancia principal no se toca.
         secondaryAuth().createUserWithEmailAndPassword(email, pass).then(function (cred) {
           var uid = cred.user.uid;
-          return db.collection("usuarios").doc(uid).set({
+          var docData = {
             email: email, rol: "usuario", activo: true,
             creadoEn: firebase.firestore.FieldValue.serverTimestamp()
-          }).then(function () { return secondaryAuth().signOut(); });
+          };
+          if (isCourtesy) { docData.cortesia = true; docData.cortesiaHasta = courtesyUntil; docData.cortesiaDias = 20; } /* v17.23 */
+          return db.collection("usuarios").doc(uid).set(docData).then(function () { return secondaryAuth().signOut(); });
         }).then(function () {
-          msg.textContent = "✓ Usuario creado: " + email + ". Compártele el correo y la clave inicial; podrá cambiarla al entrar.";
+          msg.textContent = isCourtesy
+            ? "✓ Usuario de cortesía creado: " + email + ". Acceso válido hasta el " + fmtDateISO(courtesyUntil) + " (20 días). Compártele el correo y la clave inicial; podrá cambiarla al entrar."
+            : "✓ Usuario creado: " + email + ". Compártele el correo y la clave inicial; podrá cambiarla al entrar.";
           msg.className = "admin-msg ok";
           $("formCreateUser").reset();
           renderAdminUsers();
@@ -7897,10 +7936,17 @@ var MODULES = [
             var activo = d.activo !== false;
             var fecha = "";
             if (d.creadoEn && d.creadoEn.toDate) fecha = " · Creado el " + d.creadoEn.toDate().toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" });
+            var cort = "";
+            if (d.cortesia === true && d.cortesiaHasta) { /* v17.23 */
+              var ch = new Date(d.cortesiaHasta).getTime();
+              cort = ch > Date.now()
+                ? " · Cortesía · hasta el " + fmtDateISO(d.cortesiaHasta) + " · quedan " + Math.ceil((ch - Date.now()) / 86400000) + " días"
+                : " · Cortesía · vencida el " + fmtDateISO(d.cortesiaHasta);
+            }
             row.innerHTML =
               '<div class="uemail">' + esc(d.email || "(sin correo)") + "</div>" +
               '<div class="umeta">' + (d.rol === "admin" ? "Administrador" : "Usuario") +
-              ' · Estado: <span class="u-status ' + (activo ? "on" : "off") + '">' + (activo ? "Activo" : "Desactivado") + "</span>" +
+              ' · Estado: <span class="u-status ' + (activo ? "on" : "off") + '">' + (activo ? "Activo" : "Desactivado") + "</span>" + cort +
               '<span data-proj> · Proyecto: cargando…</span>' + esc(fecha) + "</div>";
             var acts = document.createElement("div");
             acts.className = "uactions";
