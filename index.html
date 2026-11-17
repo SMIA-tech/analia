@@ -360,7 +360,10 @@
       /* ---------- Panel de objetivos plegable (v17.4) ----------
          Por defecto el panel derecho va oculto: la conversación es la
          protagonista y gana todo ese ancho. El botón «Objetivos» lo
-         muestra u oculta; la preferencia queda en este navegador. */
+         muestra u oculta; la preferencia queda en este navegador.
+         Excepción (v17.10): durante el Brief (M0) el panel va SIEMPRE
+         abierto con la Ficha de contexto, sin depender de la preferencia
+         guardada; el botón dice entonces «Ficha de contexto». */
       /* ---------- Altura del hilo (v17.5) ----------
          La única fila de .chat-grid era «auto»: tomaba su altura del
          contenido, y en v17.4 el panel derecho era lo único alto. Al
@@ -812,10 +815,10 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
             Resultados
           </div>
-          <button class="nav-item sub" data-nav="plan">Plan de negocio</button>
-          <button class="nav-item sub" data-nav="canvas">Modelo de negocio</button>
-          <button class="nav-item sub" data-nav="entregables">Informes <span class="badge" id="delivBadge" style="display:none"></span></button>
-          <button class="nav-item sub" data-nav="admin" id="navAdmin" style="display:none">Administración</button>
+          <button class="nav-item sub" data-nav="plan" title="Plan de negocio"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Plan de negocio</button>
+          <button class="nav-item sub" data-nav="canvas" title="Modelo de negocio"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Modelo de negocio</button>
+          <button class="nav-item sub" data-nav="entregables" title="Informes"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>Informes <span class="badge" id="delivBadge" style="display:none"></span></button>
+          <button class="nav-item sub" data-nav="admin" id="navAdmin" style="display:none" title="Administración"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Administración</button>
         </nav>
 
         <div class="account-box" id="accountBox" hidden>
@@ -2845,6 +2848,12 @@ var MODULES = [
         if (!Array.isArray(state.answers[m.id])) state.answers[m.id] = [];
         while (state.answers[m.id].length < m.questions.length) state.answers[m.id].push("");
       });
+      /* v17.10: el lienzo también se inicializa al cargar el proyecto,
+         para que un proyecto creado antes de v17.9 (sin state.canvas ni
+         state.canvasNotes) no reviente al abrir el lienzo. Nunca borra
+         nada guardado: solo crea lo que falta. */
+      ensureCanvas();
+      if (!state.canvasNotes) state.canvasNotes = {};
     }
     /* ---------- Ayudas v17 del coach (genéricas: valen para quien sea
        que esté usando la herramienta, con sus propias cifras) ---------- */
@@ -3090,7 +3099,7 @@ var MODULES = [
 
     /* ---------------- Métricas ---------------- */
     function answeredCount(id) {
-      if (!state) return 0;
+      if (!state || !state.answers || !state.answers[id]) return 0; // v17.10: proyecto viejo sin este bloque
       return state.answers[id].filter(function (a) { return a && a.trim().length > 0; }).length;
     }
     function moduleComplete(id) { var m = mod(id); return m ? answeredCount(id) === m.questions.length : false; }
@@ -3674,8 +3683,9 @@ var MODULES = [
     function objectiveProgress(m, objIdx) {
       if (objIdx == null) return null;
       var total = 0, done = 0;
+      var arr = (state.answers && state.answers[m.id]) || []; // v17.10: proyecto viejo sin este bloque
       m.questions.forEach(function (q, qi) {
-        if (q.obj === objIdx) { total++; if (state.answers[m.id][qi] && state.answers[m.id][qi].trim()) done++; }
+        if (q.obj === objIdx) { total++; if (arr[qi] && arr[qi].trim()) done++; }
       });
       return { done: done, total: total, pct: total ? Math.round(done / total * 100) : 0 };
     }
@@ -4145,6 +4155,7 @@ var MODULES = [
         $("progressPanel").innerHTML = fh;
         var bvc0 = $("btnViewCanvas");
         if (bvc0) bvc0.addEventListener("click", function () { ui.canvasHighlight = null; showView("canvas"); });
+        syncBriefPanel(); /* v17.10: en M0 la ficha siempre visible */
         return;
       }
       var step = answeredCount(m.id);
@@ -4179,6 +4190,7 @@ var MODULES = [
       $("progressPanel").innerHTML = html;
       var bvc = $("btnViewCanvas");
       if (bvc) bvc.addEventListener("click", function () { ui.canvasHighlight = blk ? blk.key : null; showView("canvas"); });
+      syncBriefPanel(); /* v17.10: fuera de M0 manda la preferencia guardada */
     }
 
     function hideNudge() { $("nudge").classList.remove("show"); $("nudge").innerHTML = ""; }
@@ -4401,12 +4413,36 @@ var MODULES = [
       var b = $("btnObjectives");
       if (b) b.setAttribute("aria-expanded", open ? "true" : "false");
     }
+    /* v17.10: durante el Brief la Ficha de contexto SIEMPRE se ve.
+       En M0 el panel se abre aunque la preferencia guardada diga
+       «closed», y el botón dice «Ficha de contexto» en vez de
+       «Objetivos». La preferencia guardada NO se sobrescribe: solo se
+       ignora mientras dura el Brief; al salir de M0 vuelve a mandar
+       lo que el usuario dejó guardado. También cubre el Brief ya
+       completado que se vuelve a consultar en solo lectura. */
+    function syncBriefPanel() {
+      var b = $("btnObjectives");
+      var inBrief = !!state && ui.module === "M0";
+      if (b) {
+        var label = inBrief ? "Ficha de contexto" : "Objetivos";
+        b.innerHTML = label + ' <span class="chev">▾</span>';
+        b.title = inBrief
+          ? "La Ficha de contexto del Brief siempre se ve mientras estés en C0"
+          : "Mostrar u ocultar los objetivos del componente y la opción de marcar el bloque como no aplica";
+      }
+      if (inBrief) { applyObjPanel(true); return; }
+      var saved = "closed";
+      try { saved = localStorage.getItem(OBJ_KEY) || "closed"; } catch (e) {}
+      applyObjPanel(saved === "open");
+    }
     try {
       var savedObj = localStorage.getItem(OBJ_KEY);
       applyObjPanel(savedObj === "open");
     } catch (e) { applyObjPanel(false); }
+    syncBriefPanel();
     var objBtn = $("btnObjectives");
     if (objBtn) objBtn.addEventListener("click", function () {
+      if (ui.module === "M0") { syncBriefPanel(); return; } /* en el Brief la ficha siempre se ve: no se oculta ni se toca la preferencia guardada */
       var open = $("view-chat").classList.contains("hide-objectives");
       applyObjPanel(open);
       try { localStorage.setItem(OBJ_KEY, open ? "open" : "closed"); } catch (e) {}
@@ -5039,8 +5075,9 @@ var MODULES = [
     /* ---------------- Canvas ---------------- */
     function blockText(b) {
       var parts = [];
+      var arr = (state.answers && state.answers[b.mod]) || []; // v17.10: proyecto viejo sin este bloque
       b.qs.forEach(function (qi) {
-        var a = state.answers[b.mod][qi];
+        var a = arr[qi];
         if (a && a.trim()) parts.push(a.trim());
       });
       return parts.join("\n");
