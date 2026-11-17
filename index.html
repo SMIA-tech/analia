@@ -3438,7 +3438,7 @@ var MODULES = [
       if (!out.canvas.pinnedFrom && cb.pinnedFrom) out.canvas.pinnedFrom = cb.pinnedFrom;
       if (canvasChanged) { changed = true; adoptedFromB = true; }
       /* v17.15 · La investigación externa también se fusiona: la unión
-         de las búsquedas de ambas copias (máximo 2, las más recientes),
+         de las búsquedas de ambas copias (máximo 4, las más recientes),
          para que una búsqueda hecha en otra pestaña o en otro equipo
          no se pierda jamás. */
       var ra = (a.research && Array.isArray(a.research.searches)) ? a.research.searches : [];
@@ -4414,7 +4414,7 @@ var MODULES = [
        nada: sigue el mensaje honesto «Sin datos de mercado
        verificados». */
     var SEARCH_WORKER_URL = "https://analia-busqueda.yeinermendozaarte.workers.dev/search";
-    var RESEARCH_MAX_SEARCHES = 2;
+    var RESEARCH_MAX_SEARCHES = 4;
     function ensureResearch() {
       if (!state) return null;
       if (!state.research || !Array.isArray(state.research.searches)) state.research = { searches: [] };
@@ -4465,12 +4465,12 @@ var MODULES = [
       html += "</ul>";
       if (p != null) html += "<p>Tu precio es $" + p.toLocaleString("es-CO") + ": míralo frente a lo que muestran estas referencias y dime si lo que cobras se sostiene con lo que el mercado ya ofrece.</p>";
       else html += "<p>Todavía no me diste tu precio: cuando me lo des, yo lo pongo frente a estas referencias.</p>";
-      html += '<p class="research-note">Búsqueda ' + done.length + " de 2 en este proyecto · " + esc(new Date(latest.at).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })) + "</p>";
+      html += '<p class="research-note">Búsqueda ' + done.length + " de 4 en este proyecto · " + esc(new Date(latest.at).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })) + "</p>";
       return { h: "Lo que encontré en el mercado", p: "", html: html };
     }
     /* Consulta al intermediario. Se dispara solo desde el botón
        «Investigar». Las búsquedas con resultados cuentan para el
-       límite de 2 por proyecto; un fallo no gasta el cupo y no se
+       límite de 4 por proyecto; un fallo no gasta el cupo y no se
        guarda nada, para que el cliente pueda reintentarlo. */
     function runExternalResearch() {
       if (!state) return;
@@ -4478,7 +4478,7 @@ var MODULES = [
       ensureAnswers();
       var done = researchSearches();
       if (done.length >= RESEARCH_MAX_SEARCHES) {
-        toast("Ya usé tus dos búsquedas en este proyecto: te muestro lo que ya traje en tu sección de mercado.");
+        toast("Ya usé tus cuatro búsquedas en este proyecto: te muestro lo que ya traje en tu sección de mercado.");
         renderChat(); renderSidebar();
         return;
       }
