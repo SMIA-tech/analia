@@ -380,6 +380,36 @@
       #view-chat.hide-objectives .progress-panel { display: none; }
       #view-chat.hide-objectives .chat-col { padding-right: 0; }
       .obj-toggle { margin-left: auto; }
+
+      /* ---------- v17.14 · Lienzo visible junto al chat (solo escritorio) ----------
+         En pantalla ancha (1200 px o más) el bloque del componente actual se
+         ve junto al chat, con su color según evidencia, y al tocarlo se abre
+         el lienzo completo con ese bloque resaltado. En pantalla estrecha
+         (celular) el lienzo lateral no existe: sigue en su pestaña aparte
+         «Modelo de negocio». La vista de lienzo y la ficha no cambian. */
+      #canvasSide { display: none; }
+      #btnCanvasSide { display: none; }
+      @media (min-width: 1200px) {
+        #btnCanvasSide { display: inline-flex; }
+        #view-chat.show-canvas-side .chat-grid { grid-template-columns: 1fr 308px 300px; }
+        #view-chat.show-canvas-side.hide-objectives .chat-grid { grid-template-columns: 1fr 300px; }
+        #view-chat.show-canvas-side #canvasSide { display: block; border-left: 1px solid var(--line); padding: 20px 0 20px 22px; overflow-y: auto; min-width: 0; }
+      }
+      #canvasSide .cs-card { background: var(--cv-card); border: 1px solid var(--cv-line); border-radius: 12px; padding: 14px; }
+      #canvasSide .cs-card.st-validado { border-left: 5px solid var(--cv-validado); }
+      #canvasSide .cs-card.st-hipotesis { border-left: 5px solid var(--cv-hipotesis); }
+      #canvasSide .cs-card.st-problema { border-left: 5px solid var(--cv-problema); }
+      #canvasSide .cs-card.st-oportunidad { border-left: 5px solid var(--cv-oportunidad); }
+      #canvasSide .cs-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      #canvasSide .cs-card h4 { margin: 0; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--cv-ink); }
+      #canvasSide .cs-guide { font-size: 12px; color: var(--cv-muted); font-style: italic; margin: 6px 0 8px; line-height: 1.4; }
+      #canvasSide .cs-text { font-size: 13.5px; color: var(--cv-ink2); white-space: pre-wrap; margin: 0 0 10px; line-height: 1.5; }
+      #canvasSide .cs-text.cs-empty { color: var(--cv-muted); font-style: italic; }
+      #canvasSide .state-tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+      #canvasSide .state-tag.validado { background: var(--cv-validado); color: var(--cv-chip-ink); }
+      #canvasSide .state-tag.hipotesis { background: var(--cv-hipotesis); color: var(--cv-chip-ink); }
+      #canvasSide .state-tag.problema { background: var(--cv-problema); color: var(--cv-chip-ink); }
+      #canvasSide .state-tag.oportunidad { background: var(--cv-oportunidad); color: var(--cv-chip-ink); }
       .obj-toggle .chev { display: inline-block; transition: transform .2s ease; }
       #view-chat.hide-objectives .obj-toggle .chev { transform: rotate(-90deg); }
 
@@ -433,6 +463,7 @@
 
       /* ---------- v17.9 · Lienzo vivo: barra, leyenda, estados ---------- */
       .canvas-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 14px 0 12px; }
+      .pdf-hint { font-size: 12px; color: var(--muted); }
       .canvas-version { font-size: 13px; font-weight: 800; color: var(--ink-2); }
       .canvas-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); align-items: center; }
       .canvas-legend .lg { white-space: nowrap; }
@@ -475,13 +506,14 @@
       /* Notas adhesivas dentro de cada bloque */
       .cnote { position: absolute; width: 158px; border-radius: 9px; padding: 8px 9px 7px; font-size: 12.5px; line-height: 1.4; color: var(--ink); box-shadow: 0 4px 14px rgba(60, 45, 10, .18); cursor: grab; z-index: 3; }
       .cnote:active { cursor: grabbing; }
-      .cnote.note-validado { background: rgba(46, 125, 70, .16); border: 1px solid rgba(46, 125, 70, .45); }
-      .cnote.note-hipotesis { background: rgba(201, 154, 46, .2); border: 1px solid rgba(201, 154, 46, .55); }
-      .cnote.note-problema { background: rgba(168, 58, 32, .12); border: 1px solid rgba(168, 58, 32, .45); }
-      .cnote.note-oportunidad { background: rgba(47, 111, 178, .14); border: 1px solid rgba(47, 111, 178, .5); }
+      .cnote.note-validado { background: #d9f0d4; border: 1px solid #5da85a; color: #256d3a; }
+      .cnote.note-hipotesis { background: #ffefb0; border: 1px solid #d9a400; color: #8a6100; }
+      .cnote.note-problema { background: #ffd9d4; border: 1px solid #d9534a; color: #b3261e; }
+      .cnote.note-oportunidad { background: #d3e7fb; border: 1px solid #4a90d9; color: #2f6fb2; }
       .cnote .cnote-bar { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
-      .cnote .cnote-dots { display: flex; gap: 4px; }
-      .cnote .cnote-dot { width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .25); padding: 0; cursor: pointer; }
+      .cnote .cnote-dots { display: flex; gap: 5px; }
+      .cnote .cnote-dot { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .30); padding: 0; cursor: pointer; }
+      .cnote .cnote-dot.on { outline: 2px solid var(--ink); outline-offset: 1px; transform: scale(1.12); }
       .cnote .cnote-del { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 14px; line-height: 1; cursor: pointer; padding: 0 2px; }
       .cnote .cnote-text { overflow-wrap: break-word; white-space: pre-wrap; }
       .cnote textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--input-bg); color: var(--ink); font: inherit; font-size: 12.5px; padding: 5px 6px; resize: vertical; min-height: 52px; }
@@ -507,14 +539,15 @@
       .present-bar { display: none; align-items: center; gap: 12px; margin-bottom: 14px; font-size: 14px; font-weight: 800; color: var(--ink); }
 
       /* ---------- v17.13 · Lienzo con la paleta del mockup (SOLO el lienzo) ----------
-         El lienzo es una hoja clara como la del mockup, en ambos temas: fondo
-         gris muy claro, tarjetas blancas, títulos azul marino y los cuatro
-         colores de estado suaves con texto oscuro. Todo lo demás de Analía
-         sigue con sus colores propios (crema, verde oscuro, terracota). */
-      #view-canvas {
-        --cv-bg: #f4f5f7;
-        --cv-card: #ffffff;
-        --cv-line: #d8dde4;
+         v17.14: en claro el lienzo ya no es blanco puro: fondo y tarjetas en
+         un tono cálido suave, para que no canse la vista. Los títulos siguen
+         en azul marino y los cuatro colores de estado con texto oscuro.
+         Todo lo demás de Analía sigue con sus colores propios (crema, verde
+         oscuro, terracota). */
+      #view-canvas, #canvasSide {
+        --cv-bg: #f6f1e7;
+        --cv-card: #fdfaf3;
+        --cv-line: #ddd6c4;
         --cv-ink: #1b2a4a;
         --cv-ink2: #3d4c66;
         --cv-muted: #68788f;
@@ -528,6 +561,14 @@
         --cv-hipotesis-soft: rgba(255, 215, 94, .32);
         --cv-problema-soft: rgba(242, 122, 109, .28);
         --cv-oportunidad-soft: rgba(90, 166, 240, .28);
+        --cv-validado-note: #d9f0d4;
+        --cv-hipotesis-note: #ffefb0;
+        --cv-problema-note: #ffd9d4;
+        --cv-oportunidad-note: #d3e7fb;
+        --cv-validado-ink: #256d3a;
+        --cv-hipotesis-ink: #8a6100;
+        --cv-problema-ink: #b3261e;
+        --cv-oportunidad-ink: #2f6fb2;
         background: var(--cv-bg);
         color: var(--cv-ink);
       }
@@ -558,19 +599,19 @@
       #view-canvas .state-tag.hipotesis { background: var(--cv-hipotesis); color: var(--cv-chip-ink); }
       #view-canvas .state-tag.problema { background: var(--cv-problema); color: var(--cv-chip-ink); }
       #view-canvas .state-tag.oportunidad { background: var(--cv-oportunidad); color: var(--cv-chip-ink); }
-      #view-canvas .state-tag.vacio { background: #e7eaee; color: var(--cv-muted); }
+      #view-canvas .state-tag.vacio { background: #ece7d8; color: var(--cv-muted); }
       #view-canvas .cblock.linked { box-shadow: 0 0 0 2px var(--cv-ink); border-color: var(--cv-ink); }
-      #view-canvas .cblock.locked-grey { background: #e7eaee; border-style: dashed; }
+      #view-canvas .cblock.locked-grey { background: #ece7d8; border-style: dashed; }
       #view-canvas .cblock.locked-grey h4 { color: var(--cv-muted); }
       #view-canvas .cblock.draft { background: var(--cv-hipotesis-soft); border-color: var(--cv-hipotesis); }
       #view-canvas .cblock .draft-tag { background: var(--cv-hipotesis); color: var(--cv-chip-ink); }
       #view-canvas .cblock .cb-done { color: #256d3a; }
       #view-canvas .cblock .move-tag { color: var(--cv-chip-ink); background: var(--cv-hipotesis-soft); border: 1px solid var(--cv-hipotesis); }
       #view-canvas .cnote { color: var(--cv-ink); box-shadow: 0 4px 14px rgba(15, 25, 45, .18); }
-      #view-canvas .cnote.note-validado { background: var(--cv-validado-soft); border: 1px solid var(--cv-validado); }
-      #view-canvas .cnote.note-hipotesis { background: var(--cv-hipotesis-soft); border: 1px solid var(--cv-hipotesis); }
-      #view-canvas .cnote.note-problema { background: var(--cv-problema-soft); border: 1px solid var(--cv-problema); }
-      #view-canvas .cnote.note-oportunidad { background: var(--cv-oportunidad-soft); border: 1px solid var(--cv-oportunidad); }
+      #view-canvas .cnote.note-validado { background: var(--cv-validado-note); border: 1px solid #5da85a; color: var(--cv-validado-ink); }
+      #view-canvas .cnote.note-hipotesis { background: var(--cv-hipotesis-note); border: 1px solid #d9a400; color: var(--cv-hipotesis-ink); }
+      #view-canvas .cnote.note-problema { background: var(--cv-problema-note); border: 1px solid #d9534a; color: var(--cv-problema-ink); }
+      #view-canvas .cnote.note-oportunidad { background: var(--cv-oportunidad-note); border: 1px solid #4a90d9; color: var(--cv-oportunidad-ink); }
       #view-canvas .cnote .cnote-del { color: var(--cv-muted); }
       #view-canvas .cnote textarea { background: #ffffff; border-color: var(--cv-line); color: var(--cv-ink); }
       #view-canvas .maestro h2 { color: var(--cv-ink); }
@@ -586,6 +627,34 @@
       #view-canvas .empty-state ul { color: var(--cv-muted); }
       #view-canvas .empty-state .empty-eyebrow { color: var(--cv-ink); }
       #view-canvas .empty-state .empty-hint { color: var(--cv-muted); }
+
+      /* ---------- v17.14 · Lienzo en modo oscuro: sigue el tema oscuro ----------
+         En modo oscuro el lienzo ya no es una hoja clara: fondo azul noche,
+         tarjetas azul marino oscuro y textos claros. Los cuatro colores de
+         estado se mantienen (mismo significado); las pastillas y las notas
+         siguen siendo claras con texto oscuro para que se lean bien. */
+      :root[data-theme="dark"] #view-canvas,
+      :root[data-theme="dark"] #canvasSide {
+        --cv-bg: #141d2e;
+        --cv-card: #1e2c44;
+        --cv-line: #36496b;
+        --cv-ink: #eef2f8;
+        --cv-ink2: #c3cede;
+        --cv-muted: #93a3bb;
+        --cv-validado-soft: rgba(142, 208, 129, .38);
+        --cv-hipotesis-soft: rgba(255, 215, 94, .40);
+        --cv-problema-soft: rgba(242, 122, 109, .36);
+        --cv-oportunidad-soft: rgba(90, 166, 240, .36);
+      }
+      :root[data-theme="dark"] #view-canvas .btn.primary { background: #7fb3f0; color: #101c30; }
+      :root[data-theme="dark"] #view-canvas .locked-banner { background: #2b3c5c; border-color: #c9a227; color: #eef2f8; }
+      :root[data-theme="dark"] #view-canvas .locked-banner strong { color: #ffd75e; }
+      :root[data-theme="dark"] #view-canvas .state-tag.vacio { background: #2b3c5c; color: #93a3bb; }
+      :root[data-theme="dark"] #view-canvas .cblock.locked-grey { background: #243350; }
+      :root[data-theme="dark"] #view-canvas .cblock.locked-grey h4 { color: #93a3bb; }
+      :root[data-theme="dark"] #view-canvas .cblock .cb-done { color: #69b981; }
+      :root[data-theme="dark"] #view-canvas .maestro-card .missing { color: #e8c15a; }
+      :root[data-theme="dark"] #view-canvas .cnote textarea { background: #1e2c44; border-color: #36496b; color: #eef2f8; }
 
       .deliv { display: flex; gap: 14px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 17px; margin-bottom: 11px; }
       .deliv .ic { width: 42px; height: 42px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; flex: none; }
@@ -884,7 +953,7 @@
           <div class="progress-track"><div class="progress-fill" id="pFill" style="width:0%"></div></div>
           <div class="progress-note" id="pNote">0 de 15 componentes completados</div>
           <div class="save-status" id="saveStatus" role="status"></div>
-          <div class="tab-notice" id="tabNotice" style="display:none" role="alert">Otra pestaña guardó cambios más recientes — recarga para verlos. <button class="btn small" id="btnTabReload" type="button">Recargar</button> <button class="btn small" id="btnTabDismiss" type="button">Seguir aquí</button></div>
+          <div class="tab-notice" id="tabNotice" style="display:none" role="alert"><span class="tab-notice-text">Otra pestaña guardó cambios más recientes — recarga para verlos.</span> <button class="btn small primary" id="btnTabReload" type="button">Recargar</button> <button class="btn small" id="btnTabMerge" type="button">Fusionar y seguir aquí</button></div>
         </div>
 
         <nav class="main-nav" aria-label="Principal">
@@ -1026,6 +1095,7 @@
               <h1 style="font-size:23px;margin:0" id="chatTitle">Conversación</h1>
               <span style="color:var(--muted);font-size:13.5px" id="chatSubtitle"></span>
               <button class="btn small obj-toggle" id="btnObjectives" type="button" aria-expanded="false" title="Mostrar u ocultar los objetivos del componente y la opción de marcar el bloque como no aplica">Objetivos <span class="chev">▾</span></button>
+              <button class="btn small" id="btnCanvasSide" type="button" aria-expanded="false" title="Mostrar u ocultar el bloque del lienzo junto al chat">Lienzo <span class="chev">▾</span></button>
             </div>
             <div class="module-select-row"><label for="moduleTabs">Componente</label><select class="module-select" id="moduleTabs" aria-label="Elegir componente"></select></div>
             <div class="chat-search"><input id="chatSearch" type="search" placeholder="Buscar en esta conversación…" aria-label="Buscar en la conversación" /><button class="btn small" id="chatSearchClear" type="button">Limpiar</button></div>
@@ -1059,6 +1129,7 @@
               </div>
             </div>
             <aside class="progress-panel" id="progressPanel"></aside>
+            <aside id="canvasSide" aria-label="Lienzo del componente"></aside>
           </div>
         </section>
 
@@ -1083,11 +1154,13 @@
             <span class="canvas-version" id="canvasVersionLabel"></span>
             <span class="canvas-legend" id="canvasLegend"><span class="lg"><span class="dot dot-validado"></span>Validado</span><span class="lg"><span class="dot dot-hipotesis"></span>Hipótesis</span><span class="lg"><span class="dot dot-problema"></span>Problema</span><span class="lg"><span class="dot dot-oportunidad"></span>Oportunidad</span></span>
             <span class="canvas-actions">
+              <button class="btn small" id="btnBackToChat" type="button">← Volver a la conversación</button>
               <select id="canvasVersionSel" aria-label="Versión del lienzo"></select>
               <button class="btn small" id="btnCanvasRestore" type="button" hidden>Restaurar esta versión</button>
               <button class="btn small" id="btnCanvasPresent" type="button">Presentar</button>
-              <button class="btn small" id="btnCanvasPDF" type="button">Descargar PDF</button>
+              <button class="btn small" id="btnCanvasPDF" type="button">Imprimir / Guardar como PDF</button>
               <button class="btn small" id="btnCanvasPNG" type="button">Descargar imagen</button>
+              <span class="pdf-hint">Se abre la vista de impresión: elige Guardar como PDF.</span>
             </span>
           </div>
           <div class="locked-banner" id="canvasLockedBanner" hidden></div>
@@ -1113,8 +1186,9 @@
           </div>
           <div id="planActions" style="margin-bottom:16px;display:flex;gap:9px;flex-wrap:wrap">
             <button class="btn primary" id="btnPlanDownload">Descargar plan de negocio</button>
-            <button class="btn" id="btnPlanPDF">Descargar PDF</button>
+            <button class="btn" id="btnPlanPDF">Imprimir / Guardar como PDF</button>
             <button class="btn" id="btnDecalogoDownload">Descargar decálogo maestro</button>
+            <span class="pdf-hint">Se abre la vista de impresión: elige Guardar como PDF.</span>
           </div>
           <div class="doc-body" id="planBody"></div>
         </section>
@@ -2944,9 +3018,13 @@ var MODULES = [
        que esté usando la herramienta, con sus propias cifras) ---------- */
     function totalQuestions() { return MODULES.reduce(function (n, m) { return n + m.questions.length; }, 0); }
     function estMinutesFor(m) { return Math.max(3, Math.round(m.questions.length * 1.5)); }
-    /* UNA sola fuente de verdad para la duración total: la suma de lo que
-       toma cada componente. Ninguna vista la calcula por su cuenta. */
-    function totalEstMinutes() { return MODULES.reduce(function (n, m) { return n + estMinutesFor(m); }, 0); }
+    /* UNA sola fuente de verdad para la duración total: el total de
+       preguntas por el ritmo de 1,5 minutos por pregunta que la propia
+       bienvenida declara (115 × 1,5 = 172,5 → 173 minutos = 2 h 53).
+       Ninguna vista la calcula por su cuenta. La suma de los «unos X
+       minutos» por componente redondea cada bloque por separado y daba
+       175 (2 h 55): esa era la segunda cifra que se veía. */
+    function totalEstMinutes() { return Math.round(totalQuestions() * 1.5); }
     function totalEstText() {
       var mins = totalEstMinutes();
       var h = Math.floor(mins / 60), rest = mins % 60;
@@ -3113,6 +3191,15 @@ var MODULES = [
     function lsKey() { return currentUid ? LS_KEY + "." + currentUid : LS_KEY; }
     function persist() {
       if (!state) return;
+      /* v17.14 · Antes de sobrescribir nada, se comprueba que la copia
+         guardada no traiga contenido que esta pestaña no tiene: una
+         pestaña vieja nunca vuelve a pisar un avance más reciente. */
+      var ahead = storedCopyAhead();
+      if (ahead) {
+        markTabStale("la copia guardada tiene " + ahead.missing + " respuesta(s) que esta pestaña no tiene");
+        renderSaveStatus();
+        return;
+      }
       try {
         state.savedAt = new Date().toISOString();
         ensureStore();
@@ -3128,8 +3215,12 @@ var MODULES = [
        copia de la nube en syncOnLogin: esa copia conserva su fecha
        original, para que en la próxima entrada no parezca más nueva
        que la nube de la que vino (v17.11). */
-    function persistLocalOnly(keepStamp) {
+    function persistLocalOnly(keepStamp, force) {
       if (!state) return;
+      /* v17.14 · Una pestaña vieja no re-escribe su copia local salvo que
+         venga de adoptar una fusión (force): re-escribir es lo que
+         destruía el avance más reciente. */
+      if (tabStale && !force) { renderSaveStatus(); return; }
       try {
         if (!keepStamp) state.savedAt = new Date().toISOString();
         ensureStore();
@@ -3139,6 +3230,369 @@ var MODULES = [
         storageOK = true;
       } catch (e) { storageOK = false; }
       renderSaveStatus();
+    }
+
+    /* ---------- v17.14 · Fusión por contenido y pestaña vieja ----------
+       La regla «la más nueva gana» (v17.11) no bastó: savedAt mide cuándo
+       se ESCRIBIÓ la copia, no cuándo se creó su contenido. Una pestaña
+       vieja (abierta cuando el avance iba por C1) re-estampa su copia
+       vieja con la fecha de ahora cada vez que guarda —al ocultar la
+       pestaña, saveOnHide escribía C1 por encima de C12 en localStorage
+       y en la nube— y en la siguiente entrada la nube «más nueva» era
+       C1. Por eso el avance volvió a C1.
+       Ahora la comparación es por CONTENIDO, no por fecha:
+       - mergeProjects/mergeStores fusionan pregunta por pregunta: la
+         unión de las respuestas; para cada pregunta gana la respuesta
+         más reciente (answerMeta.at); un «no lo sé» nunca le gana a un
+         dato real; y sin fechas gana la más larga y con más evidencia.
+         Al entrar, ninguna respuesta que exista en una de las dos copias
+         se pierde jamás.
+       - Una pestaña cuya copia guardada trae contenido que ella no tiene
+         queda marcada como vieja (tabStale): no escribe ni en local ni
+         en la nube hasta que el usuario elija recargar o fusionar. El
+         aviso llega ANTES de cualquier escritura: el evento storage, el
+         latido entre pestañas y la comprobación síncrona dentro de
+         persist() y saveOnHide(). */
+    var tabStale = false;
+    var tabStaleReason = "";
+    var tabStaleToastShown = false;
+    /* Puntuación de contenido de un proyecto: respuestas y respuestas con
+       evidencia. Es lo que decide cuál copia trae más avance, no la fecha. */
+    function projectContentScore(proj) {
+      var answered = 0, evidence = 0;
+      if (!proj || !proj.answers) return { answered: 0, evidence: 0 };
+      MODULES.forEach(function (m) {
+        var arr = proj.answers[m.id] || [];
+        for (var qi = 0; qi < m.questions.length; qi++) {
+          var t = (arr[qi] || "").trim();
+          if (!t) continue;
+          answered++;
+          var q = m.questions[qi];
+          if (!isUncertain(t) && evidenceMissing(t, q).length === 0) evidence++;
+        }
+      });
+      return { answered: answered, evidence: evidence };
+    }
+    /* Cuántas respuestas con dato real tiene `other` que `mine` no tiene
+       (vacías o «no lo sé» en mine). Es la medida de «me falta contenido». */
+    function answersMissingFrom(mine, other) {
+      if (!other || !other.answers) return 0;
+      var n = 0;
+      MODULES.forEach(function (m) {
+        var oa = other.answers[m.id] || [], ma = (mine && mine.answers && mine.answers[m.id]) || [];
+        for (var qi = 0; qi < m.questions.length; qi++) {
+          var o = (oa[qi] || "").trim(), mineA = (ma[qi] || "").trim();
+          if (o && !isUncertain(o) && (!mineA || isUncertain(mineA))) n++;
+        }
+      });
+      return n;
+    }
+    /* Una pregunta, dos respuestas: gana la más reciente (at); un «no lo
+       sé» nunca le gana a un dato real; con fecha en un solo lado gana
+       ese lado (las respuestas nuevas siempre traen fecha); sin fechas
+       gana la más larga y con más evidencia. Devuelve {text, at, side}. */
+    function mergeAnswer(a, b, aAt, bAt, q) {
+      var ta = String(a == null ? "" : a).trim(), tb = String(b == null ? "" : b).trim();
+      if (!ta) return { text: tb, at: bAt || null, side: "b" };
+      if (!tb) return { text: ta, at: aAt || null, side: "a" };
+      if (ta === tb) return { text: ta, at: aAt || bAt || null, side: "a" };
+      var ua = isUncertain(ta), ub = isUncertain(tb);
+      if (ua && !ub) return { text: tb, at: bAt || null, side: "b" };
+      if (ub && !ua) return { text: ta, at: aAt || null, side: "a" };
+      if (aAt && bAt) {
+        if (bAt > aAt) return { text: tb, at: bAt, side: "b" };
+        if (aAt > bAt) return { text: ta, at: aAt, side: "a" };
+      } else if (bAt && !aAt) return { text: tb, at: bAt, side: "b" };
+      else if (aAt && !bAt) return { text: ta, at: aAt, side: "a" };
+      if (tb.length !== ta.length) return tb.length > ta.length ? { text: tb, at: bAt || null, side: "b" } : { text: ta, at: aAt || null, side: "a" };
+      var ea = evidenceMissing(ta, q).length, eb = evidenceMissing(tb, q).length;
+      if (eb !== ea) return eb < ea ? { text: tb, at: bAt || null, side: "b" } : { text: ta, at: aAt || null, side: "a" };
+      return { text: ta, at: aAt || null, side: "a" };
+    }
+    function stepsOf(rec) {
+      if (!rec) return [];
+      if (Array.isArray(rec.steps)) return rec.steps;
+      return rec.probe ? [{ probe: rec.probe, answer: rec.answer || "", kind: "probe", at: rec.at || null }] : [];
+    }
+    function mergeFollowups(fuA, fuB) {
+      var out = {};
+      var mids = {};
+      [fuA, fuB].forEach(function (fu) { if (fu) Object.keys(fu).forEach(function (k) { mids[k] = true; }); });
+      Object.keys(mids).forEach(function (mid) {
+        var qis = {};
+        [fuA && fuA[mid], fuB && fuB[mid]].forEach(function (rec) { if (rec) Object.keys(rec).forEach(function (k) { qis[k] = true; }); });
+        out[mid] = {};
+        Object.keys(qis).forEach(function (qi) {
+          var ra = (fuA && fuA[mid] && fuA[mid][qi]) || null;
+          var rb = (fuB && fuB[mid] && fuB[mid][qi]) || null;
+          var stepsA = stepsOf(ra), stepsB = stepsOf(rb);
+          var n = Math.max(stepsA.length, stepsB.length), steps = [];
+          for (var i = 0; i < n; i++) {
+            var sa = stepsA[i] || null, sb = stepsB[i] || null;
+            if (!sa && sb) { steps.push(sb); continue; }
+            if (!sb && sa) { steps.push(sa); continue; }
+            var r = mergeAnswer(sa.answer || "", sb.answer || "", sa.at || null, sb.at || null, null);
+            steps.push({ probe: sa.probe || sb.probe || "", answer: r.text, kind: sa.kind || sb.kind || "chain", at: r.at || sa.at || sb.at || null });
+          }
+          out[mid][qi] = { steps: steps, chainSkipped: !!((ra && ra.chainSkipped) || (rb && rb.chainSkipped)), probeMode: (ra && ra.probeMode) || (rb && rb.probeMode) || null, probeDone: !!((ra && ra.probeDone) || (rb && rb.probeDone)) };
+        });
+      });
+      return out;
+    }
+    function mergeCanvasNotes(na, nb) {
+      var out = {};
+      var keys = {};
+      [na, nb].forEach(function (n) { if (n) Object.keys(n).forEach(function (k) { keys[k] = true; }); });
+      Object.keys(keys).forEach(function (key) {
+        var byId = {};
+        [na && na[key], nb && nb[key]].forEach(function (arr) {
+          (arr || []).forEach(function (note) {
+            if (!note || !note.id) return;
+            if (!byId[note.id]) byId[note.id] = note;
+            else if (String(note.text || "").length > String(byId[note.id].text || "").length) byId[note.id] = note;
+          });
+        });
+        out[key] = Object.keys(byId).map(function (id) { return byId[id]; });
+      });
+      return out;
+    }
+    function padProjectAnswers(p) {
+      if (!p) return;
+      if (!p.answers) p.answers = {};
+      MODULES.forEach(function (m) {
+        if (!Array.isArray(p.answers[m.id])) p.answers[m.id] = [];
+        while (p.answers[m.id].length < m.questions.length) p.answers[m.id].push("");
+      });
+      if (!p.followups) p.followups = {};
+      if (!p.answerMeta) p.answerMeta = {};
+    }
+    /* Cualquier forma guardada (tienda completa o proyecto único) a forma
+       tienda, en una copia: la fusión nunca muta lo que recibe. */
+    function toStoreShape(data) {
+      if (!data) return { app: "analia", version: 3, activeProjectId: null, projects: {} };
+      var d = JSON.parse(JSON.stringify(data));
+      if (d.projects && typeof d.projects === "object") {
+        if (!d.activeProjectId) { var ids = Object.keys(d.projects); d.activeProjectId = ids.length ? ids[0] : null; }
+        Object.keys(d.projects).forEach(function (id) { padProjectAnswers(d.projects[id]); });
+        return d;
+      }
+      if (d.project && d.answers) {
+        if (!d.id) d.id = "p-primero";
+        padProjectAnswers(d);
+        var wrapped = { app: "analia", version: 3, activeProjectId: d.id, projects: {} };
+        wrapped.projects[d.id] = d;
+        return wrapped;
+      }
+      return { app: "analia", version: 3, activeProjectId: null, projects: {} };
+    }
+    function mergeProjects(a, b) {
+      if (!a) return { proj: JSON.parse(JSON.stringify(b)), changed: true, fromA: 0, fromB: projectContentScore(b).answered, adoptedFromB: true };
+      if (!b) return { proj: JSON.parse(JSON.stringify(a)), changed: false, fromA: projectContentScore(a).answered, fromB: 0, adoptedFromB: false };
+      var out = JSON.parse(JSON.stringify(a));
+      var changed = false, fromA = 0, fromB = 0, adoptedFromB = false;
+      var scoreA = projectContentScore(a), scoreB = projectContentScore(b);
+      if (!out.answerMeta) out.answerMeta = {};
+      MODULES.forEach(function (m) {
+        if (!Array.isArray(out.answers[m.id])) out.answers[m.id] = [];
+        var arrA = a.answers[m.id] || [], arrB = b.answers[m.id] || [];
+        for (var qi = 0; qi < m.questions.length; qi++) {
+          var aT = (arrA[qi] || "").trim(), bT = (arrB[qi] || "").trim();
+          var r = mergeAnswer(arrA[qi] || "", arrB[qi] || "",
+            (a.answerMeta && a.answerMeta[m.id + ":" + qi] && a.answerMeta[m.id + ":" + qi].at) || null,
+            (b.answerMeta && b.answerMeta[m.id + ":" + qi] && b.answerMeta[m.id + ":" + qi].at) || null,
+            m.questions[qi]);
+          var key = m.id + ":" + qi;
+          if (r.text) {
+            if (aT && r.text.trim() === aT) fromA++;
+            else if (bT && r.text.trim() === bT) fromB++;
+          }
+          if (r.text.trim() !== aT) { changed = true; if (r.side === "b") adoptedFromB = true; }
+          out.answers[m.id][qi] = r.text;
+          var at = r.at || (r.side === "b" ? b.savedAt : a.savedAt) || null;
+          if (r.text && at) out.answerMeta[key] = { at: at };
+          else delete out.answerMeta[key];
+        }
+      });
+      var fuMerged = mergeFollowups(a.followups, b.followups);
+      if (JSON.stringify(fuMerged) !== JSON.stringify(a.followups || {})) { changed = true; adoptedFromB = true; }
+      out.followups = fuMerged;
+      var notesMerged = mergeCanvasNotes(a.canvasNotes, b.canvasNotes);
+      if (JSON.stringify(notesMerged) !== JSON.stringify(a.canvasNotes || {})) { changed = true; adoptedFromB = true; }
+      out.canvasNotes = notesMerged;
+      var ca = a.canvas || {}, cb = b.canvas || {};
+      var hist = {};
+      (ca.history || []).concat(cb.history || []).forEach(function (v) { if (v && v.v != null) hist[v.v] = v; });
+      var histArr = Object.keys(hist).map(function (k) { return hist[k]; }).sort(function (x, y) { return x.v - y.v; });
+      if (histArr.length > 25) histArr = histArr.slice(histArr.length - 25);
+      var canvasChanged = JSON.stringify(histArr) !== JSON.stringify(ca.history || []);
+      out.canvas = JSON.parse(JSON.stringify(ca));
+      out.canvas.history = histArr;
+      out.canvas.v = histArr.length ? histArr[histArr.length - 1].v : (ca.v || 0);
+      out.canvas.viewing = null;
+      if (!out.canvas.pinned && cb.pinned) out.canvas.pinned = cb.pinned;
+      if (!out.canvas.pinnedFrom && cb.pinnedFrom) out.canvas.pinnedFrom = cb.pinnedFrom;
+      if (canvasChanged) { changed = true; adoptedFromB = true; }
+      var ta = a.task13 || null, tb = b.task13 || null;
+      if (tb && tb.report && (!ta || !ta.report || (tb.reportedAt || "") > (ta.reportedAt || ""))) { out.task13 = JSON.parse(JSON.stringify(tb)); changed = true; adoptedFromB = true; }
+      else if (tb && tb.text && (!ta || !ta.text)) { out.task13 = JSON.parse(JSON.stringify(tb)); changed = true; adoptedFromB = true; }
+      else if (ta) out.task13 = JSON.parse(JSON.stringify(ta));
+      var na = a.notApplicable || {}, nb = b.notApplicable || {};
+      out.notApplicable = {};
+      Object.keys(na).concat(Object.keys(nb)).forEach(function (k) { out.notApplicable[k] = na[k] || nb[k]; });
+      if (JSON.stringify(out.notApplicable) !== JSON.stringify(na)) { changed = true; adoptedFromB = true; }
+      var cn = {};
+      [a.coachNotes, b.coachNotes].forEach(function (c) {
+        if (!c) return;
+        Object.keys(c).forEach(function (k) {
+          if (!cn[k]) cn[k] = [];
+          (c[k] || []).forEach(function (note) {
+            var dup = cn[k].some(function (x) { return x.at === note.at && x.text === note.text; });
+            if (!dup) cn[k].push(note);
+          });
+        });
+      });
+      if (JSON.stringify(cn) !== JSON.stringify(a.coachNotes || {})) { changed = true; adoptedFromB = true; }
+      out.coachNotes = cn;
+      var il = [];
+      [a.indicatorLog, b.indicatorLog].forEach(function (arr) {
+        (arr || []).forEach(function (it) {
+          if (!il.some(function (x) { return JSON.stringify(x) === JSON.stringify(it); })) il.push(it);
+        });
+      });
+      if (JSON.stringify(il) !== JSON.stringify(a.indicatorLog || [])) { changed = true; adoptedFromB = true; }
+      out.indicatorLog = il;
+      var pa = a.payment || {}, pb = b.payment || {};
+      var pay = null;
+      if (pb.status === "activo" && pa.status !== "activo") pay = pb;
+      else if (pa.status === "activo" && pb.status === "activo" && (pb.paidUntil || "") > (pa.paidUntil || "")) pay = pb;
+      else if ((pb.reportedAt || "") > (pa.reportedAt || "")) pay = pb;
+      else pay = pa;
+      if (pay !== pa) { changed = true; adoptedFromB = true; }
+      out.payment = JSON.parse(JSON.stringify(pay || {}));
+      var ph = [];
+      [a.paymentHistory, b.paymentHistory].forEach(function (arr) {
+        (arr || []).forEach(function (it) {
+          var key2 = (it && (it.transactionId || it.reference || it.reportedAt)) || JSON.stringify(it);
+          if (!ph.some(function (x) { return ((x && (x.transactionId || x.reference || x.reportedAt)) || JSON.stringify(x)) === key2; })) ph.push(it);
+        });
+      });
+      if (JSON.stringify(ph) !== JSON.stringify(a.paymentHistory || [])) { changed = true; adoptedFromB = true; }
+      out.paymentHistory = ph;
+      var fields = ["name", "founder", "sector", "stage"];
+      fields.forEach(function (f) {
+        var va = (a.project && a.project[f]) || "", vb = (b.project && b.project[f]) || "";
+        if (!va && vb) { out.project[f] = vb; changed = true; adoptedFromB = true; }
+        else if (va && vb && va !== vb) {
+          var winner = (scoreB.answered > scoreA.answered || (scoreB.answered === scoreA.answered && scoreB.evidence > scoreA.evidence)) ? "b" : "a";
+          if (winner === "b") { out.project[f] = vb; changed = true; adoptedFromB = true; }
+        }
+      });
+      if (b.archived && !a.archived) { out.archived = true; changed = true; adoptedFromB = true; }
+      out.savedAt = (a.savedAt && b.savedAt) ? (a.savedAt > b.savedAt ? a.savedAt : b.savedAt) : (a.savedAt || b.savedAt || null);
+      return { proj: out, changed: changed, fromA: fromA, fromB: fromB, adoptedFromB: adoptedFromB };
+    }
+    function mergeStores(sa, sb) {
+      var A = toStoreShape(sa), B = toStoreShape(sb);
+      var out = { app: "analia", version: 3, activeProjectId: A.activeProjectId || B.activeProjectId, projects: {} };
+      var changed = false, fromA = 0, fromB = 0, adoptedFromB = false;
+      var ids = {};
+      [A, B].forEach(function (s) { if (s && s.projects) Object.keys(s.projects).forEach(function (id) { ids[id] = true; }); });
+      Object.keys(ids).forEach(function (id) {
+        var pa = A.projects[id], pb = B.projects[id];
+        if (pa && pb) {
+          var m = mergeProjects(pa, pb);
+          out.projects[id] = m.proj;
+          changed = changed || m.changed;
+          fromA += m.fromA; fromB += m.fromB; adoptedFromB = adoptedFromB || m.adoptedFromB;
+        } else if (pa) {
+          out.projects[id] = JSON.parse(JSON.stringify(pa));
+          fromA += projectContentScore(pa).answered;
+        } else {
+          out.projects[id] = JSON.parse(JSON.stringify(pb));
+          fromB += projectContentScore(pb).answered;
+          changed = true; adoptedFromB = true;
+        }
+      });
+      var actA = A.projects[A.activeProjectId], actB = B.projects[B.activeProjectId];
+      var sA = actA ? projectContentScore(actA).answered : -1, sB = actB ? projectContentScore(actB).answered : -1;
+      if (sB > sA && B.activeProjectId && out.projects[B.activeProjectId]) out.activeProjectId = B.activeProjectId;
+      if (!out.projects[out.activeProjectId]) { var rest = Object.keys(out.projects); out.activeProjectId = rest.length ? rest[0] : null; }
+      return { store: out, changed: changed, stats: { fromA: fromA, fromB: fromB, adoptedFromB: adoptedFromB } };
+    }
+    /* ¿La copia guardada en este navegador trae contenido que esta pestaña
+       no tiene? Se compara por CONTENIDO (fusión), no por fecha: si la
+       fusión adopta algo del lado guardado, esta pestaña está vieja. */
+    function storedCopyAhead() {
+      if (!state) return null;
+      var raw = null;
+      try { raw = window.localStorage.getItem(lsKey()); } catch (e) { return null; }
+      if (!raw) return null;
+      var incoming = null;
+      try { incoming = JSON.parse(raw); } catch (e) { return null; }
+      var merged = null;
+      try { merged = mergeStores(toStoreShape(store || state), toStoreShape(incoming)); } catch (e) { return null; }
+      if (merged && merged.stats.adoptedFromB) return { missing: merged.stats.fromB };
+      return null;
+    }
+    function checkTabFresh() { return !storedCopyAhead(); }
+    function markTabStale(reason) {
+      tabStale = true;
+      tabStaleReason = reason || "";
+      var n = $("tabNotice");
+      if (n) {
+        n.style.display = "";
+        var t = n.querySelector(".tab-notice-text");
+        if (t) t.textContent = "Otra pestaña tiene avances más recientes" + (reason ? " (" + reason + ")" : "") + ". Esta pestaña quedó en solo lectura para no pisarlos: recarga para ver lo más reciente, o fusiona lo nuevo y sigue aquí.";
+      }
+      if (!tabStaleToastShown) {
+        tabStaleToastShown = true;
+        toast("Otra pestaña tiene avances más recientes: esta pestaña quedó en solo lectura para no pisarlos.");
+      }
+      renderSaveStatus();
+    }
+    function clearTabStale() {
+      tabStale = false;
+      tabStaleReason = "";
+      tabStaleToastShown = false;
+      var n = $("tabNotice");
+      if (n) n.style.display = "none";
+      renderSaveStatus();
+    }
+    /* Lo que llega de otra pestaña por el evento storage: si trae contenido
+       que aquí no hay, esta pestaña queda vieja ANTES de escribir nada. Si
+       lo que llega es más viejo que lo de aquí, se re-afirma la copia más
+       reciente para que la vieja no quede flotando en la nube. */
+    function handleExternalStoreChange(incoming) {
+      if (!state || !incoming) return;
+      var merged = null;
+      try { merged = mergeStores(toStoreShape(store || state), toStoreShape(incoming)); } catch (e) { return; }
+      if (!merged) return;
+      if (merged.stats.adoptedFromB) {
+        markTabStale("guardó " + (merged.stats.fromB || "algunas") + " respuesta(s) que esta pestaña no tiene");
+        return;
+      }
+      if (merged.stats.fromA > 0 && merged.changed) {
+        persist();
+        if (window.__cloudSaveNow) window.__cloudSaveNow();
+      }
+    }
+    /* «Fusionar y seguir aquí»: adopta en esta pestaña todo lo que la copia
+       guardada trae de más (por contenido, sin perder nada) y sigue. */
+    function mergeStoredIntoTab() {
+      try {
+        var raw = window.localStorage.getItem(lsKey());
+        if (!raw) { clearTabStale(); return; }
+        var incoming = JSON.parse(raw);
+        var merged = mergeStores(toStoreShape(store || state), toStoreShape(incoming));
+        store = merged.store;
+        state = store.projects[store.activeProjectId] || state;
+        ensureAnswers();
+        clearTabStale();
+        persistLocalOnly(false, true);
+        if (window.__cloudSaveNow) window.__cloudSaveNow();
+        renderSidebar(); renderChat();
+        toast("Fusioné lo más reciente en esta pestaña: no se perdió ninguna respuesta.");
+      } catch (e) { window.location.reload(); }
     }
     /* v17.11: fecha más reciente de guardado de una tienda o de un
        proyecto (forma tienda {projects:{...}} o proyecto único con
@@ -3201,6 +3655,10 @@ var MODULES = [
       var el = $("saveStatus");
       if (!el) return;
       if (!state) { el.textContent = ""; return; }
+      if (tabStale) {
+        el.textContent = "Otra pestaña tiene avances más recientes — recarga para verlos. Esta pestaña no guardó nada para no pisarlos.";
+        return;
+      }
       if (!storageOK) {
         el.textContent = "Este navegador no permite el guardado automático: exporta tu proyecto para no perderlo.";
         return;
@@ -3389,7 +3847,8 @@ var MODULES = [
         return '<div class="na-note" style="border-color:var(--danger)"><strong>Tu acceso venció el ' + esc(fmtDateISO(p.paidUntil)) + '.</strong> Para seguir con tu diagnóstico, renueva tu acceso por un año con el pago por PSE, Nequi, Daviplata o tarjeta. <button class="btn small primary" data-pay-go type="button">Pagar para seguir</button></div>';
       if (p.status === "reported")
         return '<div class="na-note"><strong>Yo ya registré tu pago por ' + esc(p.method || "PSE") + '</strong> de ' + esc(fmtMoney(p.amount)) + ' (transacción ' + esc(p.transactionId || "—") + ', ' + esc(fmtDateISO(p.reportedAt)) + '). Quedó <strong>pendiente de verificación</strong>: en cuanto se confirme, se activa tu acceso por un año y seguimos con tu diagnóstico.</div>';
-      return '<div class="na-note"><strong>El primer bloque es gratis.</strong> Para seguir con tu diagnóstico, activa tu acceso por un año: <strong>$96.999</strong> por negocio, o <strong>$77.000</strong> el primer año si eres de los primeros 10 clientes fundadores. Yo te cobro por PSE, Nequi, Daviplata o tarjeta con Wompi: pagas en la página de Wompi y luego registras tu pago aquí mismo. <button class="btn small primary" data-pay-go type="button">Pagar para seguir</button></div>';
+      var adminNote = (window.__isAdmin ? '<br><span style="color:var(--muted)">Solo para ti, como administrador: tú ves todo sin pagar, por diseño. Los clientes pagan después del Brief: el primer componente (C0) es gratis y del C1 en adelante necesitan el acceso de un año. Si un componente se bloquea, puede ser por secuencia (el anterior sin cerrar) y no por pago.</span>' : "");
+      return '<div class="na-note"><strong>El primer bloque es gratis.</strong> Para seguir con tu diagnóstico, activa tu acceso por un año: <strong>$96.999</strong> por negocio, o <strong>$77.000</strong> el primer año si eres de los primeros 10 clientes fundadores. Yo te cobro por PSE, Nequi, Daviplata o tarjeta con Wompi: pagas en la página de Wompi y luego registras tu pago aquí mismo. <button class="btn small primary" data-pay-go type="button">Pagar para seguir</button>' + adminNote + '</div>';
     }
     /* ---------- Widget de Wompi (PSE, Nequi, Daviplata y tarjeta) ---------- */
     function copyText(str, okMsg) {
@@ -3694,6 +4153,7 @@ var MODULES = [
       list.querySelectorAll("[data-proj-del]").forEach(function (b) { b.addEventListener("click", function () {
         var id = b.getAttribute("data-proj-del"); var p = store.projects[id]; if (!p) return;
         if (b.getAttribute("data-confirm") !== "1") { b.setAttribute("data-confirm", "1"); if (!b.getAttribute("data-label")) b.setAttribute("data-label", b.textContent); b.textContent = "¿Seguro?"; return; }
+        if (!checkTabFresh()) { markTabStale("la copia guardada tiene respuestas que esta pestaña no tiene"); toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return; }
         delete store.projects[id];
         if (state && state.id === id) { var rest = Object.keys(store.projects); state = rest.length ? store.projects[rest[0]] : null; store.activeProjectId = state ? state.id : null; }
         persist(); renderSidebar(); showView(state ? "resumen" : "welcome");
@@ -3802,9 +4262,15 @@ var MODULES = [
       var hasNum = /\d/.test(t);
       var hasDate = /\b(20\d\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i.test(t);
       var hasSource = /(seg[uú]n|fuente|registro|factura|plataforma|lista|conteo|med[ií]|encuesta|reseña)/i.test(t);
+      var hasExample = /(por ejemplo|ejemplo|un caso|el caso|cliente|cuando|vez que|la vez|pasada|pasado|ayer|la semana|el mes)/i.test(t);
       var len = t.trim().length;
       if (!miss.length && len >= 120 && (hasNum || hasDate || hasSource)) return { label: "Fuerte", miss: miss };
       if (len >= 60 && (hasNum || miss.length <= 1)) return { label: "Por validar", miss: miss };
+      /* Sin ninguna señal de evidencia (ni cifra, ni fecha, ni fuente, ni
+         ejemplo) el texto no suma nada: una respuesta vaga o de una palabra
+         no puede subir la solidez. Las preguntas de texto (sinNumero) se
+         juzgan por su propio texto y no entran aquí. */
+      if ((!q || !q.sinNumero) && !hasNum && !hasDate && !hasSource && !hasExample && miss.length >= 2) return { label: "Pendiente — sin evidencia todavía", miss: miss };
       return { label: "Débil", miss: miss };
     }
     function objectiveProgress(m, objIdx) {
@@ -3894,14 +4360,45 @@ var MODULES = [
        declaró. Si no hay datos, se dice «sin datos de mercado verificados»
        y queda como pendiente: nunca se inventan cifras ni narrativa
        genérica. Una página estática no consulta datos de mercado en vivo. */
+    /* Todas las cifras de un texto, en orden: la pregunta de precios del
+       Brief (C0 Q5) pide la alternativa Y el precio propio en la misma
+       respuesta, así que hay que distinguirlas por el orden en que se
+       mencionan (primero la alternativa, después el precio propio). */
+    function extractMoneyAll(text) {
+      var out = [], m, re = /\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d{4,})/g;
+      while ((m = re.exec(String(text || ""))) !== null) out.push(parseInt(m[1].replace(/[.,]/g, ""), 10));
+      return out;
+    }
+    /* Busca la fuente declarada de una pregunta: en la respuesta principal
+       o en cualquiera de sus repreguntas. Devuelve el texto que la
+       menciona, o "" si nadie declaró fuente. */
+    function findDeclaredSource(mid, qi) {
+      var texts = [];
+      var main = (state.answers[mid] && state.answers[mid][qi]) || "";
+      if (main) texts.push(main);
+      fuSteps(mid, qi).forEach(function (s) { if (s.answer) texts.push(s.answer); });
+      for (var i = 0; i < texts.length; i++) {
+        if (/(seg[uú]n|fuente|DANE|censo|registro|estimaci[oó]n|c[aá]lculo|conteo|medici[oó]n|encuesta|observaci[oó]n)/i.test(texts[i])) return texts[i];
+      }
+      return "";
+    }
     function marketLines() {
       var p = state.project;
       var a = state.answers.M0 || [];
       var a2 = state.answers.M2 || [];
-      var precio = extractMoney(state.answers.M6 ? (state.answers.M6[1] || "") : "");
-      var altM0 = extractMoney(a[5] || "");
-      var altM2 = extractMoney(a2[6] || "");
-      var alt = altM0 != null ? altM0 : altM2;
+      /* Precio propio: la ÚLTIMA cifra de C0 Q5 (la pregunta pide la
+         alternativa primero y el precio propio después), con respaldo en
+         C0 Q6 y en C6 Q1. Antes se leía solo de C6 y el precio propio
+         ($700.000) terminaba figurando como precio de la alternativa. */
+      var q5nums = extractMoneyAll(lastAnswerText("M0", 5));
+      var precio = q5nums.length ? q5nums[q5nums.length - 1] : extractMoney(lastAnswerText("M0", 6));
+      if (precio == null) precio = extractMoney(state.answers.M6 ? (state.answers.M6[1] || "") : "");
+      /* Alternativa: la cifra de C0 Q4 (solo habla del gasto en
+         alternativas); si Q5 trae dos cifras o más, la primera es la
+         alternativa; con una sola cifra no se adivina: queda pendiente. */
+      var alt = extractMoney(lastAnswerText("M0", 4));
+      if (alt == null && q5nums.length >= 2) alt = q5nums[0];
+      if (alt == null) alt = extractMoney(a2[6] || "");
       var lines = [];
       /* 1. Tu precio frente a la alternativa, solo con tus cifras. */
       if (precio != null && alt != null) {
@@ -3916,9 +4413,10 @@ var MODULES = [
       }
       /* 2. El tamaño de tu mercado, según tus propias cifras y su fuente. */
       var tam = (a2[8] || "").trim();
-      var tamFuente = "";
-      var steps2 = fuSteps("M2", 8);
-      if (steps2.length && steps2[0].answer) tamFuente = steps2[0].answer;
+      /* La fuente puede estar en la propia respuesta o en cualquier
+         repregunta (antes solo se miraba la primera repregunta, que es
+         la de la capacidad y no es la fuente). */
+      var tamFuente = findDeclaredSource("M2", 8);
       if (tam) {
         lines.push({ h: "El tamaño de tu mercado, según tú", p: "Tu cuenta por niveles es: «" + excerptOf(tam, 220) + "»" + (tamFuente ? " Fuente o conteo que tú declaraste: «" + excerptOf(tamFuente, 200) + "»." : " Todavía no me dijiste qué fuente o conteo respalda ese número: queda como pendiente.") });
       } else {
@@ -4176,6 +4674,7 @@ var MODULES = [
       if (br) br.addEventListener("click", function () {
         var redoBlocker = executionBlocker(m.id);
         if (redoBlocker) { toast("Este componente está en solo lectura: para rehacerlo, primero completa en su totalidad " + codeOf(redoBlocker.id) + " · " + redoBlocker.name + "."); return; }
+        if (tabStale) { toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return; }
         if (br.getAttribute("data-confirm") === "1") {
           state.answers[m.id] = m.questions.map(function () { return ""; });
           if (state.followups[m.id]) delete state.followups[m.id];
@@ -4210,17 +4709,20 @@ var MODULES = [
       });
       var taskWait = m.id === "M13" && taskPendingReport();
       var isNA = !!(state.notApplicable && state.notApplicable[m.id]);
-      var execOff = isLocked || isNA || (moduleComplete(m.id) && !pendingStep(m.id) && !taskWait);
+      var execOff = tabStale || isLocked || isNA || (moduleComplete(m.id) && !pendingStep(m.id) && !taskWait);
       $("answerBox").disabled = execOff;
       $("btnSend").disabled = execOff;
-      $("answerBox").placeholder = isLocked
+      $("answerBox").placeholder = tabStale
+        ? "Solo lectura: otra pestaña tiene avances más recientes. Recarga para verlos o fusiona lo nuevo desde el aviso de arriba."
+        : isLocked
         ? "Solo lectura: completa primero " + codeOf(blocker.id) + " · " + blocker.name + " en su totalidad para poder responder aquí."
         : isNA
           ? "Este bloque no aplica para tu negocio: yo lo registré así. Puedes quitar la marca en el panel de la derecha."
         : taskWait
           ? "Reporta el resultado de tu tarea: qué pasó, con números y lo que dijeron las personas. Datos, no opiniones…"
           : "Escribe tu respuesta con calma. Mientras más concreta, mejor el diagnóstico…";
-      document.querySelectorAll("[data-mode]").forEach(function (c) { c.disabled = isLocked; });
+      document.querySelectorAll("[data-mode]").forEach(function (c) { c.disabled = isLocked || tabStale; });
+      renderCanvasSide();
     }
 
     /* ---------- v17.9 · Ficha de contexto del Brief (C0) ----------
@@ -4382,6 +4884,9 @@ var MODULES = [
     }
 
     function commitAnswer(text) {
+      /* v17.14 · Una pestaña vieja no responde: sus respuestas pisarían el
+         avance más reciente. Primero recarga o fusiona lo nuevo. */
+      if (tabStale) { toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return; }
       ui.animateNext = true;
       var m = mod(ui.module);
       var guardBlocker = executionBlocker(m.id);
@@ -4390,6 +4895,7 @@ var MODULES = [
       if (pend) {
         var rec = fuRec(m.id, pend.qi);
         rec.steps[pend.idx].answer = text;
+        rec.steps[pend.idx].at = new Date().toISOString(); /* v17.14: la repregunta también lleva fecha, para fusionar por pregunta */
         pushNextStep(m, pend.qi);
         canvasAfterAnswer(); /* v17.9: la repregunta también puede cambiar el lienzo */
         persist();
@@ -4442,6 +4948,14 @@ var MODULES = [
           toast("Respuestas de C13 completas. Analía te asignó la tarea de cierre en este mismo chat: ejecútala y reporta el resultado para completar el componente.");
         } else {
           toast(m.name + " completado. Informes generados.");
+          /* v17.14 · Lienzo visible: al cerrar un componente se muestra el
+             lienzo completo con el bloque recién cerrado resaltado, con
+             camino claro de vuelta al chat (botón «← Volver a la
+             conversación» en la barra del lienzo). En C13 no: la tarea de
+             cierre debe verse en el chat. */
+          var cbKey = MOD_TO_CANVAS[m.id] || (m.id === "M0" ? "propuesta" : null);
+          ui.canvasHighlight = cbKey;
+          showView("canvas");
         }
       }
     }
@@ -4567,12 +5081,21 @@ var MODULES = [
       applyObjPanel(savedObj === "open");
     } catch (e) { applyObjPanel(false); }
     syncBriefPanel();
+    applyCanvasSide(); /* v17.14: lienzo junto al chat, abierto por defecto en escritorio */
     var objBtn = $("btnObjectives");
     if (objBtn) objBtn.addEventListener("click", function () {
       if (ui.module === "M0") { syncBriefPanel(); return; } /* en el Brief la ficha siempre se ve: no se oculta ni se toca la preferencia guardada */
       var open = $("view-chat").classList.contains("hide-objectives");
       applyObjPanel(open);
       try { localStorage.setItem(OBJ_KEY, open ? "open" : "closed"); } catch (e) {}
+    });
+    /* v17.14: botón Lienzo — muestra u oculta el bloque del lienzo junto
+       al chat (solo en escritorio; en celular el botón no se ve). */
+    var csBtn = $("btnCanvasSide");
+    if (csBtn) csBtn.addEventListener("click", function () {
+      var open = !$("view-chat").classList.contains("show-canvas-side");
+      try { localStorage.setItem(CANVAS_SIDE_KEY, open ? "open" : "closed"); } catch (e) {}
+      applyCanvasSide();
     });
     $("chatSearch").addEventListener("input", function () { ui.searchQuery = $("chatSearch").value; applySearch(ui.searchQuery); });
     $("chatSearchClear").addEventListener("click", function () { $("chatSearch").value = ""; ui.searchQuery = ""; applySearch(""); $("chatSearch").focus(); });
@@ -4589,6 +5112,7 @@ var MODULES = [
       $("editSave").addEventListener("click", function () {
         var val = $("editArea").value.trim();
         if (!val) { toast("La respuesta no puede quedar vacía."); return; }
+        if (tabStale) { toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return; }
         state.answers[mid][qi] = val;
         if (!state.answerMeta) state.answerMeta = {};
         state.answerMeta[mid + ":" + qi] = { at: new Date().toISOString(), edited: true };
@@ -4711,6 +5235,12 @@ var MODULES = [
       });
       document.querySelectorAll("[data-pay-go]").forEach(function (b) {
         b.addEventListener("click", function () {
+          /* «Pagar para seguir» abre Wompi de verdad (antes solo volvía
+             al chat). Abre el link del plan elegido en una pestaña nueva
+             y deja la pantalla de pago abierta aquí, con el formulario
+             para registrar el pago al volver. */
+          var pk = ui.payPlan || "fundador";
+          window.open(pk === "estandar" ? WOMPI_LINK_STANDARD : WOMPI_LINK_FOUNDERS, "_blank", "noopener");
           ui.module = "M0";
           for (var ri = 0; ri < MODULES.length; ri++) {
             if (!moduleFullyComplete(MODULES[ri].id)) { ui.module = MODULES[ri].id; break; }
@@ -4815,9 +5345,78 @@ var MODULES = [
       var sol = solidityOf(txt, q);
       var grade = canvasGrade(b.key);
       if (sol.label === "Débil") return { key: "problema", label: CANVAS_STATE_LABEL.problema, score: 1 };
+      /* Un bloque cuyas respuestas son «no lo sé» nunca puede quedar
+         Validado, aunque la certeza declarada en C1 sea Alta: sin
+         evidencia no hay validación. Queda como Hipótesis por validar. */
+      if (sol.label.indexOf("Pendiente") === 0) return { key: "hipotesis", label: CANVAS_STATE_LABEL.hipotesis, score: 2 };
       if (grade === "Alta") return { key: "validado", label: CANVAS_STATE_LABEL.validado, score: 4 };
       if (sol.label === "Fuerte") return { key: "oportunidad", label: CANVAS_STATE_LABEL.oportunidad, score: 3 };
       return { key: "hipotesis", label: CANVAS_STATE_LABEL.hipotesis, score: 2 };
+    }
+    /* Componente → bloque del lienzo (para el lienzo visible junto al chat). */
+    var MOD_TO_CANVAS = {};
+    CANVAS_MAP.forEach(function (b) { MOD_TO_CANVAS[b.mod] = b.key; });
+
+    /* ---------- v17.14 · Lienzo visible junto al chat (escritorio) ----------
+       En pantalla ancha, al lado del chat, se ve el bloque del componente
+       actual con su color según evidencia; al tocarlo se abre el lienzo
+       completo con ese bloque resaltado. En celular no existe: el lienzo
+       sigue en su pestaña aparte. */
+    var CANVAS_SIDE_KEY = "analia-canvas-side";
+    function applyCanvasSide() {
+      var chat = $("view-chat");
+      if (!chat) return;
+      var saved = null;
+      try { saved = localStorage.getItem(CANVAS_SIDE_KEY); } catch (e) {}
+      var open = saved != null ? saved === "open" : (window.matchMedia && window.matchMedia("(min-width: 1200px)").matches);
+      chat.classList.toggle("show-canvas-side", !!open);
+      var b = $("btnCanvasSide");
+      if (b) b.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    function canvasSideBlock() {
+      if (!state) return "";
+      var m = mod(ui.module);
+      var key = MOD_TO_CANVAS[m.id];
+      var briefDone = moduleFullyComplete("M0");
+      if (!key) {
+        if (m.id === "M0") key = "propuesta";
+        else {
+          var counts = { validado: 0, hipotesis: 0, problema: 0, oportunidad: 0, vacio: 0 };
+          CANVAS_MAP.forEach(function (b) { var st = blockCanvasState(b).key; if (counts[st] == null) counts[st] = 0; counts[st]++; });
+          var parts = [];
+          if (counts.validado) parts.push(counts.validado + " validados");
+          if (counts.hipotesis) parts.push(counts.hipotesis + " hipótesis");
+          if (counts.problema) parts.push(counts.problema + " problemas");
+          if (counts.oportunidad) parts.push(counts.oportunidad + " oportunidades");
+          if (counts.vacio) parts.push(counts.vacio + " sin datos");
+          return '<div class="cs-card"><h4>Tu lienzo</h4><p class="cs-text">' + (parts.length ? esc(parts.join(" · ")) : "Tu lienzo se arma con tus respuestas.") + '</p><button class="btn small primary" type="button" data-cs-open>Ver el lienzo</button></div>';
+        }
+      }
+      var b = null;
+      CANVAS_MAP.forEach(function (bb) { if (bb.key === key) b = bb; });
+      if (!b) return "";
+      if (!briefDone && key !== "propuesta") {
+        return '<div class="cs-card"><h4>' + esc(b.title) + '</h4><p class="cs-text cs-empty">Se activa al cerrar el Brief.</p><button class="btn small primary" type="button" data-cs-open>Ver el lienzo</button></div>';
+      }
+      if (!briefDone && key === "propuesta") {
+        var draft = (state.answers.M0 && (state.answers.M0[3] || state.answers.M0[0])) || "";
+        return '<div class="cs-card st-hipotesis"><div class="cs-title-row"><h4>' + esc(b.title) + '</h4><span class="state-tag hipotesis">Borrador</span></div><p class="cs-guide">' + esc(CANVAS_GUIDE[b.key] || "") + '</p><p class="cs-text">' + (draft ? esc(excerptOf(draft, 160)) : "Aún sin texto: se arma con el problema de tu Brief.") + '</p><button class="btn small primary" type="button" data-cs-open="' + esc(key) + '">Abrir en el lienzo</button></div>';
+      }
+      var st = blockCanvasState(b);
+      var txt = blockText(b);
+      return '<div class="cs-card st-' + esc(st.key) + '"><div class="cs-title-row"><h4>' + esc(b.title) + '</h4><span class="state-tag ' + esc(st.key) + '">' + esc(st.label) + '</span></div><p class="cs-guide">' + esc(CANVAS_GUIDE[b.key] || "") + '</p><p class="cs-text">' + (txt ? esc(excerptOf(txt, 160)) : "Aún sin contenido en este bloque.") + '</p><button class="btn small primary" type="button" data-cs-open="' + esc(key) + '">Abrir en el lienzo</button></div>';
+    }
+    function renderCanvasSide() {
+      var side = $("canvasSide");
+      if (!side) return;
+      side.innerHTML = state ? canvasSideBlock() : "";
+      side.querySelectorAll("[data-cs-open]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var k = btn.getAttribute("data-cs-open");
+          ui.canvasHighlight = k || null;
+          showView("canvas");
+        });
+      });
     }
     function ensureCanvas() {
       if (!state) return null;
@@ -4932,7 +5531,7 @@ var MODULES = [
     }
     function canvasNoteHtml(n, key) {
       var dots = ["validado", "hipotesis", "problema", "oportunidad"].map(function (col) {
-        return '<button class="cnote-dot dot-' + col + '" type="button" data-note-color="' + col + '" title="' + CANVAS_STATE_LABEL[col] + '"></button>';
+        return '<button class="cnote-dot dot-' + col + (col === n.color ? ' on' : '') + '" type="button" data-note-color="' + col + '" title="' + CANVAS_STATE_LABEL[col] + '"></button>';
       }).join("");
       return '<div class="cnote note-' + n.color + '" data-note="' + n.id + '" data-block="' + key + '" style="left:' + (n.x || 12) + "px;top:" + (n.y || 66) + 'px">' +
         '<div class="cnote-bar"><span class="cnote-dots">' + dots + '</span><button class="cnote-del" type="button" data-note-del title="Quitar nota">×</button></div>' +
@@ -5315,6 +5914,7 @@ var MODULES = [
       };
       $("btnCanvasRestore").hidden = !viewing;
       $("btnCanvasPresent").onclick = function () { canvasSetPresent(true); };
+      $("btnBackToChat").onclick = function () { showView("chat"); };
       $("btnExitPresent").onclick = function () { canvasSetPresent(false); };
       $("btnCanvasPDF").onclick = canvasPrintPDF;
       $("btnCanvasPNG").onclick = canvasExportPNG;
@@ -5468,7 +6068,14 @@ var MODULES = [
       var gaps = [];
       m.questions.forEach(function (q, qi) {
         var combined = combinedAnswer(m.id, qi);
-        if (isUncertain(lastAnswerText(m.id, qi))) {
+        var mainAns = (state.answers[m.id] && state.answers[m.id][qi]) || "";
+        /* Sin dato solo si la respuesta principal Y la última repregunta
+           son «no lo sé»: si la principal trae el dato, una repregunta
+           con «no lo sé» no lo borra; y si la principal era «no lo sé»
+           pero una repregunta trajo el dato, tampoco falta. Antes se
+           miraba solo la última respuesta y preguntas ya respondidas
+           (C0 Q6 y Q7) quedaban marcadas como pendientes. */
+        if (isUncertain(mainAns) && isUncertain(lastAnswerText(m.id, qi))) {
           /* Un «no lo sé» honesto es una alerta abierta: el dato no existe
              todavía, aunque la pregunta esté respondida. */
           gaps.push("<li><strong>Pregunta " + (qi + 1) + " (" + esc(q.entrega || "") + "):</strong> todavía no tienes el dato — lo dejaste como pendiente. Sin esa cifra no se puede validar nada de este punto.</li>");
@@ -5627,7 +6234,7 @@ var MODULES = [
         "<div><h3>" + esc(doc.title) + "</h3><p>" + esc(desc) + '</p><span class="status ' + (ready ? "ready" : "pend") + '">' + statusText + "</span></div>" +
         '<div class="acts">' +
         (ready
-          ? '<button class="btn small" data-preview="' + esc(doc.key) + '">Ver</button><button class="btn small primary" data-download="' + esc(doc.key) + '">Descargar</button><button class="btn small" data-print="' + esc(doc.key) + '">Descargar PDF</button>'
+          ? '<button class="btn small" data-preview="' + esc(doc.key) + '">Ver</button><button class="btn small primary" data-download="' + esc(doc.key) + '">Descargar</button><button class="btn small" data-print="' + esc(doc.key) + '">Imprimir / Guardar como PDF</button>'
           : '<button class="btn small" disabled>Completa el componente primero</button>') +
         "</div></div>";
     }
@@ -5882,8 +6489,18 @@ var MODULES = [
        SDK en ese momento: si el navegador corta la escritura, la copia
        local queda y la próxima entrada la sube (regla de la más nueva). */
     function saveOnHide() {
+      /* v17.14 · ESTE era el camino de la reversión: al ocultar la
+         pestaña, una pestaña vieja (C1) re-estampaba su copia con la
+         fecha de ahora y la subía por encima de C12. Ahora se comprueba
+         primero si la copia guardada trae contenido que esta pestaña
+         no tiene: si es así, no se escribe NADA, ni en local ni en la
+         nube. El avance más reciente sobrevive en ambos lados. */
+      if (state && storedCopyAhead()) {
+        markTabStale("la copia guardada tiene respuestas que esta pestaña no tiene");
+        return;
+      }
       persist();
-      if (window.__cloudSaveNow) window.__cloudSaveNow();
+      if (window.__cloudSaveNow) window.__cloudSaveNow(true);
     }
     window.addEventListener("beforeunload", saveOnHide);
     document.addEventListener("visibilitychange", function () {
@@ -5906,8 +6523,13 @@ var MODULES = [
         var tabs = {};
         try { tabs = JSON.parse(window.localStorage.getItem(TABS_KEY) || "{}") || {}; } catch (e) { tabs = {}; }
         var now = Date.now(), fresh = {};
-        Object.keys(tabs).forEach(function (id) { if (now - tabs[id] < 20000) fresh[id] = tabs[id]; });
-        fresh[TAB_ID] = now;
+        Object.keys(tabs).forEach(function (id) {
+          var t = tabs[id];
+          var at = (t && typeof t === "object" && t.at) ? t.at : t;
+          if (now - at < 20000) fresh[id] = tabs[id];
+        });
+        var mine = state ? projectContentScore(state) : { answered: 0, evidence: 0 };
+        fresh[TAB_ID] = { at: now, answered: mine.answered, evidence: mine.evidence };
         window.localStorage.setItem(TABS_KEY, JSON.stringify(fresh));
         var others = Object.keys(fresh).filter(function (id) { return id !== TAB_ID; });
         if (others.length && !tabWarningShown) {
@@ -5915,6 +6537,21 @@ var MODULES = [
           toast("Hay otra pestaña de Analía abierta: trabaja en una sola a la vez para no pisar tus avances.");
         }
         if (!others.length) tabWarningShown = false;
+        /* v17.14 · El latido también lleva contenido: si otra pestaña
+           reporta más respuestas que esta, esta pestaña está vieja y se
+           marca en solo lectura ANTES de escribir nada (respaldo por si
+           el evento storage no llegó). */
+        if (!tabStale) {
+          for (var i = 0; i < others.length; i++) {
+            var o = fresh[others[i]];
+            var oAns = (o && typeof o === "object" && typeof o.answered === "number") ? o.answered : 0;
+            if (oAns > mine.answered) {
+              markTabStale("otra pestaña tiene " + oAns + " respuestas y esta tiene " + mine.answered);
+              renderChat();
+              break;
+            }
+          }
+        }
       } catch (e) {}
     }
     window.addEventListener("beforeunload", function () {
@@ -5930,18 +6567,21 @@ var MODULES = [
       if (!e || e.key !== lsKey() || !e.newValue) return;
       var incoming = null;
       try { incoming = JSON.parse(e.newValue); } catch (err) { return; }
-      var incNewest = newestSavedAt(incoming);
-      var myNewest = state ? state.savedAt : null;
-      if (incNewest && (!myNewest || incNewest > myNewest)) {
-        var n = $("tabNotice");
-        if (n) n.style.display = "";
-      }
+      /* v17.14 · El aviso entre pestañas llega ANTES de cualquier escritura:
+         en cuanto otra pestaña guarda, esta compara por CONTENIDO (no por
+         fecha): si lo que llega trae respuestas que aquí no hay, la pestaña
+         queda en solo lectura y no escribe nada hasta que el usuario elija.
+         Si lo que llega es más viejo que lo de aquí, se re-afirma la copia
+         más reciente para que la vieja no quede flotando en la nube. */
+      var wasStale = tabStale;
+      handleExternalStoreChange(incoming);
+      if (tabStale && !wasStale) renderChat();
     });
     (function () {
       var btr = $("btnTabReload");
       if (btr) btr.addEventListener("click", function () { window.location.reload(); });
-      var btd = $("btnTabDismiss");
-      if (btd) btd.addEventListener("click", function () { var n = $("tabNotice"); if (n) n.style.display = "none"; });
+      var btm = $("btnTabMerge");
+      if (btm) btm.addEventListener("click", function () { mergeStoredIntoTab(); });
     })();
 
     /* Modo demo (v17): sin cuenta, datos solo en este navegador. Se define
@@ -6085,10 +6725,14 @@ var MODULES = [
         cloudStatus = s;
         if (typeof renderSaveStatus === "function") renderSaveStatus();
       }
-      function writeCloudNow() {
-        if (!me || !state) return;
-        clearTimeout(saveTimer);
-        setCloudStatus("pending");
+      /* v17.14 · Antes de escribir en la nube se lee lo que hay: si otra
+         pestaña u otro equipo subió respuestas que aquí no hay, se
+         fusionan primero (por contenido, nunca se pierde una respuesta)
+         y se escribe la fusión. Al cerrar (closing=true) se escribe
+         directo: la comprobación local de saveOnHide ya impidió que una
+         pestaña vieja llegue hasta aquí. Una pestaña marcada como vieja
+         no escribe nunca. */
+      function doCloudWrite() {
         db.collection("proyectos").doc(me.uid).set({
           email: me.email,
           nombreProyecto: state.project ? state.project.name : "",
@@ -6109,6 +6753,31 @@ var MODULES = [
           }
         });
       }
+      function writeCloudNow(closing) {
+        if (!me || !state) return;
+        if (tabStale) return; /* una pestaña vieja no escribe en la nube */
+        clearTimeout(saveTimer);
+        setCloudStatus("pending");
+        if (closing) { doCloudWrite(); return; }
+        db.collection("proyectos").doc(me.uid).get().then(function (snap) {
+          var cloudRaw = null;
+          if (snap.exists && snap.data() && snap.data().data) {
+            try { cloudRaw = JSON.parse(snap.data().data); } catch (e) { cloudRaw = null; }
+          }
+          if (cloudRaw) {
+            try {
+              var merged = mergeStores(toStoreShape(JSON.parse(JSON.stringify(store || state))), toStoreShape(cloudRaw));
+              if (merged.changed) {
+                store = merged.store;
+                state = store.projects[store.activeProjectId] || state;
+                ensureAnswers();
+                persistLocalOnly(false, true);
+              }
+            } catch (e) {}
+          }
+          doCloudWrite();
+        }).catch(function () { doCloudWrite(); });
+      }
       window.__cloudSave = function () {
         if (!me || !state) return;
         clearTimeout(saveTimer);
@@ -6117,11 +6786,11 @@ var MODULES = [
         setCloudStatus("pending");
         saveTimer = setTimeout(function () { writeCloudNow(); }, 900);
       };
-      window.__cloudSaveNow = function () {
+      window.__cloudSaveNow = function (closing) {
         if (!me || !state) return;
         clearTimeout(saveTimer);
         clearTimeout(cloudRetryTimer);
-        writeCloudNow();
+        writeCloudNow(closing);
       };
       window.__cloudClear = function () {
         if (!me) return;
@@ -6151,19 +6820,17 @@ var MODULES = [
         return state;
       }
 
-      /* Al entrar: gana la copia MÁS NUEVA (v17.11). Antes «la nube
-         mandaba» siempre, sin comparar fechas: si se cerraba la
-         pestaña antes de que la nube recibiera lo último, en la
-         siguiente entrada la nube vieja pisaba la copia local más
-         nueva y las respuestas recientes se perdían. Ahora se compara
-         la fecha de guardado (savedAt) de cada lado: si la nube es
-         más nueva se toma la nube; si lo local es más nuevo se
-         conserva lo local Y SE SUBE a la nube de inmediato; si no hay
-         forma de saber cuál es más nueva, se conserva lo local y se
-         avisa, nunca se borra en silencio. Si la nube está vacía, sube
-         la copia de este navegador (la del usuario o la anterior sin
-         cuenta): así un proyecto local se migra a la cuenta sin
-         perder nada. */
+      /* Al entrar: FUSIÓN por contenido (v17.14). La regla «la más nueva
+         gana» (v17.11) comparaba solo fechas y una pestaña vieja que
+         re-estampaba su copia C1 con la fecha de ahora ganaba y borraba
+         C12. Ahora la copia local y la de la nube se fusionan pregunta
+         por pregunta (mergeStores): la unión de las respuestas, y para
+         cada pregunta gana la más reciente; un «no lo sé» nunca le gana
+         a un dato real. Ninguna respuesta que exista en una de las dos
+         copias se pierde jamás, y la fusión se sube a la nube de
+         inmediato. Si la nube está vacía, sube la copia de este
+         navegador (la del usuario o la anterior sin cuenta): así un
+         proyecto local se migra a la cuenta sin perder nada. */
       function syncOnLogin(user) {
         currentUid = user.uid;
         var localUser = readPersisted(lsKey());
@@ -6174,23 +6841,45 @@ var MODULES = [
             try { cloudRaw = JSON.parse(snap.data().data); } catch (e) { cloudRaw = null; }
           }
           var hasLocal = !!(localUser || localLegacy);
-          var cloudNewest = newestSavedAt(cloudRaw);
-          var localNewest = newestSavedAt(localUser || localLegacy);
-          var cloudWins = false, undecided = false;
           if (cloudRaw && hasLocal) {
-            if (cloudNewest && localNewest) cloudWins = cloudNewest > localNewest;
-            else if (!cloudNewest && !localNewest) undecided = true;
-            else if (cloudNewest && !localNewest) undecided = true;
-            else cloudWins = false; /* solo lo local trae fecha: gana lo local */
-          } else if (cloudRaw && !hasLocal) {
-            cloudWins = true;
-          }
-          if (cloudWins) {
+            /* v17.14 · Fusión por contenido: si la nube trae C1 con fecha
+               más nueva y lo local trae C12, el resultado es C12 (y se
+               sube). Ninguna respuesta que exista en una de las dos copias
+               se pierde jamás. */
+            var merged = null;
+            try {
+              /* readPersisted devuelve el proyecto activo, no la tienda
+                 completa: se reconstruye la tienda local con todos los
+                 proyectos que haya en este navegador. */
+              var localStoreShape = null;
+              try {
+                var rawLocal = window.localStorage.getItem(lsKey());
+                if (rawLocal) localStoreShape = toStoreShape(JSON.parse(rawLocal));
+              } catch (e2) {}
+              if (!localStoreShape) localStoreShape = toStoreShape(localUser || localLegacy);
+              merged = mergeStores(localStoreShape, toStoreShape(cloudRaw));
+            } catch (e) { merged = null; }
+            if (merged) {
+              store = merged.store;
+              state = store.projects[store.activeProjectId] || null;
+              ensureAnswers();
+              persistLocalOnly(true, true);
+              window.__cloudSaveNow();
+              if (state) {
+                if (merged.stats.adoptedFromB && merged.stats.fromA > 0) toast("Se fusionaron tus copias de este navegador y de la nube: no se perdió ninguna respuesta (" + merged.stats.fromB + " venían de la nube y " + merged.stats.fromA + " de este navegador).");
+                else if (merged.stats.adoptedFromB) toast("Tu proyecto se sincronizó desde tu cuenta: " + state.project.name + ".");
+                else toast("Tu copia de este navegador es más reciente: se subió a tu cuenta: " + state.project.name + ".");
+              }
+            } else {
+              state = localUser || localLegacy || null;
+              if (state) window.__cloudSaveNow();
+            }
+          } else if (cloudRaw) {
             var cloud = null;
             try { cloud = validProject(cloudRaw); } catch (e) { cloud = null; }
             if (cloud) {
               state = cloud;
-              persistLocalOnly(true); /* no tocar savedAt: la copia viene de la nube */
+              persistLocalOnly(true, true); /* no tocar savedAt: la copia viene de la nube */
               toast("Tu proyecto se sincronizó desde tu cuenta: " + state.project.name + ".");
             } else {
               state = localUser || localLegacy || null;
@@ -6201,11 +6890,9 @@ var MODULES = [
             if (localLegacy && !localUser) {
               try { window.localStorage.removeItem(LS_KEY); } catch (e) {}
             }
-            persistLocalOnly();
+            persistLocalOnly(false, true);
             window.__cloudSaveNow();
-            if (undecided) toast("No pude comparar las fechas de tus dos copias: conservé la de este navegador y la subí a tu cuenta: " + state.project.name + ".");
-            else if (cloudRaw) toast("Tu copia de este navegador es más reciente: se subió a tu cuenta: " + state.project.name + ".");
-            else if (localLegacy && !localUser) toast("Tu proyecto se migró a tu cuenta: " + state.project.name + ". Desde ahora se sincroniza en la nube.");
+            if (localLegacy && !localUser) toast("Tu proyecto se migró a tu cuenta: " + state.project.name + ". Desde ahora se sincroniza en la nube.");
             else toast("Tu proyecto de este navegador se subió a tu cuenta: " + state.project.name + ".");
           } else {
             state = null;
