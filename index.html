@@ -254,7 +254,7 @@
       .avatar-outfit-btns button { font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; cursor: pointer; }
       .avatar-outfit-btns button:hover { border-color: var(--accent); }
       .avatar-outfit-btns button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-      .chat-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid var(--line); flex: none; }
+      .chat-avatar { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid var(--line); flex: none; }
       .analia-card p { margin: 0; color: var(--ink-2); }
       .analia-card p + p { margin-top: 8px; }
       .form-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
@@ -1135,7 +1135,8 @@
           </div>
           <div class="chat-top" id="chatTop">
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-              <img class="chat-avatar" id="chatAvatarImg" src="assets/analia-verde.webp" alt="Analía" width="40" height="40">
+              <video class="chat-avatar" id="chatAvatarVideo" autoplay muted loop playsinline poster="assets/analia-verde.webp" aria-label="Analía" width="64" height="64"><source src="assets/analia-verde.mp4" type="video/mp4"></video>
+              <img class="chat-avatar" id="chatAvatarImg" src="assets/analia-verde.webp" alt="Analía" width="64" height="64" hidden>
               <h1 style="font-size:23px;margin:0" id="chatTitle">Conversación</h1>
               <span style="color:var(--muted);font-size:13.5px" id="chatSubtitle"></span>
               <button class="btn small obj-toggle" id="btnObjectives" type="button" aria-expanded="false" title="Mostrar u ocultar los objetivos del componente y la opción de marcar el bloque como no aplica">Objetivos <span class="chev">▾</span></button>
@@ -5888,18 +5889,28 @@ var MODULES = [
        completo con ese bloque resaltado. En celular no existe: el lienzo
        sigue en su pestaña aparte. */
     var CANVAS_SIDE_KEY = "analia-canvas-side";
+    /* v17.21 · En el Brief (C0) el lienzo aún no existe: el panel lateral
+       y su botón se esconden sin tocar la preferencia guardada, y vuelven
+       solos desde C1 en adelante. */
     function applyCanvasSide() {
       var chat = $("view-chat");
       if (!chat) return;
+      var b = $("btnCanvasSide");
+      if (ui.module === "M0") {
+        chat.classList.remove("show-canvas-side");
+        if (b) { b.style.display = "none"; b.setAttribute("aria-expanded", "false"); }
+        return;
+      }
+      if (b) b.style.display = "";
       var saved = null;
       try { saved = localStorage.getItem(CANVAS_SIDE_KEY); } catch (e) {}
       var open = saved != null ? saved === "open" : (window.matchMedia && window.matchMedia("(min-width: 1200px)").matches);
       chat.classList.toggle("show-canvas-side", !!open);
-      var b = $("btnCanvasSide");
       if (b) b.setAttribute("aria-expanded", open ? "true" : "false");
     }
     function canvasSideBlock() {
       if (!state) return "";
+      if (ui.module === "M0") return ""; /* v17.21: en el Brief no hay bloque de lienzo al lado del chat */
       var m = mod(ui.module);
       var key = MOD_TO_CANVAS[m.id];
       var briefDone = moduleFullyComplete("M0");
@@ -5935,6 +5946,7 @@ var MODULES = [
       var side = $("canvasSide");
       if (!side) return;
       side.innerHTML = state ? canvasSideBlock() : "";
+      applyCanvasSide(); /* v17.21: re-evalúa en cada cambio de componente (en C0 se esconde) */
       side.querySelectorAll("[data-cs-open]").forEach(function (btn) {
         btn.addEventListener("click", function () {
           var k = btn.getAttribute("data-cs-open");
@@ -7018,6 +7030,12 @@ var MODULES = [
       if (v) v.hidden = true;
       if (s) s.hidden = false;
     }
+    /* v17.21 · Si el video del encabezado falla, queda la foto fija. */
+    function showChatAvatarStill() {
+      var cv = $("chatAvatarVideo"), ca = $("chatAvatarImg");
+      if (cv) cv.hidden = true;
+      if (ca) ca.hidden = false;
+    }
     function applyAvatarOutfit(outfit) {
       if (!AVATAR_OUTFITS[outfit]) outfit = "verde";
       try { window.localStorage.setItem(AVATAR_KEY, outfit); } catch (e) {}
@@ -7036,6 +7054,23 @@ var MODULES = [
         } catch (e) { showAvatarStill(); }
       }
       if (s) s.src = avatarStillSrc(outfit);
+      /* v17.21 · El avatar del encabezado es el video, más grande (64 px),
+         con la foto fija como respaldo si el video no carga. */
+      var cv = $("chatAvatarVideo");
+      if (cv) {
+        cv.poster = avatarStillSrc(outfit);
+        var csrc = cv.querySelector("source");
+        if (csrc) csrc.src = avatarVideoSrc(outfit);
+        else cv.src = avatarVideoSrc(outfit);
+        cv.hidden = false;
+        var ca0 = $("chatAvatarImg");
+        if (ca0) ca0.hidden = true;
+        try {
+          cv.load();
+          var cp = cv.play();
+          if (cp && cp.catch) cp.catch(function () { showChatAvatarStill(); });
+        } catch (e) { showChatAvatarStill(); }
+      }
       var ca = $("chatAvatarImg");
       if (ca) ca.src = avatarStillSrc(outfit);
       document.querySelectorAll("[data-outfit]").forEach(function (b) {
@@ -7051,6 +7086,12 @@ var MODULES = [
         v.addEventListener("error", showAvatarStill);
         var src = v.querySelector("source");
         if (src) src.addEventListener("error", showAvatarStill);
+      }
+      var cv = $("chatAvatarVideo");
+      if (cv) {
+        cv.addEventListener("error", showChatAvatarStill);
+        var csrc = cv.querySelector("source");
+        if (csrc) csrc.addEventListener("error", showChatAvatarStill);
       }
     })();
     applyAvatarOutfit(avatarOutfit());
