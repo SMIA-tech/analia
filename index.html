@@ -1297,6 +1297,15 @@
               <p class="admin-msg" id="adminListMsg" role="status"></p>
             </div>
             <div class="admin-card">
+              <h2>Importar / Restaurar proyecto</h2>
+              <p>Restaura un proyecto desde su archivo de respaldo (.json) en esta cuenta. Es la misma restauración segura de la barra lateral: si la pestaña está vieja o la sincronización no terminó, se niega antes de tocar nada; si el proyecto ya existe, se fusiona pregunta por pregunta sin perder respuestas.</p>
+              <div class="field">
+                <label for="fileImportAdmin">Archivo de respaldo del proyecto</label>
+                <input type="file" id="fileImportAdmin" accept=".json,application/json" />
+              </div>
+              <p class="admin-msg" id="adminRestoreMsg" role="status"></p>
+            </div>
+            <div class="admin-card">
               <h2>Cobros con Wompi</h2>
               <p>El cliente paga con el link de pago de Wompi (se abre en una pestaña nueva) con PSE, Nequi, Daviplata o tarjeta, y luego registra su pago en Analía. Nunca hay pago directo a un número personal: todo pasa por Wompi y queda registrado en Analía.</p>
               <p style="font-size:13.5px"><strong>Medios que ve el cliente:</strong> los que tengas habilitados en tu cuenta de Wompi. Puedes prenderlos o apagarlos ahí, sin tocar el código.</p>
@@ -6515,8 +6524,73 @@
     ];
     function coachLead(idx) { return COACH_LEADS[idx % COACH_LEADS.length]; }
     function blockLabel(b) { return String(b || "").replace(/^Objetivo \d+ · /, ""); }
+    /* ¿La respuesta trae evidencia concreta (cifra de dinero con su
+       ancla, fecha de calendario o nombre propio)? v17.27 (WS3) ·
+       Una respuesta larga con evidencia es un dato real aunque
+       contenga un «no sé» en medio: la duda no borra la cifra. La
+       fecha aquí es de calendario (día + mes, fecha con barras o
+       año), no una palabra relativa como «mañana»: «No sé todavía,
+       mañana te digo» sigue siendo duda. */
+    function hasConcreteEvidence(text) {
+      var s = String(text || "");
+      if (moneySpans(s).length > 0) return true;
+      if (/\b\d{1,2}\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/i.test(s)) return true;
+      if (/\b\d{1,2}\s*\/\s*\d{1,2}\s*\/\s*\d{2,4}\b/.test(s)) return true;
+      if (/\b(19|20)\d{2}\b/.test(s)) return true;
+      if (/\s[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}/.test(s)) return true;
+      return false;
+    }
+    /* v17.27 (WS3) · La duda solo cuenta cuando ES la respuesta: la
+       frase entera («No lo sé todavía») o el arranque de una
+       respuesta corta sin evidencia («No sé cuánto…», «No tengo
+       claro…»). Antes, un subtexto `no s[eé]` marcaba como dudosa
+       cualquier prosa ordinaria («no se vende», «no se puede») y la
+       fusión la trataba como si no existiera: un dato real perdía
+       contra cualquier texto corto del otro lado, y el conteo de
+       evidencia y las claves del latido la ignoraban. El «no se» de
+       la prosa («no se vende», «no se puede», «no se sabe») no es
+       duda: tras «no (lo) sé» solo vale un cierre, una pausa o una
+       continuación de duda (si, cuánto, cuándo, cómo, dónde, qué…);
+       un verbo detrás («vende», «puede») es prosa, no duda. */
     function isUncertain(text) {
-      return /(no (lo )?s[eé]|no tengo (idea|claro)|todav[ií]a no (lo )?s[eé]|pendiente|no aplica|no estoy segur[oa]|no lo tengo claro)/i.test(String(text || ""));
+      var s = String(text || "").replace(/\s+/g, " ").trim();
+      if (!s) return false;
+      var low = s.toLowerCase();
+      if (s.length > 60 && hasConcreteEvidence(s)) return false;
+      var bare = low.replace(/[.\u2026,!?;:)\]]+$/g, "").trim();
+      if (/^(no (lo )?s[eé]( todav[ií]a)?|todav[ií]a no (lo )?s[eé]|a[uú]n no (lo )?s[eé]|no tengo (idea|claro)|no estoy segur[oa]|no lo tengo claro|no aplica|pendiente|no s[eé] nada|ni idea)$/.test(bare)) return true;
+      /* Arranque de duda: solo para las frases sin ambigüedad con la
+         prosa («no tengo claro», «no estoy seguro»…); el «no (lo) sé»
+         exige además que lo que sigue sea un cierre, una pausa o una
+         continuación de duda, nunca un verbo de prosa. */
+      var leadOther = low.match(/^(no tengo (idea|claro)|no estoy segur[oa]|no lo tengo claro)[,;:.!?]?\s*/);
+      if (leadOther) {
+        var restOther = low.slice(leadOther[0].length).trim();
+        if (!restOther) return true;
+        if (s.length < 80 && !hasConcreteEvidence(s)) return true;
+        return false;
+      }
+      var leadSe = low.match(/^no (lo )?s[eé]( todav[ií]a)?/);
+      if (leadSe) {
+        var after = low.slice(leadSe[0].length);
+        if (!after.trim()) return true;
+        /* Tras «no (lo) sé» solo vale pausa, cierre o continuación
+           de duda; cualquier otra palabra («vende», «puede», «sabe»)
+           es prosa ordinaria y la respuesta es un dato. */
+        if (!/^[,;:.!?]/.test(after) && !/^\s+(si|cu[aá]nto|cu[aá]ndo|c[oó]mo|d[oó]nde|qu[eé]|por qu[eé]|todav[ií]a|a[uú]n|exactamente|bien|la verdad|creo)\b/.test(after)) return false;
+        var restSe = after.replace(/^[,.!?:;\s]+/, "").trim();
+        if (!restSe) return true;
+        if (s.length < 80 && !hasConcreteEvidence(s)) return true;
+        return false;
+      }
+      var leadTodavia = low.match(/^(todav[ií]a no (lo )?s[eé]|a[uú]n no (lo )?s[eé])[,;:.!?]?\s*/);
+      if (leadTodavia) {
+        var restTod = low.slice(leadTodavia[0].length).trim();
+        if (!restTod) return true;
+        if (s.length < 80 && !hasConcreteEvidence(s)) return true;
+        return false;
+      }
+      return false;
     }
     function extractMoney(text) {
       /* v17.26 (WS1) · Una cifra solo es dinero si trae su ancla ($,
@@ -7084,8 +7158,28 @@
        Firebase) sincroniza además el proyecto en Firestore. */
     var currentUid = null;
     function lsKey() { return currentUid ? LS_KEY + "." + currentUid : LS_KEY; }
+    /* v17.27 (WS2) · El aviso de «no se guardó» se muestra una sola vez
+       por episodio de pestaña vieja: persist() se llama en cada cambio y
+       un aviso repetido en cada respuesta taparía el trabajo. */
+    var persistFailToastShown = false;
     function persist() {
-      if (!state) return;
+      if (!state) {
+        /* v17.27 (WS2) · Sin proyecto activo (se borró el último) la
+           tienda IGUAL se guarda: sobre todo sus lápidas — si no, el
+           borrado no queda en este navegador y el proyecto resucita al
+           recargar. Solo se escribe si la tienda trae algo (proyectos o
+           lápidas): una tienda vacía al arrancar no borra nada. */
+        try {
+          ensureStore();
+          if (Object.keys(store.projects || {}).length || Object.keys(store.deleted || {}).length) {
+            window.localStorage.setItem(lsKey(), JSON.stringify(store));
+            storageOK = true;
+            renderSaveStatus();
+            return true;
+          }
+        } catch (e) { storageOK = false; }
+        return false;
+      }
       /* v17.14 · Antes de sobrescribir nada, se comprueba que la copia
          guardada no traiga contenido que esta pestaña no tiene: una
          pestaña vieja nunca vuelve a pisar un avance más reciente. */
@@ -7096,8 +7190,13 @@
       if (!ahead && tabStale) clearTabStale();
       if (ahead) {
         markTabStale("la copia guardada tiene " + ahead.missing + " respuesta(s) que esta pestaña no tiene");
+        /* v17.27 (WS2) · Un guardado que no se hace NUNCA es silencioso:
+           la pestaña vieja lo dice en voz alta y persist() devuelve false,
+           para que quien lo llamó (archivar, restaurar, fusionar) pueda
+           deshacer el cambio en pantalla en vez de afirmar lo que no pasó. */
+        if (!persistFailToastShown) { persistFailToastShown = true; toast("No se guardó: otra copia tiene avances más recientes."); }
         renderSaveStatus();
-        return;
+        return false;
       }
       try {
         state.savedAt = new Date().toISOString();
@@ -7109,6 +7208,7 @@
       } catch (e) { storageOK = false; }
       if (window.__cloudSave) window.__cloudSave();
       renderSaveStatus();
+      return true;
     }
     /* keepStamp: si es true, NO actualiza savedAt. Se usa al adoptar la
        copia de la nube en syncOnLogin: esa copia conserva su fecha
@@ -7197,11 +7297,25 @@
       });
       return n;
     }
+    /* v17.27 (WS3) · ¿Esta pregunta alimenta una regla de duplicado
+       «full» (hoy solo M0:7 → M6:1, que se cubre con dos cifras de
+       dinero)? La fusión nunca debe romper esa cobertura por una
+       fecha más reciente: la respuesta que trae las cifras manda. */
+    function dupFullSourceKey(key) {
+      if (!key || typeof DUPLICATE_PARTS === "undefined") return false;
+      var keys = Object.keys(DUPLICATE_PARTS || {});
+      for (var i = 0; i < keys.length; i++) {
+        var d = DUPLICATE_PARTS[keys[i]];
+        if (!d || !d.fullIfTwoFigures) continue;
+        for (var j = 0; j < d.from.length; j++) if (d.from[j][0] + ":" + d.from[j][1] === key) return true;
+      }
+      return false;
+    }
     /* Una pregunta, dos respuestas: gana la más reciente (at); un «no lo
        sé» nunca le gana a un dato real; con fecha en un solo lado gana
        ese lado (las respuestas nuevas siempre traen fecha); sin fechas
        gana la más larga y con más evidencia. Devuelve {text, at, side}. */
-    function mergeAnswer(a, b, aAt, bAt, q, stg) {
+    function mergeAnswer(a, b, aAt, bAt, q, stg, key) {
       var ta = String(a == null ? "" : a).trim(), tb = String(b == null ? "" : b).trim();
       if (!ta) return { text: tb, at: bAt || null, side: "b" };
       if (!tb) return { text: ta, at: aAt || null, side: "a" };
@@ -7209,6 +7323,16 @@
       var ua = isUncertain(ta), ub = isUncertain(tb);
       if (ua && !ub) return { text: tb, at: bAt || null, side: "b" };
       if (ub && !ua) return { text: ta, at: aAt || null, side: "a" };
+      /* v17.27 (WS3) · Cobertura de duplicado: si un lado trae las dos
+         cifras que cubren la pregunta duplicada y el otro no, manda el
+         que cubre, sin mirar la fecha. La fecha solo desempata entre
+         dos respuestas que cubren igual: una respuesta más reciente y
+         más pobre nunca rompe la cobertura que la otra ya daba. */
+      if (dupFullSourceKey(key)) {
+        var covA = !ua && moneySpans(ta).length >= 2, covB = !ub && moneySpans(tb).length >= 2;
+        if (covA && !covB) return { text: ta, at: aAt || null, side: "a" };
+        if (covB && !covA) return { text: tb, at: bAt || null, side: "b" };
+      }
       if (aAt && bAt) {
         if (bAt > aAt) return { text: tb, at: bAt, side: "b" };
         if (aAt > bAt) return { text: ta, at: aAt, side: "a" };
@@ -7233,7 +7357,10 @@
       var keys = Object.keys(v).sort();
       return "{" + keys.map(function (k) { return JSON.stringify(k) + ":" + stableStringify(v[k]); }).join(",") + "}";
     }
-    function mergeFollowups(fuA, fuB) {
+    /* mergedAnswers (opcional) es la copia fusionada de respuestas
+       principales: una repregunta pendiente no sobrevive si su
+       pregunta ya tiene una respuesta real ahí (v17.27 WS3). */
+    function mergeFollowups(fuA, fuB, mergedAnswers) {
       var out = {};
       var mids = {};
       [fuA, fuB].forEach(function (fu) { if (fu) Object.keys(fu).forEach(function (k) { mids[k] = true; }); });
@@ -7248,7 +7375,19 @@
           /* v17.25 · Los pasos se emparejan por su PREGUNTA (probe),
              no por su índice: dos copias con cadenas distintas en el
              mismo índice no se pisan; la unión conserva ambas y la
-             fusión repetida da lo mismo (convergente). */
+             fusión repetida da lo mismo (convergente).
+             v17.27 (WS3) · Si el texto no coincide, se empareja por
+             pregunta + clase: una repregunta regenerada cambia su
+             texto pero sigue siendo la misma pregunta de seguimiento.
+             El empareje por clase solo vale cuando un lado trae el
+             paso respondido y el otro pendiente — dos pasos
+             respondidos distintos son dos preguntas distintas y se
+             conservan los dos — y solo entre pasos de la misma clase
+             (cadena con cadena, repregunta con repregunta) y del
+             mismo modo (Retar con Retar, Investigar con Investigar)
+             cuando el modo está declarado. */
+          var modeA = (ra && ra.probeMode) || null, modeB = (rb && rb.probeMode) || null;
+          var sameMode = !modeA || !modeB || modeA === modeB;
           var steps = [], usedB = {};
           stepsA.forEach(function (sa) {
             var bi = -1;
@@ -7256,16 +7395,36 @@
               if (usedB[j]) continue;
               if (String((stepsB[j] && stepsB[j].probe) || "") === String(sa.probe || "")) { bi = j; break; }
             }
+            if (bi < 0 && sameMode) {
+              for (var k = 0; k < stepsB.length; k++) {
+                if (usedB[k]) continue;
+                var sbk = stepsB[k];
+                if ((sbk.kind || "chain") !== (sa.kind || "chain")) continue;
+                var saAns = (sa.answer || "").trim(), sbAns = (sbk.answer || "").trim();
+                if (!!saAns === !!sbAns) continue; /* solo respondido contra pendiente */
+                bi = k; break;
+              }
+            }
             if (bi < 0) { steps.push(JSON.parse(JSON.stringify(sa))); return; }
             usedB[bi] = true;
             var sb = stepsB[bi];
             var r = mergeAnswer(sa.answer || "", sb.answer || "", sa.at || null, sb.at || null, null);
-            var st = { probe: sa.probe || sb.probe || "", answer: r.text, kind: sa.kind || sb.kind || "chain" };
+            var st = { probe: (r.side === "b" ? (sb.probe || sa.probe) : (sa.probe || sb.probe)) || "", answer: r.text, kind: sa.kind || sb.kind || "chain" };
             var atVal = r.at || sa.at || sb.at || null;
             if (atVal) st.at = atVal;
             steps.push(st);
           });
           stepsB.forEach(function (sb, j) { if (!usedB[j]) steps.push(JSON.parse(JSON.stringify(sb))); });
+          /* v17.27 (WS3) · Una repregunta pendiente no sobrevive a la
+             fusión cuando su pregunta ya tiene una respuesta real en
+             la copia fusionada: la respuesta es la evidencia y la
+             repregunta ya quedó satisfecha. Sin respuesta real (o con
+             un «no lo sé» como única respuesta), la pendiente sigue
+             viva y sigue bloqueando su componente, como debe ser. */
+          var mergedAns = mergedAnswers && mergedAnswers[mid] ? String(mergedAnswers[mid][qi] || "").trim() : "";
+          if (mergedAns && !isUncertain(mergedAns)) {
+            steps = steps.filter(function (st) { return st.answer && String(st.answer).trim(); });
+          }
           /* v17.20 · CAUSA RAÍZ del falso positivo de una sola pestaña:
              el rebuild anterior añadía SIEMPRE probeMode: null,
              probeDone: false y at: null, claves que fuRec no crea. Así,
@@ -7350,8 +7509,172 @@
       });
       return adopted;
     }
+    /* ---------- v17.27 (WS2) · Lápidas con dientes, duplicados y
+       divergencia real ----------
+       - newestContentAt: la fecha del contenido de verdad de un proyecto
+         (su respuesta más reciente; si no tiene respuestas, su fecha de
+         guardado). savedAt NUNCA decide sola cuando hay respuestas: se
+         re-estampa en cada guardado y una copia vieja re-guardada parecería
+         más nueva que el borrado.
+       - tombstoneDrops: una lápida solo borra si es más nueva que el
+         contenido del otro lado y el otro lado no trae MÁS respuestas que
+         las que tenía la copia borrada. Si el otro lado es más nuevo o más
+         rico, el proyecto sobrevive y la lápida se borra por vieja.
+       - projectHasContent: solo respuestas (principales o de seguimiento)
+         cuentan como contenido: un proyecto vacío extra no marca la pestaña
+         como vieja ni dispara avisos de fusión. */
+    function newestContentAt(proj) {
+      if (!proj) return "";
+      var best = "";
+      var am = proj.answerMeta || {};
+      Object.keys(am).forEach(function (k) { var at = am[k] && am[k].at; if (typeof at === "string" && at && at > best) best = at; });
+      var fu = proj.followups || {};
+      Object.keys(fu).forEach(function (mid) {
+        Object.keys(fu[mid] || {}).forEach(function (qi) {
+          stepsOf(fu[mid][qi]).forEach(function (s) { if (s && typeof s.at === "string" && s.at && s.at > best) best = s.at; });
+        });
+      });
+      if (best) return best;
+      return (typeof proj.savedAt === "string" && proj.savedAt) ? proj.savedAt : "";
+    }
+    function tombAtOf(v) {
+      if (!v) return "";
+      if (typeof v === "string") return v; /* lápida vieja (v17.20): solo la fecha */
+      return v.at || v.deletedAt || "";
+    }
+    function makeTombstone(p) {
+      var s = projectContentScore(p);
+      return { at: new Date().toISOString(), contentAt: newestContentAt(p), savedAt: (p && p.savedAt) || null, answered: s.answered };
+    }
+    function tombstoneDrops(tombVal, proj) {
+      if (!tombVal || !proj) return false;
+      var tAt = tombAtOf(tombVal);
+      if (!tAt) return false;
+      /* v17.27 (WS4) · Una restauración explícita (importar el respaldo)
+         es más nueva que el borrado: si el proyecto trae restoredAt
+         igual o más reciente que la lápida, SOBREVIVE y la lápida se
+         borra en la fusión. Sin esto, una lápida de la nube más nueva
+         que el contenido restaurado volvería a borrar el proyecto en
+         la próxima escritura con fusión. Un borrado posterior crea
+         una lápida nueva (con la fecha de ahora, posterior a
+         restoredAt), así que borrar después de restaurar sigue
+         borrando de verdad. */
+      if (proj.restoredAt && proj.restoredAt >= tAt) return false;
+      var otherAnswered = projectContentScore(proj).answered;
+      if (typeof tombVal === "object" && typeof tombVal.answered === "number" && otherAnswered > tombVal.answered) return false;
+      var contentAt = newestContentAt(proj);
+      if (contentAt && contentAt >= tAt) return false;
+      return true;
+    }
+    function projectHasContent(p) {
+      if (!p) return false;
+      if (projectContentScore(p).answered > 0) return true;
+      var fu = p.followups || {}, found = false;
+      Object.keys(fu).forEach(function (mid) {
+        Object.keys(fu[mid] || {}).forEach(function (qi) {
+          stepsOf(fu[mid][qi]).forEach(function (s) { if (s && s.answer && String(s.answer).trim()) found = true; });
+        });
+      });
+      return found;
+    }
+    /* Claves de preguntas respondidas de una tienda: lo que decide si dos
+       copias divergen de verdad en contenido (aviso de fusión). */
+    function answeredKeysOfStore(shape) {
+      var keys = {};
+      try {
+        var s = toStoreShape(shape);
+        Object.keys(s.projects || {}).forEach(function (id) {
+          var pr = s.projects[id];
+          MODULES.forEach(function (m) {
+            var arr = (pr.answers && pr.answers[m.id]) || [];
+            for (var qi = 0; qi < m.questions.length; qi++) {
+              if (String(arr[qi] || "").trim()) keys[id + "|" + m.id + ":" + qi] = true;
+            }
+          });
+        });
+      } catch (e) {}
+      return keys;
+    }
+    function storesAnswerKeysDiffer(sa, sb) {
+      var ka = answeredKeysOfStore(sa), kb = answeredKeysOfStore(sb);
+      var kaKeys = Object.keys(ka), kbKeys = Object.keys(kb);
+      if (kaKeys.length !== kbKeys.length) return true;
+      for (var i = 0; i < kaKeys.length; i++) if (!kb[kaKeys[i]]) return true;
+      return false;
+    }
+    /* Proyectos que la fusión borra a propósito por lápida: sus respuestas
+       NO cuentan como pérdida al comparar con la nube (la guarda de
+       no-pérdida de WS1). Sin esto, un borrado legítimo —que por definición
+       baja el total de respuestas— se negaría siempre y la lápida no
+       llegaría nunca a la nube. */
+    function tombstonedDropsIn(mergedStore, otherShape) {
+      var out = {};
+      try {
+        var o = toStoreShape(otherShape);
+        Object.keys((mergedStore && mergedStore.deleted) || {}).forEach(function (id) {
+          var p = o.projects && o.projects[id];
+          if (p && tombstoneDrops(mergedStore.deleted[id], p)) out[id] = true;
+        });
+      } catch (e) {}
+      return out;
+    }
+    function normProjectName(n) { return String(n || "").trim().toLowerCase(); }
+    function findDuplicateOf(id) {
+      ensureStore();
+      var p = store.projects[id];
+      if (!p) return null;
+      var n = normProjectName(p.project.name), best = null, bestScore = -1;
+      Object.keys(store.projects).forEach(function (oid) {
+        if (oid === id) return;
+        var q = store.projects[oid];
+        if (normProjectName(q.project.name) !== n) return;
+        var s = projectContentScore(q).answered;
+        if (s > bestScore) { bestScore = s; best = q; }
+      });
+      return best;
+    }
+    /* Fusionar con el duplicado (solo con un toque explícito del usuario):
+       une las respuestas pregunta por pregunta con las mismas reglas de la
+       fusión, se queda con el proyecto más rico (a igualdad, el más
+       antiguo) y deja una lápida con dientes sobre el id que desaparece,
+       para que la nube no lo resucite en la próxima entrada. */
+    function mergeDuplicateProjects(id) {
+      ensureStore();
+      var keeper = store.projects[id];
+      if (!keeper) return false;
+      var other = findDuplicateOf(id);
+      if (!other) { toast("Este proyecto no tiene duplicado con el mismo nombre."); return false; }
+      if (!checkTabFresh()) { markTabStale("la copia guardada tiene respuestas que esta pestaña no tiene"); toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return false; }
+      var ks = projectContentScore(keeper).answered, os = projectContentScore(other).answered;
+      var keep = keeper, lose = other;
+      if (os > ks || (os === ks && String(other.createdAt || "") < String(keeper.createdAt || ""))) { keep = other; lose = keeper; }
+      var snap = null, snapStateId = state ? state.id : null;
+      try { snap = JSON.stringify(store); } catch (e) { snap = null; }
+      var m = mergeProjects(keep, lose);
+      var mergedProj = m.proj;
+      mergedProj.id = keep.id;
+      var loseTomb = makeTombstone(lose);
+      store.projects[keep.id] = mergedProj;
+      delete store.projects[lose.id];
+      if (!store.deleted) store.deleted = {};
+      store.deleted[lose.id] = loseTomb;
+      if (store.activeProjectId === lose.id) store.activeProjectId = keep.id;
+      if (state && (state.id === lose.id || state.id === keep.id)) state = mergedProj;
+      var saved = persist();
+      if (!saved) {
+        if (snap) { try { store = JSON.parse(snap); state = store.projects[snapStateId] || state; } catch (e) {} }
+        renderSidebar();
+        return false;
+      }
+      if (window.__cloudSaveNow) window.__cloudSaveNow();
+      renderSidebar();
+      showView(state ? "resumen" : "welcome");
+      toast("Fusioné los dos proyectos con el mismo nombre en uno solo: no se perdió ninguna respuesta.");
+      return true;
+    }
+    window.__mergeDuplicateProjects = mergeDuplicateProjects;
     function mergeProjects(a, b) {
-      if (!a) return { proj: JSON.parse(JSON.stringify(b)), changed: true, fromA: 0, fromB: projectContentScore(b).answered, adoptedFromB: true, adoptedAnswersFromB: true };
+      if (!a) { var bHas = projectHasContent(b); return { proj: JSON.parse(JSON.stringify(b)), changed: bHas, fromA: 0, fromB: projectContentScore(b).answered, adoptedFromB: bHas, adoptedAnswersFromB: bHas }; }
       if (!b) return { proj: JSON.parse(JSON.stringify(a)), changed: false, fromA: projectContentScore(a).answered, fromB: 0, adoptedFromB: false, adoptedAnswersFromB: false };
       var out = JSON.parse(JSON.stringify(a));
       var changed = false, fromA = 0, fromB = 0, adoptedFromB = false, adoptedAnsB = false;
@@ -7372,7 +7695,7 @@
           var r = mergeAnswer(arrA[qi] || "", arrB[qi] || "",
             (a.answerMeta && a.answerMeta[m.id + ":" + qi] && a.answerMeta[m.id + ":" + qi].at) || null,
             (b.answerMeta && b.answerMeta[m.id + ":" + qi] && b.answerMeta[m.id + ":" + qi].at) || null,
-            questionFor(m, qi, mgStage, mgSize), mgStage);
+            questionFor(m, qi, mgStage, mgSize), mgStage, m.id + ":" + qi);
           var key = m.id + ":" + qi;
           if (r.text) {
             if (aT && r.text.trim() === aT) fromA++;
@@ -7396,7 +7719,7 @@
           } else delete out.answerMeta[key];
         }
       });
-      var fuMerged = mergeFollowups(a.followups, b.followups);
+      var fuMerged = mergeFollowups(a.followups, b.followups, out.answers);
       if (stableStringify(fuMerged) !== stableStringify(a.followups || {})) {
         changed = true; adoptedFromB = true;
         if (followupsAdoptedFromB(a.followups, b.followups, fuMerged)) adoptedAnsB = true;
@@ -7540,51 +7863,79 @@
           if (winner === "b") { out.project[f] = vb; changed = true; adoptedFromB = true; }
         }
       });
-      /* v17.20 · Archivado con última escritura: antes, archivado=true era
-         pegajoso y siempre ganaba, así que una restauración nunca se podía
-         guardar (persist() veía la copia guardada archivada, marcaba la
-         pestaña como vieja y no escribía nada) y la nube la revertía. Ahora
-         gana el lado con la marca de archivado más reciente (archivedAt,
-         con savedAt como respaldo): restaurar es más nuevo que archivar. */
-      var aArchAt = a.archivedAt || a.savedAt || "", bArchAt = b.archivedAt || b.savedAt || "";
-      if (!!b.archived !== !!a.archived && bArchAt > aArchAt) { out.archived = !!b.archived; changed = true; adoptedFromB = true; }
-      out.archivedAt = (bArchAt > aArchAt) ? (b.archivedAt || a.archivedAt || null) : (a.archivedAt || b.archivedAt || null);
+      /* v17.27 (WS2) · Archivado solo por archivedAt, nunca por savedAt:
+         savedAt se re-estampa en cada guardado, así que un re-guardado de
+         la copia archivada ganaba siempre y una restauración se revertía
+         sola. Ahora manda solo la marca de archivado con fecha: si un lado
+         no tiene archivedAt, su archivado no decide nada; si ninguno la
+         tiene, se queda el archivado actual (el de A) y ningún re-guardado
+         lo cambia. */
+      var aArchAt = a.archivedAt || "", bArchAt = b.archivedAt || "";
+      if (!!b.archived !== !!a.archived) {
+        if (bArchAt && (!aArchAt || bArchAt > aArchAt)) { out.archived = !!b.archived; out.archivedAt = b.archivedAt; changed = true; adoptedFromB = true; }
+      }
+      if (!out.archivedAt) out.archivedAt = a.archivedAt || b.archivedAt || null;
       out.savedAt = (a.savedAt && b.savedAt) ? (a.savedAt > b.savedAt ? a.savedAt : b.savedAt) : (a.savedAt || b.savedAt || null);
+      /* v17.27 (WS4) · restoredAt viaja con la fusión (gana la más
+         reciente): es la marca que impide que una lápida vieja vuelva
+         a borrar un proyecto restaurado. No marca changed ni
+         adoptedFromB: es un dato de la restauración, no una respuesta
+         nueva, y no debe disparar avisos de fusión. */
+      var raT = a.restoredAt || "", rbT = b.restoredAt || "";
+      if (rbT > raT) out.restoredAt = rbT;
+      else if (raT) out.restoredAt = raT;
+      else delete out.restoredAt;
       return { proj: out, changed: changed, fromA: fromA, fromB: fromB, adoptedFromB: adoptedFromB, adoptedAnswersFromB: adoptedAnsB };
     }
+    /* v17.27 (WS2) · Lápidas con dientes y fusión sin falsos positivos.
+       Una lápida solo borra un proyecto si es MÁS NUEVA que el contenido
+       del otro lado (su respuesta más reciente, o su fecha de guardado si
+       no tiene respuestas) y el otro lado no trae MÁS respuestas que las
+       que tenía la copia borrada: si el otro lado es más nuevo o más rico,
+       el proyecto SOBREVIVE y la lápida se borra por vieja. Un proyecto
+       que existe en un solo lado solo cuenta como adoptado si trae
+       contenido de verdad (respuestas): un proyecto vacío extra ya no
+       marca la pestaña como vieja ni dispara avisos de fusión. */
     function mergeStores(sa, sb) {
       var A = toStoreShape(sa), B = toStoreShape(sb);
       var out = { app: "analia", version: 3, activeProjectId: A.activeProjectId || B.activeProjectId, projects: {} };
-      /* v17.20 · Las lápidas de borrado se unen de ambos lados y mandan
-         sobre cualquier copia del proyecto: un proyecto borrado en un
-         lado no vuelve por fusión, ni en local ni en la nube. */
       var tomb = {};
       [A.deleted, B.deleted].forEach(function (d) {
         if (!d) return;
-        Object.keys(d).forEach(function (id) { if (!tomb[id] || (d[id] || "") > tomb[id]) tomb[id] = d[id]; });
+        Object.keys(d).forEach(function (id) {
+          var cur = tomb[id], nv = d[id];
+          if (!cur) { tomb[id] = nv; return; }
+          if (tombAtOf(nv) > tombAtOf(cur)) tomb[id] = nv;
+          else if (tombAtOf(nv) === tombAtOf(cur) && typeof nv === "object" && typeof cur !== "object") tomb[id] = nv;
+        });
       });
       out.deleted = tomb;
       var changed = false, fromA = 0, fromB = 0, adoptedFromB = false, adoptedAnswersFromB = false;
       var ids = {};
       [A, B].forEach(function (s) { if (s && s.projects) Object.keys(s.projects).forEach(function (id) { ids[id] = true; }); });
       Object.keys(ids).forEach(function (id) {
-        if (tomb[id]) return; /* borrado en algún lado: no se resucita */
         var pa = A.projects[id], pb = B.projects[id];
+        var tb = tomb[id];
         if (pa && pb) {
           var m = mergeProjects(pa, pb);
+          if (tb && tombstoneDrops(tb, m.proj)) return; /* borrado a propósito y sin contenido más nuevo: no se resucita */
           out.projects[id] = m.proj;
           changed = changed || m.changed;
           fromA += m.fromA; fromB += m.fromB; adoptedFromB = adoptedFromB || m.adoptedFromB; adoptedAnswersFromB = adoptedAnswersFromB || m.adoptedAnswersFromB;
-        } else if (pa) {
-          out.projects[id] = JSON.parse(JSON.stringify(pa));
-          fromA += projectContentScore(pa).answered;
-        } else {
-          out.projects[id] = JSON.parse(JSON.stringify(pb));
-          fromB += projectContentScore(pb).answered;
-          changed = true; adoptedFromB = true; adoptedAnswersFromB = true;
+          if (tb) { delete out.deleted[id]; changed = true; } /* la lápida era vieja: el contenido más nuevo la borra */
+        } else if (pa || pb) {
+          var only = pa || pb;
+          if (tb && tombstoneDrops(tb, only)) return;
+          out.projects[id] = JSON.parse(JSON.stringify(only));
+          if (pa) { fromA += projectContentScore(pa).answered; }
+          else {
+            fromB += projectContentScore(pb).answered;
+            if (projectHasContent(pb)) { changed = true; adoptedFromB = true; adoptedAnswersFromB = true; }
+          }
+          if (tb) { delete out.deleted[id]; changed = true; }
         }
       });
-      if (stableStringify(tomb) !== stableStringify(A.deleted || {})) changed = true;
+      if (stableStringify(out.deleted) !== stableStringify(A.deleted || {})) changed = true;
       var actA = A.projects[A.activeProjectId], actB = B.projects[B.activeProjectId];
       var sA = actA ? projectContentScore(actA).answered : -1, sB = actB ? projectContentScore(actB).answered : -1;
       if (sB > sA && B.activeProjectId && out.projects[B.activeProjectId]) out.activeProjectId = B.activeProjectId;
@@ -7651,6 +8002,7 @@
       tabStale = false;
       tabStaleReason = "";
       tabStaleToastShown = false;
+      persistFailToastShown = false;
       var n = $("tabNotice");
       if (n) n.style.display = "none";
       renderSaveStatus();
@@ -8547,17 +8899,27 @@
       }
       var ids = Object.keys(store.projects);
       if (!ids.length) { list.innerHTML = '<p style="font-size:12.5px;color:#b9bfa4;margin:0">Sin proyectos todavía.</p>'; return; }
+      /* v17.27 (WS2) · Dos proyectos con el mismo nombre se ven distintos:
+         la lista marca «duplicado» y muestra la fecha de creación, para que
+         nunca parezcan una sola fila repetida. */
+      var nameCounts = {};
+      ids.forEach(function (x) { var nn = normProjectName(store.projects[x].project.name); nameCounts[nn] = (nameCounts[nn] || 0) + 1; });
       var html = "";
       ids.forEach(function (id) {
         var p = store.projects[id];
         var done = 0;
         try { done = MODULES.filter(function (mm) { return projectFullyComplete(p, mm.id); }).length; } catch (e) { done = 0; }
         var arch = p.archived ? " · Archivado" : "";
+        var dupMark = (nameCounts[normProjectName(p.project.name)] || 0) > 1 ? " · duplicado" : "";
+        var createdMark = "";
+        try { if (p.createdAt) createdMark = " · " + new Date(p.createdAt).toLocaleDateString("es-CO", { day: "numeric", month: "numeric", year: "numeric" }); } catch (e) {}
+        var mergeBtn = dupMark ? '<button type="button" data-proj-merge="' + esc(id) + '" title="Fusionar con el duplicado">⇄</button>' : "";
         html += '<div class="proj-item' + (state && state.id === id ? " active" : "") + '">' +
-          '<span class="pn">' + esc(p.project.name) + "<small>" + esc(p.project.sector || "") + " · " + done + "/15" + esc(arch) + "</small></span>" +
+          '<span class="pn">' + esc(p.project.name) + "<small>" + esc(p.project.sector || "") + " · " + done + "/15" + esc(arch) + esc(dupMark) + esc(createdMark) + "</small></span>" +
           '<button type="button" data-proj-open="' + esc(id) + '" title="Abrir">↗</button>' +
           '<button type="button" data-proj-rename="' + esc(id) + '" title="Renombrar">✎</button>' +
           '<button type="button" data-proj-dup="' + esc(id) + '" title="Duplicar">⧉</button>' +
+          mergeBtn +
           '<button type="button" data-proj-arch="' + esc(id) + '" title="Archivar o restaurar">▣</button>' +
           '<button type="button" data-proj-del="' + esc(id) + '" title="Eliminar">✕</button></div>';
       });
@@ -8576,10 +8938,26 @@
         registerProject(copy, true); persist(); renderSidebar(); showView("resumen");
         toast("Proyecto duplicado: " + copy.project.name + ".");
       }); });
+      list.querySelectorAll("[data-proj-merge]").forEach(function (b) { b.addEventListener("click", function () {
+        if (b.getAttribute("data-confirm") !== "1") { b.setAttribute("data-confirm", "1"); if (!b.getAttribute("data-label")) b.setAttribute("data-label", b.textContent); b.textContent = "¿Fusionar?"; return; }
+        mergeDuplicateProjects(b.getAttribute("data-proj-merge"));
+        renderSidebar();
+      }); });
       list.querySelectorAll("[data-proj-arch]").forEach(function (b) { b.addEventListener("click", function () {
         var id = b.getAttribute("data-proj-arch"); var p = store.projects[id]; if (!p) return;
-        p.archived = !p.archived; p.archivedAt = new Date().toISOString(); /* v17.20: la fecha decide en la fusión — restaurar gana si es más reciente */
-        persist(); renderSidebar();
+        /* v17.27 (WS2) · Archivar y restaurar tienen el mismo trato que
+           borrar: primero se comprueba que la pestaña no esté vieja y
+           después se guarda DE INMEDIATO en local y en la nube
+           (__cloudSaveNow, con fusión), no con el temporizador de persist().
+           Si el guardado no se hace, el cambio se deshace en pantalla: un
+           «Proyecto restaurado» que no se guardó es una mentira. */
+        if (!checkTabFresh()) { markTabStale("la copia guardada tiene respuestas que esta pestaña no tiene"); toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return; }
+        var wasArchived = !!p.archived, wasArchivedAt = p.archivedAt || null;
+        p.archived = !p.archived; p.archivedAt = new Date().toISOString(); /* la fecha decide en la fusión — restaurar gana si es más reciente */
+        var savedArch = state ? persist() : (function () { try { ensureStore(); window.localStorage.setItem(lsKey(), JSON.stringify(store)); return true; } catch (e) { return false; } })();
+        if (!savedArch) { p.archived = wasArchived; if (wasArchivedAt) p.archivedAt = wasArchivedAt; else delete p.archivedAt; renderSidebar(); return; }
+        if (window.__cloudSaveNow) window.__cloudSaveNow();
+        renderSidebar();
         toast(p.archived ? "Proyecto archivado: " + p.project.name + "." : "Proyecto restaurado: " + p.project.name + ".");
       }); });
       list.querySelectorAll("[data-proj-del]").forEach(function (b) { b.addEventListener("click", function () {
@@ -8587,7 +8965,7 @@
         if (b.getAttribute("data-confirm") !== "1") { b.setAttribute("data-confirm", "1"); if (!b.getAttribute("data-label")) b.setAttribute("data-label", b.textContent); b.textContent = "¿Seguro?"; return; }
         if (!checkTabFresh()) { markTabStale("la copia guardada tiene respuestas que esta pestaña no tiene"); toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return; }
         ensureStore();
-        store.deleted[id] = new Date().toISOString(); /* v17.20 · Lápida: sin ella la nube resucitaba el proyecto en la siguiente entrada */
+        store.deleted[id] = makeTombstone(p); /* v17.27 (WS2) · Lápida con dientes: guarda la fecha del borrado y el contenido borrado (su fecha más reciente y cuántas respuestas tenía), para que la fusión solo la aplique si la otra copia no trae nada más nuevo o más rico */
         delete store.projects[id];
         if (state && state.id === id) { var rest = Object.keys(store.projects); state = rest.length ? store.projects[rest[0]] : null; store.activeProjectId = state ? state.id : null; }
         persist(); if (window.__cloudSaveNow) window.__cloudSaveNow(); /* la lápida sube a la nube de inmediato */
@@ -13681,7 +14059,9 @@
     /* ---------------- Exportar / Importar / Nuevo ---------------- */
     $("btnExport").addEventListener("click", function () {
       if (!state) { toast("Todavía no hay proyecto para exportar."); return; }
-      var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+      var exp = JSON.parse(JSON.stringify(state));
+      try { ensureStore(); exp.deleted = JSON.parse(JSON.stringify(store.deleted || {})); } catch (e) {}
+      var blob = new Blob([JSON.stringify(exp, null, 2)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a");
       a.href = url;
@@ -13690,35 +14070,255 @@
       setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
       toast("Proyecto exportado. Guárdalo: con ese archivo retomas tu diagnóstico en cualquier computador.");
     });
+    /* ============================================================
+       v17.27 (WS4) · RESTAURACIÓN SEGURA (Importar / Restaurar)
+       ------------------------------------------------------------
+       Por qué existe: en el incidente del 18 de noviembre de 2026
+       un proyecto de 109 respuestas desapareció de la lista y solo
+       quedó su copia vacía de 0/15. La causa fue una pestaña vieja
+       que subió su copia pobre por encima de la nube. Esta
+       restauración NO puede volver a perder el proyecto que trae
+       de vuelta, así que impone sus propias guardas: funciona igual
+       con la v17.27 ya en vivo, porque las guardas viven en la
+       propia importación (pestaña al día, fusión de entrada
+       terminada, guardado inmediato con fusión y lápida despejada),
+       no en el orden en que se publicó la versión. Decisión: la
+       importación misma aplica las guardas —no se confía en que
+       «la versión buena ya está en vivo»— así que restaurar es
+       seguro aunque la pestaña viniera de una versión anterior.
+       Qué hace, en orden:
+         (a) Se niega sin escribir nada si la pestaña está vieja
+             (tabStale) o si hay un inicio de sesión en curso cuya
+             fusión de entrada aún no terminó (__cloudLoginPending
+             con nube disponible). Sin sesión en curso no hay
+             fusión que esperar: la importación local sigue
+             funcionando sin cuenta (demo, o antes de entrar), y
+             si el inicio de sesión llega DESPUÉS, su fusión de
+             entrada es con fusión por contenido (WS1) y la marca
+             restoredAt protege el proyecto restaurado. Negarse
+             siempre que __cloudMergeDone está en false rompería
+             esa importación local sin proteger nada: sin sesión
+             no hay nube que pisar.
+         (b) Comprueba la lápida del id en la tienda local Y en la
+             tienda de la nube (__cloudReadStore): importar es
+             traerlo de vuelta a propósito, así que la lápida
+             propia se borra en local y la de la nube se despeja
+             con la marca restoredAt en la escritura con fusión
+             (tombstoneDrops respeta esa marca).
+         (c) Si ya existe un proyecto con el MISMO id, NO lo
+             pisa: lo fusiona pregunta por pregunta con
+             mergeProjects (las mismas reglas de la fusión de
+             entrada: por pregunta gana la más reciente, un «No
+             lo sé» nunca le gana a un dato real, y lo que el
+             archivo no trae se conserva). Lo importado gana solo
+             donde las reglas lo dicen.
+         (d) Guarda en local (persist, síncrono) y DE INMEDIATO
+             en la nube con __cloudSaveNow (con fusión, nunca la
+             copia sola) y espera la confirmación: solo dice
+             «Restaurado y guardado en la nube» cuando el estado
+             de la nube es «ok»; si la escritura se niega por
+             conflicto, lo dice en voz alta y la copia local queda.
+         (e) Si queda otro proyecto con el MISMO NOMBRE y otro id
+             (la copia vacía del incidente), NO lo borra ni lo
+             fusiona solo: avisa y deja que el usuario lo fusione
+             con el botón «Fusionar con el duplicado» o lo borre.
+       Procedimiento de restauración (para quien restaura a mano):
+         (1) Cierra todas las demás pestañas y navegadores con
+             Analía abiertos.
+         (2) Abre Analía de nuevo y espera a que termine la
+             sincronización de entrada (el indicador dice guardado).
+         (3) Usa Importar/Restaurar con el archivo .json del
+             respaldo.
+         (4) Espera a «Restaurado y guardado en la nube» antes de
+             cerrar la pestaña.
+         (5) Si avisa de otro proyecto con el mismo nombre,
+             fusionalo con el botón «Fusionar con el duplicado» o
+             bórralo: es la copia vacía que quedó del incidente,
+             no el proyecto restaurado.
+         (6) Comprueba que el proyecto muestra 13/15 y la tesis
+             «Nómadas primero» antes de cerrar la pestaña.
+       ============================================================ */
+    function readCloudStoreSoon() {
+      if (typeof window.__cloudReadStore !== "function") return Promise.resolve(null);
+      var done = false;
+      return Promise.race([
+        Promise.resolve().then(function () { return window.__cloudReadStore(); }).then(function (v) { return done ? null : v; }).catch(function () { return null; }),
+        new Promise(function (res) { setTimeout(function () { done = true; res(null); }, 5000); })
+      ]);
+    }
+    function waitCloudOk() {
+      return new Promise(function (resolve) {
+        var deadline = Date.now() + 30000;
+        (function tick() {
+          var s = (typeof window.__cloudStatus === "function") ? window.__cloudStatus() : "unknown";
+          if (s === "ok") return resolve("confirmed");
+          if (s === "failed") return resolve("failed");
+          if (Date.now() > deadline) return resolve("unconfirmed");
+          setTimeout(tick, 250);
+        })();
+      });
+    }
+    /* Restaura un proyecto desde los datos ya leídos de su archivo
+       .json. Devuelve una promesa con { ok, reason, id, name,
+       answers, completed, cloud, cloudTombstone, mergedSameId,
+       duplicate }. cloud es "confirmed" | "failed" | "unconfirmed"
+       | "local-only" | "none". No muestra avisos: quien llama decide
+       qué decir con showRestoreResult. El último resultado queda en
+       window.__lastRestore para revisarlo. */
+    function restoreProjectFromData(data) {
+      var result = { ok: false, reason: "", id: null, name: "", answers: 0, completed: 0, cloud: "none", cloudTombstone: false, mergedSameId: false, duplicate: null };
+      function finish(res) { window.__lastRestore = res; return res; }
+      /* Puerta (a): pestaña vieja o fusión de entrada sin terminar.
+         En ambos casos NO se escribe nada: ni en local ni en la nube.
+         La puerta es «inicio de sesión en curso», no «sin fusión
+         terminada»: sin sesión no hay fusión que esperar (ver el
+         bloque de arriba). */
+      if (tabStale) { result.reason = "stale"; return Promise.resolve(finish(result)); }
+      if (window.__cloudAvailable !== false && window.__cloudLoginPending === true && !window.__cloudMergeDone) { result.reason = "merge-pending"; return Promise.resolve(finish(result)); }
+      if (!data || data.app !== "analia" || !data.project || !data.answers) { result.reason = "invalid"; return Promise.resolve(finish(result)); }
+      if (data.version !== 2) data = migrateLegacyProject(data);
+      MODULES.forEach(function (m) {
+        if (!Array.isArray(data.answers[m.id])) data.answers[m.id] = [];
+        while (data.answers[m.id].length < m.questions.length) data.answers[m.id].push("");
+      });
+      if (!data.followups) data.followups = {};
+      if (!data.id) data.id = newProjectId();
+      /* Marca de restauración explícita: protege el proyecto en la
+         fusión con la nube aunque una lápida sea más nueva que su
+         contenido (ver tombstoneDrops). Se estampa ANTES de fusionar
+         con una copia del mismo id, para que viaje con la fusión. */
+      data.restoredAt = new Date().toISOString();
+      var impDeleted = (data.deleted && typeof data.deleted === "object") ? data.deleted : null;
+      return readCloudStoreSoon().then(function (cloudStore) {
+        /* Puerta (b): la lápida de la nube para este id. Solo se anota:
+           la lápida se despeja igual con restoredAt en la escritura
+           con fusión; si la lectura falló, la escritura la despeja
+           igual. */
+        if (cloudStore && cloudStore.deleted && cloudStore.deleted[data.id]) result.cloudTombstone = true;
+        ensureStore();
+        /* v17.27 (WS2) · El archivo trae las lápidas de borrado: se
+           adoptan (la más reciente manda) salvo la de este proyecto, que
+           se borra — importar es traerlo de vuelta a propósito. */
+        if (impDeleted) {
+          if (!store.deleted) store.deleted = {};
+          Object.keys(impDeleted).forEach(function (did) {
+            if (did === data.id) return;
+            var cur = store.deleted[did], nv = impDeleted[did];
+            if (!cur || tombAtOf(nv) > tombAtOf(cur)) store.deleted[did] = nv;
+          });
+        }
+        if (store.deleted) delete store.deleted[data.id];
+        /* Puerta (c): mismo id ya en la tienda — fusión pregunta por
+           pregunta, nunca pisado. Lo que el archivo no trae se
+           conserva; lo importado gana solo donde mandan las reglas. */
+        var existing = store.projects[data.id];
+        if (existing) {
+          var m = mergeProjects(existing, data);
+          store.projects[data.id] = m.proj;
+          result.mergedSameId = true;
+        } else {
+          registerProject(data, true);
+        }
+        store.activeProjectId = data.id;
+        state = store.projects[data.id];
+        ensureAnswers();
+        ui.module = "M0"; ui.awaitingProbe = null; ui.pendingShort = null; hideNudge();
+        /* Guardado local síncrono: si persist() se niega (pestaña
+           vieja), no se afirma nada y no se sube nada. */
+        if (!persist()) { result.reason = "local-save-failed"; return finish(result); }
+        result.ok = true;
+        result.id = data.id;
+        result.name = state.project.name;
+        result.answers = projectContentScore(state).answered;
+        result.completed = completedModulesFor(state);
+        /* Puerta (e): otro proyecto con el mismo nombre y otro id.
+           No se borra ni se fusiona solo: se avisa. */
+        var dup = findDuplicateOf(data.id);
+        if (dup) result.duplicate = { id: dup.id, name: dup.project.name, completed: completedModulesFor(dup) };
+        renderSidebar(); showView("resumen");
+        /* Puerta (d): guardado inmediato con fusión y confirmación.
+           Con sesión, solo «ok» de la nube es «guardado en la nube»;
+           sin sesión, la confirmación es solo local. */
+        if (window.__cloudLoggedIn === true && typeof window.__cloudSaveNow === "function") {
+          window.__cloudSaveNow();
+          return waitCloudOk().then(function (cloudRes) { result.cloud = cloudRes; return finish(result); });
+        }
+        result.cloud = "local-only";
+        return finish(result);
+      });
+    }
+    window.__restoreProjectFromData = restoreProjectFromData;
+    function showRestoreResult(res, msgEl) {
+      var msg = "";
+      if (!res || !res.ok) {
+        if (res && (res.reason === "stale" || res.reason === "merge-pending")) msg = "Cierra las demás pestañas y recarga antes de restaurar.";
+        else if (res && res.reason === "local-save-failed") msg = "No pude guardar el proyecto en este navegador. Inténtalo de nuevo.";
+        else msg = "Ese archivo no es un proyecto de Analía válido. Exporta de nuevo desde la página e inténtalo otra vez.";
+        toast(msg);
+        if (msgEl) msgEl.textContent = msg;
+        return;
+      }
+      if (res.cloud === "confirmed") msg = "Restaurado y guardado en la nube: " + res.name + ". Ya puedes cerrar la pestaña.";
+      else if (res.cloud === "local-only") msg = "Restaurado y guardado en este navegador: " + res.name + ".";
+      else msg = "Restaurado en este navegador, pero todavía no confirmé la nube: espera a que el indicador diga guardado antes de cerrar.";
+      toast(msg);
+      if (msgEl) msgEl.textContent = msg;
+      if (res.duplicate) {
+        var dupMsg = "Ya existe otro proyecto con este nombre (" + res.duplicate.completed + "/15). Puedes fusionarlo con el botón «Fusionar con el duplicado» o borrarlo.";
+        if (msgEl) msgEl.textContent = msg + " " + dupMsg;
+        setTimeout(function () { toast(dupMsg); }, 3400);
+      }
+    }
+    window.__showRestoreResult = showRestoreResult;
     $("btnImport").addEventListener("click", function () { $("fileImport").click(); });
     $("fileImport").addEventListener("change", function () {
       var f = $("fileImport").files[0];
       if (!f) return;
       var reader = new FileReader();
       reader.onload = function () {
-        try {
-          var data = JSON.parse(reader.result);
-          if (!data || data.app !== "analia" || !data.project || !data.answers) throw new Error("formato");
-          if (data.version !== 2) data = migrateLegacyProject(data);
-          MODULES.forEach(function (m) {
-            if (!Array.isArray(data.answers[m.id])) data.answers[m.id] = [];
-            while (data.answers[m.id].length < m.questions.length) data.answers[m.id].push("");
-          });
-          if (!data.followups) data.followups = {};
-          if (!data.id) data.id = newProjectId();
-          registerProject(data, true);
-          ensureAnswers();
-          ui.module = "M0"; ui.awaitingProbe = null; ui.pendingShort = null; hideNudge();
-          persist();
-          renderSidebar(); showView("resumen");
-          toast("Proyecto importado: " + state.project.name + ". Tu diagnóstico está de vuelta.");
-        } catch (e) {
+        var data = null;
+        try { data = JSON.parse(reader.result); } catch (e) { data = null; }
+        if (!data || data.app !== "analia" || !data.project || !data.answers) {
           toast("Ese archivo no es un proyecto de Analía válido. Exporta de nuevo desde la página e inténtalo otra vez.");
+          $("fileImport").value = "";
+          return;
         }
+        toast("Restaurando…");
+        restoreProjectFromData(data).then(function (res) { showRestoreResult(res, null); });
         $("fileImport").value = "";
       };
       reader.readAsText(f);
     });
+    /* v17.27 (WS4) · Administración: el mismo punto de restauración
+       para el administrador, sobre SU propia cuenta (el documento
+       proyectos/{uid} de quien inició sesión). No hay escrituras
+       entre cuentas: la restauración trabaja sobre la tienda de
+       esta sesión, igual que la de la barra lateral. */
+    (function () {
+      var adminInput = $("fileImportAdmin");
+      if (!adminInput) return;
+      adminInput.addEventListener("change", function () {
+        var f = adminInput.files[0];
+        if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          var data = null;
+          try { data = JSON.parse(reader.result); } catch (e) { data = null; }
+          var msgEl = $("adminRestoreMsg");
+          if (!data || data.app !== "analia" || !data.project || !data.answers) {
+            var bad = "Ese archivo no es un proyecto de Analía válido. Exporta de nuevo desde la página e inténtalo otra vez.";
+            toast(bad);
+            if (msgEl) msgEl.textContent = bad;
+            adminInput.value = "";
+            return;
+          }
+          if (msgEl) msgEl.textContent = "Restaurando…";
+          restoreProjectFromData(data).then(function (res) { showRestoreResult(res, msgEl); });
+          adminInput.value = "";
+        };
+        reader.readAsText(f);
+      });
+    })();
     function goCreateProject() {
       showView("welcome");
       setTimeout(function () { var f = $("fBiz"); if (f) f.focus(); }, 60);
@@ -14010,6 +14610,10 @@
       demoMode = true;
       currentUid = "demo";
       window.__booted = true; /* v17.24 · en demo no hay nube que esperar: la copia local ya es el dato */
+      /* v17.27 (WS4) · En demo tampoco hay fusión de entrada que
+         esperar: la puerta de la restauración queda abierta (la
+         confirmación es solo local, sin nube). */
+      window.__cloudMergeDone = true;
       document.body.classList.remove("locked");
       $("authError").classList.remove("show");
       $("accountBox").hidden = false;
@@ -14142,6 +14746,14 @@
         return "Algo salió mal (" + (code || "sin conexión") + "). Inténtalo de nuevo.";
       }
 
+      /* v17.27 (WS4) · ¿Hay nube que proteger? Si la librería de
+         cuentas no cargó, no hay sesión ni fusión de entrada que
+         esperar: la restauración trabaja solo en local y la fusión
+         de entrada posterior (al entrar con cuenta) protege la nube.
+         Si cargó, la puerta de la restauración solo se cierra
+         mientras hay un inicio de sesión en curso sin fusionar
+         (__cloudLoginPending). */
+      window.__cloudAvailable = (typeof firebase !== "undefined");
       if (typeof firebase === "undefined") {
         authError("No se pudo cargar el sistema de cuentas. Revisa tu conexión a internet y recarga la página.");
         return;
@@ -14181,6 +14793,21 @@
       var cloudWriteInFlight = false; /* v17.26 (WS5) · una escritura en curso: un cambio que llega en ese momento viaja en el reintento o en un guardado nuevo, nunca se pierde */
       var cloudWriteGen = 0; /* v17.26 (WS5) · generación de la escritura: cada intento de red lleva un número nuevo. El resultado de una escritura vieja (éxito o fallo) se ignora si ya arrancó una más reciente — sin esto, el fallo de una escritura vieja, que llega un turno de microtarea después por ir detrás de un .then, pisaba el «ok» de la escritura nueva y programaba un reintento fantasma. */
       var cloudDirty = false;
+      /* v17.27 (WS1) · La fusión con la nube ya NO ocurre una sola vez al
+         entrar: cada escritura en la nube lee primero el documento,
+         fusiona (mergeStores) y sube la FUSIÓN, nunca la copia local
+         sola. Y ninguna escritura en la nube arranca antes de que la
+         fusión de entrada (syncOnLogin) termine: cloudMergeDone solo se
+         pone en true cuando esa fusión terminó —o cuando se demostró que
+         no hay contenido en la nube que proteger—; mientras tanto la
+         copia local sí se guarda (persist/saveOnHide) y la subida queda
+         aplazada (cloudDirty). Una copia con menos respuestas nunca
+         pisa a una con más: esa es la regla cardinal. */
+      window.__cloudMergeDone = false;
+      window.__cloudLoginPending = false; /* v17.27 (WS4) · hay un inicio de sesión en curso cuya fusión de entrada aún no terminó */
+      window.__cloudLoggedIn = false; /* v17.27 (WS4) · hay sesión con cuenta: la restauración confirma en la nube; sin sesión, la confirmación es solo local */
+      window.__cloudConflict = false; /* v17.27 (WS1) · la última escritura se negó por conflicto: no se subió nada para no perder respuestas */
+      function markCloudMergeDone() { window.__cloudMergeDone = true; window.__cloudLoginPending = false; /* v17.27 (WS4) · la fusión de entrada terminó: la puerta de la restauración se abre */ }
       var CLOUD_RETRY_DELAYS = [2000, 5000, 15000];
       var CLOUD_MAX_BYTES = 950000; /* v17.26 (WS5) · cerca del límite de 1 MiB por documento de Firestore (1.048.576 bytes): por encima, la escritura no puede tener éxito y no se reintenta */
       window.__cloudStatus = function () { return cloudStatus; };
@@ -14188,21 +14815,23 @@
         cloudStatus = s;
         if (typeof renderSaveStatus === "function") renderSaveStatus();
       }
-      /* v17.24 · Escritura directa, sin lectura previa en cada guardado:
-         el GET + fusión de antes alargaba cada subida y el indicador se
-         quedaba en «reintentando» durante todo el viaje. La fusión con
-         la nube ya ocurre una sola vez al entrar (syncOnLogin): ahí sí
-         se lee la nube y se mezclan las copias. Al cerrar (closing=true)
-         también se escribe directo: la comprobación local de saveOnHide
-         ya impidió que una pestaña vieja llegue hasta aquí. Una pestaña
-         marcada como vieja no escribe nunca. */
+      /* v17.27 (WS1) · Se deroga la regla v17.24 («escritura directa, sin
+         lectura previa en cada guardado»): esa escritura ciega con .set()
+         de toda la tienda fue la que borró un proyecto de 109 respuestas
+         cuando una pestaña vieja subió su copia de 1 respuesta por
+         encima. Ahora cada escritura lee primero la nube y sube la
+         FUSIÓN (doCloudWrite): si la lectura falla o la fusión falla,
+         NO se sube nada —la copia local queda y se reintenta en el
+         próximo guardado— y si la fusión trajera menos respuestas o
+         menos componentes cerrados que la nube, la subida se niega.
+         Una pestaña marcada como vieja no escribe nunca. */
       /* v17.26 (WS5) · El paquete que sube: la tienda completa, pero
          si se acerca al límite de 1 MiB se recorta ANTES de intentarlo
          (historial del lienzo y resultados de investigación viejos), en
          vez de reintentar una escritura que no puede tener éxito. Lo
          local nunca se recorta: solo el paquete de la nube. */
-      function cloudPayloadJson() {
-        var src = store || state;
+      function cloudPayloadJson(src) {
+        src = src || store || state;
         var raw = "";
         try { raw = JSON.stringify(src); } catch (e) { return { json: null, bytes: 0, trimmed: false, tooBig: true }; }
         if (raw.length <= CLOUD_MAX_BYTES) return { json: raw, bytes: raw.length, trimmed: false, tooBig: false };
@@ -14234,54 +14863,146 @@
         }
         return { json: null, bytes: out.length, trimmed: true, tooBig: true };
       }
+      /* v17.27 (WS1) · Conteos de una tienda para la guarda de
+         no-pérdida: respuestas con texto y componentes cerrados de
+         verdad (isModuleComplete), sumados en todos los proyectos.
+         Los dos lados se miden igual, así la comparación es honesta. */
+      function storeCountsFor(shape, skipIds) {
+        var s = null;
+        try { s = toStoreShape(shape); } catch (e) { return { answers: 0, completed: 0 }; }
+        var answers = 0, completed = 0;
+        Object.keys(s.projects || {}).forEach(function (id) {
+          if (skipIds && skipIds[id]) return;
+          var p = s.projects[id];
+          answers += projectContentScore(p).answered;
+          completed += completedModulesFor(p);
+        });
+        return { answers: answers, completed: completed };
+      }
+      /* v17.27 (WS1) · La fusión adoptó respuestas que venían de la
+         nube (otro equipo escribió mientras tanto): esta pestaña las
+         adopta en local también, para no volver a subir una copia
+         vieja en el próximo guardado. Solo persiste en local; nunca
+         escribe en la nube. */
+      function adoptMergedStore(mergedStore) {
+        try {
+          store = mergedStore;
+          state = store.projects[store.activeProjectId] || state;
+          ensureAnswers();
+          persistLocalOnly(true, true);
+        } catch (e) {}
+      }
+      /* v17.27 (WS1) · Negarse a subir: no se subió NADA, la copia
+         local queda intacta y el próximo guardado lo reintenta. El
+         aviso es honesto: conflicto, no «guardado». */
+      function cloudRefuseUpload(code, message) {
+        cloudWriteInFlight = false;
+        cloudDirty = true; /* que el próximo cambio lo reintente */
+        window.__cloudConflict = true;
+        window.__cloudError = { code: code, message: message };
+        setCloudStatus("failed");
+        toast("Detecté un conflicto entre tus copias y no subí nada para no perder respuestas.");
+      }
+      /* v17.27 (WS1) · Escritura con fusión: cada subida lee primero
+         el documento de la nube, fusiona (mergeStores) y sube la
+         FUSIÓN, nunca la copia local sola. Sin documento en la nube
+         se sube lo local (la nube está vacía: no hay nada que
+         proteger). Si la lectura falla, si la nube no se puede leer
+         o si la fusión falla, NO se sube nada: la copia local queda
+         y se reintenta en el próximo guardado. Y la guarda dura: si
+         la fusión trajera menos respuestas o menos componentes
+         cerrados que la nube, la subida se niega —una fusión correcta
+         por unión nunca reduce, así que eso solo puede ser un error
+         y el error no se sube. */
       function doCloudWrite() {
-        var payload = cloudPayloadJson();
-        window.__cloudPayloadBytes = payload.bytes || 0;
-        window.__cloudTrimmed = !!payload.trimmed;
-        if (!payload.json || payload.tooBig) {
-          /* Ni recortando cabe: reintentarlo no puede tener éxito. */
-          window.__cloudError = { code: "payload-too-large", message: "El proyecto supera el límite de 1 MiB por documento de la nube (" + (payload.bytes || 0) + " bytes). No se reintenta: ni recortando el historial cabe." };
-          cloudWriteInFlight = false;
-          setCloudStatus("failed");
+        if (!me || (!state && !store)) { cloudWriteInFlight = false; return; }
+        var localShape = null;
+        try { localShape = toStoreShape(store || state); } catch (e) {
+          cloudRefuseUpload("cloud-merge-failed", "No pude preparar tu copia local para subirla: no subí nada para no perder respuestas.");
           return;
         }
         cloudWriteInFlight = true;
         var myGen = ++cloudWriteGen; /* esta escritura es la más reciente: solo su resultado vale */
-        db.collection("proyectos").doc(me.uid).set({
-          email: me.email,
-          nombreProyecto: state.project ? state.project.name : "",
-          data: payload.json,
-          actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
-        }).then(function () {
-          if (myGen !== cloudWriteGen) return; /* una escritura más reciente ya arrancó: este éxito es viejo y no manda */
-          cloudWriteInFlight = false;
-          cloudRetries = 0;
-          window.__cloudRetries = 0;
-          window.__cloudError = null;
-          if (cloudDirty) {
-            /* Un cambio llegó mientras esta escritura volaba: no quedó
-               dentro de ella. Se programa un guardado nuevo con ese
-               cambio. */
-            cloudDirty = false;
-            setCloudStatus("ok");
-            window.__cloudSave();
-          } else {
-            setCloudStatus("ok");
+        db.collection("proyectos").doc(me.uid).get().then(function (snap) {
+          if (myGen !== cloudWriteGen) return; /* una escritura más reciente ya arrancó: esta lectura es vieja y no manda */
+          var cloudRaw = null, hasCloud = false;
+          if (snap && snap.exists && snap.data && snap.data() && snap.data().data) {
+            try { cloudRaw = JSON.parse(snap.data().data); hasCloud = true; }
+            catch (e) {
+              cloudRefuseUpload("cloud-parse-failed", "La copia de la nube no se pudo leer: no subí nada para no perder respuestas.");
+              return;
+            }
           }
+          var uploadShape = localShape;
+          if (hasCloud) {
+            var merged = null;
+            try { merged = mergeStores(localShape, toStoreShape(cloudRaw)); }
+            catch (e) {
+              cloudRefuseUpload("cloud-merge-failed", "No pude fusionar tus copias: no subí nada para no perder respuestas.");
+              return;
+            }
+            var droppedIds = tombstonedDropsIn(merged.store, cloudRaw);
+            var cloudCounts = storeCountsFor(cloudRaw, droppedIds);
+            var mergedCounts = storeCountsFor(merged.store);
+            if (mergedCounts.answers < cloudCounts.answers || mergedCounts.completed < cloudCounts.completed) {
+              cloudRefuseUpload("cloud-conflict", "La fusión traería menos respuestas (" + mergedCounts.answers + ") que la nube (" + cloudCounts.answers + "): no subí nada para no perder respuestas.");
+              return;
+            }
+            uploadShape = merged.store;
+            if (merged.changed) adoptMergedStore(merged.store);
+          }
+          var payload = cloudPayloadJson(uploadShape);
+          window.__cloudPayloadBytes = payload.bytes || 0;
+          window.__cloudTrimmed = !!payload.trimmed;
+          if (!payload.json || payload.tooBig) {
+            /* Ni recortando cabe: reintentarlo no puede tener éxito. */
+            window.__cloudError = { code: "payload-too-large", message: "El proyecto supera el límite de 1 MiB por documento de la nube (" + (payload.bytes || 0) + " bytes). No se reintenta: ni recortando el historial cabe." };
+            cloudWriteInFlight = false;
+            setCloudStatus("failed");
+            return;
+          }
+          return db.collection("proyectos").doc(me.uid).set({
+            email: me.email,
+            nombreProyecto: (state && state.project) ? state.project.name : "",
+            data: payload.json,
+            actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
+          }).then(function () {
+            if (myGen !== cloudWriteGen) return; /* una escritura más reciente ya arrancó: este éxito es viejo y no manda */
+            cloudWriteInFlight = false;
+            cloudRetries = 0;
+            window.__cloudRetries = 0;
+            window.__cloudError = null;
+            window.__cloudConflict = false;
+            if (cloudDirty) {
+              /* Un cambio llegó mientras esta escritura volaba: no quedó
+                 dentro de ella. Se programa un guardado nuevo con ese
+                 cambio. */
+              cloudDirty = false;
+              setCloudStatus("ok");
+              window.__cloudSave();
+            } else {
+              setCloudStatus("ok");
+            }
+          });
         }).catch(function (err) {
           if (myGen !== cloudWriteGen) return; /* una escritura más reciente ya arrancó: este fallo es viejo — no borra su «ok», no reprograma nada */
           /* v17.26 (WS5) · El fallo ya no se traga: el código y el
              mensaje quedan guardados y se muestran en el indicador.
              Sin esto, un «reintentando» sin fin no se podía
-             diagnosticar (¿permiso? ¿límite de 1 MiB? ¿red?). */
+             diagnosticar (¿permiso? ¿límite de 1 MiB? ¿red?).
+             v17.27 (WS1) · Este catch es solo para fallos de RED
+             (la lectura o la subida): la lectura fallida no subió
+             nada y cada reintento vuelve a leer y fusionar, así que
+             reintentar es seguro. Los fallos de fusión y de lectura
+             de la copia ya se negaron arriba, sin reintento. */
           cloudWriteInFlight = false;
-          window.__cloudError = { code: (err && err.code) || "", message: String((err && err.message) || err || "") };
+          window.__cloudError = { code: (err && err.code) || "cloud-read-failed", message: String((err && err.message) || err || "") };
           if (cloudRetries < CLOUD_RETRY_DELAYS.length) {
             var delay = CLOUD_RETRY_DELAYS[cloudRetries];
             cloudRetries++;
             window.__cloudRetries = cloudRetries;
-            /* El reintento pendiente escribe la copia más reciente, así
-               que el cambio que llegó mientras tanto viaja en él. */
+            /* El reintento pendiente lee y fusiona de nuevo, así que
+               el cambio que llegó mientras tanto viaja en él. */
             cloudDirty = false;
             setCloudStatus("pending");
             clearTimeout(cloudRetryTimer);
@@ -14292,8 +15013,12 @@
         });
       }
       function writeCloudNow(closing) {
-        if (!me || !state) return;
+        if (!me || (!state && !store)) return;
         if (tabStale) return; /* una pestaña vieja no escribe en la nube */
+        /* v17.27 (WS1) · La fusión de entrada aún no terminó: la nube
+           no se toca. Lo local ya se guardó; la subida queda aplazada
+           hasta que syncOnLogin ponga cloudMergeDone en true. */
+        if (!window.__cloudMergeDone) { cloudDirty = true; return; }
         clearTimeout(saveTimer);
         saveTimer = null;
         /* v17.26 (WS5) · El temporizador de reintento ya disparó (o se
@@ -14304,7 +15029,11 @@
         doCloudWrite();
       }
       window.__cloudSave = function () {
-        if (!me || !state) return;
+        if (!me || (!state && !store)) return;
+        /* v17.27 (WS1) · Sin fusión de entrada terminada no se programa
+           subida: lo local ya se guardó y el cambio queda marcado para
+           subir cuando la fusión termine. */
+        if (!window.__cloudMergeDone) { cloudDirty = true; return; }
         /* v17.26 (WS5) · La cadena de reintentos es dueña de su
            temporizador: un guardado nuevo NO la cancela ni pone el
            contador a cero — antes cada respuesta reiniciaba el ciclo
@@ -14325,8 +15054,27 @@
            todavía no había empezado. */
         saveTimer = setTimeout(function () { writeCloudNow(); }, 900);
       };
+      /* v17.27 (WS4) · Lectura única de la tienda de la nube, solo
+         para que la restauración COMPRUEBE la lápida de la nube antes
+         de registrar: si la nube tiene una lápida para el id que se
+         restaura, se anota en el resultado (la lápida se despeja
+         igual con restoredAt en la escritura con fusión). Nunca
+         rechaza: sin sesión, sin documento o sin lectura, devuelve
+         null y la restauración sigue con sus demás guardas. */
+      window.__cloudReadStore = function () {
+        if (!me) return Promise.resolve(null);
+        return db.collection("proyectos").doc(me.uid).get().then(function (snap) {
+          if (!snap || !snap.exists || !snap.data || !snap.data() || !snap.data().data) return null;
+          try { return JSON.parse(snap.data().data); } catch (e) { return null; }
+        }).catch(function () { return null; });
+      };
       window.__cloudSaveNow = function (closing) {
-        if (!me || !state) return;
+        if (!me || (!state && !store)) return;
+        /* v17.27 (WS1) · Ni al cerrar: si la fusión de entrada aún no
+           terminó, un pagehide no sube nada a la nube —la copia local
+           ya quedó guardada por persist()/saveOnHide y la subida se
+           aplaza hasta que la fusión termine. */
+        if (!window.__cloudMergeDone) { cloudDirty = true; return; }
         clearTimeout(saveTimer);
         saveTimer = null;
         clearTimeout(cloudRetryTimer);
@@ -14377,15 +15125,31 @@
          proyecto local se migra a la cuenta sin perder nada. */
       function syncOnLogin(user) {
         currentUid = user.uid;
+        /* v17.27 (WS1) · Mientras esta fusión no termine, ninguna
+           escritura en la nube arranca (cloudMergeDone en false): un
+           pagehide o un guardado que llegara antes no sube nada. */
+        window.__cloudMergeDone = false;
+        window.__cloudConflict = false;
         var localUser = readPersisted(lsKey());
         var localLegacy = readPersisted(LS_KEY);
         db.collection("proyectos").doc(user.uid).get().then(function (snap) {
-          var cloudRaw = null;
+          var cloudRaw = null, cloudParseFailed = false;
           if (snap.exists && snap.data() && snap.data().data) {
-            try { cloudRaw = JSON.parse(snap.data().data); } catch (e) { cloudRaw = null; }
+            try { cloudRaw = JSON.parse(snap.data().data); } catch (e) { cloudRaw = null; cloudParseFailed = true; }
           }
           var hasLocal = !!(localUser || localLegacy);
-          if (cloudRaw && hasLocal) {
+          /* v17.27 (WS1) · La copia de la nube no se pudo leer: NO se
+             sube lo local por encima de algo ilegible. Se queda lo
+             local, se avisa del conflicto y el próximo guardado
+             reintenta la fusión (las escrituras ya leen y fusionan). */
+          if (cloudParseFailed) {
+            state = localUser || localLegacy || state;
+            window.__cloudConflict = true;
+            window.__cloudError = { code: "cloud-parse-failed", message: "La copia de la nube no se pudo leer." };
+            setCloudStatus("failed");
+            markCloudMergeDone();
+            toast("Detecté un conflicto entre tus copias y no subí nada para no perder respuestas.");
+          } else if (cloudRaw && hasLocal) {
             /* v17.14 · Fusión por contenido: si la nube trae C1 con fecha
                más nueva y lo local trae C12, el resultado es C12 (y se
                sube). Ninguna respuesta que exista en una de las dos copias
@@ -14394,20 +15158,38 @@
             try {
               /* readPersisted devuelve el proyecto activo, no la tienda
                  completa: se reconstruye la tienda local con todos los
-                 proyectos que haya en este navegador. */
+                 proyectos que haya en este navegador —bajo la clave de
+                 la cuenta Y bajo la clave anterior sin cuenta, para que
+                 ninguna respuesta local quede fuera de la fusión. */
               var localStoreShape = null;
               try {
                 var rawLocal = window.localStorage.getItem(lsKey());
                 if (rawLocal) localStoreShape = toStoreShape(JSON.parse(rawLocal));
               } catch (e2) {}
+              try {
+                var rawLegacy = window.localStorage.getItem(LS_KEY);
+                if (rawLegacy) {
+                  var legShape = toStoreShape(JSON.parse(rawLegacy));
+                  localStoreShape = localStoreShape ? mergeStores(localStoreShape, legShape).store : legShape;
+                }
+              } catch (e3) {}
               if (!localStoreShape) localStoreShape = toStoreShape(localUser || localLegacy);
               merged = mergeStores(localStoreShape, toStoreShape(cloudRaw));
+              /* v17.27 (WS1) · Guarda de no-pérdida también al entrar:
+                 una fusión que trajera menos respuestas o menos
+                 componentes cerrados que la nube no se adopta ni se
+                 sube: es un error, y el error no se sube. */
+              if (merged) {
+                var mc = storeCountsFor(merged.store), cc = storeCountsFor(cloudRaw, tombstonedDropsIn(merged.store, cloudRaw));
+                if (mc.answers < cc.answers || mc.completed < cc.completed) merged = null;
+              }
             } catch (e) { merged = null; }
             if (merged) {
               store = merged.store;
               state = store.projects[store.activeProjectId] || null;
               ensureAnswers();
               persistLocalOnly(true, true);
+              markCloudMergeDone();
               window.__cloudSaveNow();
               if (state) {
                 /* v17.26 (WS5) · «Se fusionaron» solo cuando la fusión
@@ -14416,24 +15198,53 @@
                  y no merece ese aviso. Las dos puertas difieren a
                  propósito: la de pestaña vieja (storedCopyAhead) también
                  es solo de respuestas, y no se afloja. */
+              var diverged = merged.stats.adoptedAnswersFromB || storesAnswerKeysDiffer(localStoreShape, cloudRaw);
               if (merged.stats.adoptedAnswersFromB && merged.stats.fromA > 0) toast("Se fusionaron tus copias de este navegador y de la nube: no se perdió ninguna respuesta (" + merged.stats.fromB + " venían de la nube y " + merged.stats.fromA + " de este navegador).");
-                else if (merged.stats.adoptedFromB) toast("Tu proyecto se sincronizó con tu cuenta: " + state.project.name + ".");
-                else toast("Tu copia de este navegador es más reciente: se subió a tu cuenta: " + state.project.name + ".");
+                else if (diverged) toast("Tu proyecto se sincronizó con tu cuenta: " + state.project.name + ".");
+                /* v17.27 (WS2) · Copias idénticas en contenido: silencio. Ni aviso de fusión ni «copia más reciente»: no se fusionó nada ni se afirmó ninguna subida. */
               }
             } else {
+              /* v17.27 (WS1) · La fusión falló: antes esta rama subía lo
+                 local sin fusionar, por encima de la nube. Ahora no se
+                 sube nada: se queda lo local, se avisa del conflicto y
+                 el próximo guardado reintenta la fusión. */
               state = localUser || localLegacy || null;
-              if (state) window.__cloudSaveNow();
+              window.__cloudConflict = true;
+              window.__cloudError = { code: "cloud-merge-failed", message: "No pude fusionar tus copias al entrar." };
+              setCloudStatus("failed");
+              markCloudMergeDone();
+              toast("Detecté un conflicto entre tus copias y no subí nada para no perder respuestas.");
             }
           } else if (cloudRaw) {
+            var cloudEmptyStore = cloudRaw.projects && typeof cloudRaw.projects === "object" && Object.keys(cloudRaw.projects).length === 0;
+            if (cloudEmptyStore) {
+              /* v17.27 (WS2) · Cero proyectos en la nube no es una copia
+                 rota: es una cuenta vacía (p. ej. se borró el último
+                 proyecto y solo quedan las lápidas). Se adopta la tienda
+                 tal cual —lápidas incluidas— sin aviso de conflicto. */
+              try { store = toStoreShape(cloudRaw); } catch (e) {}
+              state = null;
+              persist();
+              markCloudMergeDone();
+            } else {
             var cloud = null;
             try { cloud = validProject(cloudRaw); } catch (e) { cloud = null; }
             if (cloud) {
               state = cloud;
               persistLocalOnly(true, true); /* no tocar savedAt: la copia viene de la nube */
+              markCloudMergeDone();
               toast("Tu proyecto se sincronizó desde tu cuenta: " + state.project.name + ".");
             } else {
+              /* v17.27 (WS1) · La copia de la nube no es un proyecto
+                 válido: antes se subía lo local por encima. Ahora no se
+                 sube nada y se avisa del conflicto. */
               state = localUser || localLegacy || null;
-              if (state) window.__cloudSaveNow();
+              window.__cloudConflict = true;
+              window.__cloudError = { code: "cloud-invalid", message: "La copia de la nube no es un proyecto válido." };
+              setCloudStatus("failed");
+              markCloudMergeDone();
+              toast("Detecté un conflicto entre tus copias y no subí nada para no perder respuestas.");
+            }
             }
           } else if (hasLocal) {
             state = localUser || localLegacy;
@@ -14441,11 +15252,13 @@
               try { window.localStorage.removeItem(LS_KEY); } catch (e) {}
             }
             persistLocalOnly(false, true);
+            markCloudMergeDone();
             window.__cloudSaveNow();
             if (localLegacy && !localUser) toast("Tu proyecto se migró a tu cuenta: " + state.project.name + ". Desde ahora se sincroniza en la nube.");
             else toast("Tu proyecto de este navegador se subió a tu cuenta: " + state.project.name + ".");
           } else {
             state = null;
+            markCloudMergeDone();
           }
           ensureAnswers();
           ui.module = "M0";
@@ -14461,6 +15274,12 @@
           // Sin conexión con Firestore: se trabaja con la copia local.
           state = localUser || localLegacy || state;
           booted = true; window.__booted = true;
+          /* v17.27 (WS1) · La fusión de entrada no pudo leer la nube,
+             así que no se sube nada ahora; la puerta se abre para que
+             el próximo guardado reintente la lectura con fusión —las
+             escrituras ya leen antes de subir— en vez de quedarse
+             bloqueada toda la sesión. */
+          markCloudMergeDone();
           ensureAnswers();
           renderSidebar();
           showView(state ? "resumen" : "welcome");
@@ -14472,6 +15291,9 @@
       function lockScreen(msg) {
         if (window.__bootAuthTimer) { clearTimeout(window.__bootAuthTimer); window.__bootAuthTimer = null; }
         me = null; isAdmin = false; window.__isAdmin = false; window.__courtesy = false; window.__courtesyUntil = null; /* v17.23: al cerrar sesión se borra la cortesía */
+        window.__cloudLoggedIn = false; /* v17.27 (WS4) · sin sesión no hay confirmación en la nube */
+        window.__cloudLoginPending = false; /* v17.27 (WS4) · sin sesión no hay fusión de entrada en curso */
+        window.__cloudMergeDone = false; window.__cloudConflict = false; /* v17.27 (WS1) · al cerrar sesión la puerta de la nube se vuelve a cerrar hasta la próxima fusión de entrada */
         currentUid = null; booted = false; window.__booted = false; demoMode = false;
         document.body.classList.add("locked");
         $("accountBox").hidden = true;
@@ -14481,6 +15303,7 @@
 
       auth.onAuthStateChanged(function (user) {
         if (!user) { lockScreen(); return; }
+        window.__cloudLoginPending = true; /* v17.27 (WS4) · hay sesión: la restauración espera a que su fusión de entrada termine */
         var ref = db.collection("usuarios").doc(user.uid);
         ref.get().then(function (snap) {
           var isAdm = (user.email || "").toLowerCase() === ADMIN_EMAIL;
@@ -14530,6 +15353,7 @@
 
       function enterAs(user, admin) {
         me = user; isAdmin = admin; window.__isAdmin = !!admin;
+        window.__cloudLoggedIn = true; /* v17.27 (WS4) · con sesión, la restauración confirma en la nube */
         document.body.classList.remove("locked");
         $("authError").classList.remove("show");
         $("accountBox").hidden = false;
