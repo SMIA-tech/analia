@@ -7174,6 +7174,7 @@
           if (Object.keys(store.projects || {}).length || Object.keys(store.deleted || {}).length) {
             window.localStorage.setItem(lsKey(), JSON.stringify(store));
             storageOK = true;
+            if (window.__cloudMarkMetaDirty) window.__cloudMarkMetaDirty();
             renderSaveStatus();
             return true;
           }
@@ -7206,6 +7207,11 @@
         window.localStorage.setItem(lsKey(), JSON.stringify(store));
         storageOK = true;
       } catch (e) { storageOK = false; }
+      /* v17.28 · El proyecto activo cambió en local: su documento por
+         proyecto (items/{id}) queda marcado para subir, y el documento
+         meta (activeProjectId, lápidas) también. */
+      if (window.__cloudMarkDirty) window.__cloudMarkDirty(state.id);
+      if (window.__cloudMarkMetaDirty) window.__cloudMarkMetaDirty();
       if (window.__cloudSave) window.__cloudSave();
       renderSaveStatus();
       return true;
@@ -7228,6 +7234,10 @@
         window.localStorage.setItem(lsKey(), JSON.stringify(store));
         storageOK = true;
       } catch (e) { storageOK = false; }
+      /* v17.28 · Igual que en persist(): lo que cambió en local queda
+         marcado para subir a su documento por proyecto (y al meta). */
+      if (window.__cloudMarkDirty) window.__cloudMarkDirty(state.id);
+      if (window.__cloudMarkMetaDirty) window.__cloudMarkMetaDirty();
       renderSaveStatus();
     }
 
@@ -7666,6 +7676,12 @@
         renderSidebar();
         return false;
       }
+      /* v17.28 (WS2) · La lápida del proyecto que desaparece es un
+         borrado: su id queda marcado sucio para que doCloudWrite borre
+         su documento por proyecto (solo lo borra si la lápida lo borra
+         de verdad) y el meta suba con la lápida. */
+      if (window.__cloudMarkDirty) window.__cloudMarkDirty(lose.id);
+      if (window.__cloudMarkMetaDirty) window.__cloudMarkMetaDirty();
       if (window.__cloudSaveNow) window.__cloudSaveNow();
       renderSidebar();
       showView(state ? "resumen" : "welcome");
@@ -7839,8 +7855,16 @@
       out.indicatorLog = il;
       var pa = a.payment || {}, pb = b.payment || {};
       var pay = null;
-      if (pb.status === "activo" && pa.status !== "activo") pay = pb;
-      else if (pa.status === "activo" && pb.status === "activo" && (pb.paidUntil || "") > (pa.paidUntil || "")) pay = pb;
+      /* v17.28 (WS2) · El estado en uso es "active", no "activo": las dos
+         primeras ramas nunca se cumplían y una activación del administrador
+         se revertía sola en la próxima fusión (el reporte local, con la
+         misma reportedAt, ganaba por ser el lado A). Ahora "active" manda:
+         entre dos activaciones gana la paidUntil más lejana; un reporte
+         nuevo no cancela una activación vigente; solo una desactivación
+         del administrador con fecha posterior (updatedAt) la revierte. */
+      if (pa.status === "active" && pb.status === "active") pay = (pb.paidUntil || "") > (pa.paidUntil || "") ? pb : pa;
+      else if (pa.status === "active" && pb.status !== "active") pay = (pb.status === "none" && pb.updatedAt && (!pa.updatedAt || pb.updatedAt > pa.updatedAt)) ? pb : pa;
+      else if (pb.status === "active" && pa.status !== "active") pay = (pa.status === "none" && pa.updatedAt && (!pb.updatedAt || pa.updatedAt > pb.updatedAt)) ? pa : pb;
       else if ((pb.reportedAt || "") > (pa.reportedAt || "")) pay = pb;
       else pay = pa;
       if (pay !== pa) { changed = true; adoptedFromB = true; }
@@ -7849,7 +7873,18 @@
       [a.paymentHistory, b.paymentHistory].forEach(function (arr) {
         (arr || []).forEach(function (it) {
           var key2 = (it && (it.transactionId || it.reference || it.reportedAt)) || JSON.stringify(it);
-          if (!ph.some(function (x) { return ((x && (x.transactionId || x.reference || x.reportedAt)) || JSON.stringify(x)) === key2; })) ph.push(it);
+          var ex = null;
+          ph.some(function (x) { if (((x && (x.transactionId || x.reference || x.reportedAt)) || JSON.stringify(x)) === key2) { ex = x; return true; } return false; });
+          if (!ex) ph.push(it);
+          /* v17.28 (WS2) · La verificación del administrador gana sobre el
+             reporte pendiente del mismo pago: sin esto, la próxima fusión
+             con la copia local del usuario revertía la entrada a
+             «registrado — pendiente de verificación» aunque el acceso
+             siguiera activo. */
+          else if (it && it.status === "verificado — activo" && ex.status !== "verificado — activo") {
+            var ix = ph.indexOf(ex);
+            if (ix >= 0) ph[ix] = it;
+          }
         });
       });
       if (stableStringify(ph) !== stableStringify(a.paymentHistory || [])) { changed = true; adoptedFromB = true; }
@@ -8038,6 +8073,10 @@
         ensureAnswers();
         clearTabStale();
         persistLocalOnly(false, true);
+        /* v17.28 (WS2) · La fusión con la copia guardada puede haber
+           adoptado contenido en cualquier proyecto: todos quedan
+           marcados para subir, no solo el activo. */
+        markStoreDirty(store);
         if (window.__cloudSaveNow) window.__cloudSaveNow();
         renderSidebar(); renderChat();
         toast("Fusioné lo más reciente en esta pestaña: no se perdió ninguna respuesta.");
@@ -8097,7 +8136,8 @@
        real lo lleva window.__cloudStatus (definido por el bloque de
        Firebase): "unknown" (aún no se intentó subir), "pending"
        (subida en curso o reintentando), "ok" (la nube lo confirmó) o
-       "failed" (se agotaron los reintentos). Nunca dice que todo está
+       "failed" (se agotaron los reintentos, o la subida se negó para
+       no perder respuestas). Nunca dice que todo está
        guardado si la nube no lo confirmó. En modo demo (o sin sesión)
        no hay nube: lo honesto es «Guardado en este equipo». */
     /* v17.26 (WS5) · El error real de la nube, en una línea: el código
@@ -8141,7 +8181,31 @@
           ? "Sin subir todavía — reintentando… (guardado en este equipo ✓" + (hora ? " · " + hora : "") + ")" + cloudErrorText()
           : "Guardando en la nube… (guardado en este equipo ✓" + (hora ? " · " + hora : "") + ")";
       } else if (cs === "failed") {
-        el.textContent = "No se pudo subir a la nube — se reintentará al próximo cambio. (guardado en este equipo ✓" + (hora ? " · " + hora : "") + ")" + cloudErrorText();
+        /* v17.28 (WS3) · El fallo «payload-too-large» es permanente:
+           ese proyecto no cabe en un documento de la nube ni
+           recortado, así que prometer «se reintentará al próximo
+           cambio» mentía: el próximo cambio vuelve a fallar igual.
+           Mensaje honesto: nombra el proyecto, dice cuánto mide en
+           bytes UTF-8 y cuál es el límite real (950.000 bytes por
+           documento), y recuerda que la copia de este equipo está a
+           salvo y que exportar el proyecto lo protege. Los demás
+           fallos sí se reintentan al próximo cambio (el proyecto
+           queda sucio / la cadena de reintentos sigue viva), así que
+           conservan la frase de siempre. Si no hay código, se cae a
+           la frase de siempre: nunca se esconde un fallo. */
+        var ce = window.__cloudError;
+        if (ce && ce.code === "payload-too-large") {
+          /* El proyecto que no cupo puede no ser el activo: su nombre
+             quedó guardado en la negativa, y ese es el que se nombra. */
+          var pname = window.__cloudTooBigName || (state && state.project && state.project.name) || "Este proyecto";
+          var pbytes = (typeof window.__cloudTooBigBytes === "number" && window.__cloudTooBigBytes > 0)
+            ? window.__cloudTooBigBytes
+            : (typeof window.__cloudPayloadBytes === "number" ? window.__cloudPayloadBytes : 0);
+          var fmtBytes = function (n) { try { return n.toLocaleString("es-CO"); } catch (e) { return String(n); } };
+          el.textContent = "«" + pname + "» es demasiado grande para la nube: mide " + (pbytes ? fmtBytes(pbytes) + " bytes" : "más de 950.000 bytes") + " y cada documento admite 950.000 como máximo. No se subirá mientras siga así de grande. Está guardado en este equipo ✓" + (hora ? " · " + hora : "") + ": expórtalo para no perderlo." + cloudErrorText();
+        } else {
+          el.textContent = "No se pudo subir a la nube — se reintentará al próximo cambio. (guardado en este equipo ✓" + (hora ? " · " + hora : "") + ")" + cloudErrorText();
+        }
       } else {
         el.textContent = "✓ Guardado en este equipo" + (hora ? " · " + hora : "") + ".";
       }
@@ -8928,7 +8992,7 @@
       list.querySelectorAll("[data-proj-rename]").forEach(function (b) { b.addEventListener("click", function () {
         var id = b.getAttribute("data-proj-rename"); var p = store.projects[id]; if (!p) return;
         var name = window.prompt("Nuevo nombre para este proyecto:", p.project.name);
-        if (name && name.trim()) { p.project.name = name.trim(); persist(); renderSidebar(); toast("Proyecto renombrado."); }
+        if (name && name.trim()) { p.project.name = name.trim(); persist(); /* v17.28 (WS2) · Renombrar puede tocar un proyecto que no es el activo: su id queda marcado para subir, que persist() solo marca el activo. */ if (window.__cloudMarkDirty) window.__cloudMarkDirty(id); renderSidebar(); toast("Proyecto renombrado."); }
       }); });
       list.querySelectorAll("[data-proj-dup]").forEach(function (b) { b.addEventListener("click", function () {
         var id = b.getAttribute("data-proj-dup"); var p = store.projects[id]; if (!p) return;
@@ -8956,6 +9020,10 @@
         p.archived = !p.archived; p.archivedAt = new Date().toISOString(); /* la fecha decide en la fusión — restaurar gana si es más reciente */
         var savedArch = state ? persist() : (function () { try { ensureStore(); window.localStorage.setItem(lsKey(), JSON.stringify(store)); return true; } catch (e) { return false; } })();
         if (!savedArch) { p.archived = wasArchived; if (wasArchivedAt) p.archivedAt = wasArchivedAt; else delete p.archivedAt; renderSidebar(); return; }
+        /* v17.28 (WS2) · Archivar puede tocar un proyecto que no es el
+           activo: su id queda marcado para subir, que persist() solo
+           marca el activo. */
+        if (window.__cloudMarkDirty) window.__cloudMarkDirty(id);
         if (window.__cloudSaveNow) window.__cloudSaveNow();
         renderSidebar();
         toast(p.archived ? "Proyecto archivado: " + p.project.name + "." : "Proyecto restaurado: " + p.project.name + ".");
@@ -8968,7 +9036,16 @@
         store.deleted[id] = makeTombstone(p); /* v17.27 (WS2) · Lápida con dientes: guarda la fecha del borrado y el contenido borrado (su fecha más reciente y cuántas respuestas tenía), para que la fusión solo la aplique si la otra copia no trae nada más nuevo o más rico */
         delete store.projects[id];
         if (state && state.id === id) { var rest = Object.keys(store.projects); state = rest.length ? store.projects[rest[0]] : null; store.activeProjectId = state ? state.id : null; }
-        persist(); if (window.__cloudSaveNow) window.__cloudSaveNow(); /* la lápida sube a la nube de inmediato */
+        persist();
+        /* v17.28 (WS2) · La lápida es un borrado: el id borrado queda
+           marcado sucio para que doCloudWrite borre su documento por
+           proyecto (solo lo borra si la lápida lo borra de verdad) y el
+           meta suba con la lápida. Sin esta marca, borrar el último
+           proyecto (state en null, persist() sin proyecto activo) no
+           subiría nada. */
+        if (window.__cloudMarkDirty) window.__cloudMarkDirty(id);
+        if (window.__cloudMarkMetaDirty) window.__cloudMarkMetaDirty();
+        if (window.__cloudSaveNow) window.__cloudSaveNow(); /* la lápida sube a la nube de inmediato */
         renderSidebar(); showView(state ? "resumen" : "welcome");
         toast("Proyecto eliminado: " + p.project.name + ".");
       }); });
@@ -14260,6 +14337,13 @@
       }
       if (res.cloud === "confirmed") msg = "Restaurado y guardado en la nube: " + res.name + ". Ya puedes cerrar la pestaña.";
       else if (res.cloud === "local-only") msg = "Restaurado y guardado en este navegador: " + res.name + ".";
+      /* v17.28 (WS3) · Un proyecto demasiado grande para la nube no se
+         va a confirmar nunca: decir «espera a que el indicador diga
+         guardado» lo dejaría esperando algo imposible. Mensaje
+         honesto con el límite real; los demás fallos sí pueden
+         confirmarse al próximo cambio y conservan la frase de
+         siempre. */
+      else if (res.cloud === "failed" && window.__cloudError && window.__cloudError.code === "payload-too-large") msg = "Restaurado en este navegador, pero «" + res.name + "» es demasiado grande para la nube: cada documento admite 950.000 bytes como máximo. Quedó guardado aquí: expórtalo para no perderlo.";
       else msg = "Restaurado en este navegador, pero todavía no confirmé la nube: espera a que el indicador diga guardado antes de cerrar.";
       toast(msg);
       if (msgEl) msgEl.textContent = msg;
@@ -14793,6 +14877,33 @@
       var cloudWriteInFlight = false; /* v17.26 (WS5) · una escritura en curso: un cambio que llega en ese momento viaja en el reintento o en un guardado nuevo, nunca se pierde */
       var cloudWriteGen = 0; /* v17.26 (WS5) · generación de la escritura: cada intento de red lleva un número nuevo. El resultado de una escritura vieja (éxito o fallo) se ignora si ya arrancó una más reciente — sin esto, el fallo de una escritura vieja, que llega un turno de microtarea después por ir detrás de un .then, pisaba el «ok» de la escritura nueva y programaba un reintento fantasma. */
       var cloudDirty = false;
+      /* v17.28 · Proyectos con cambios locales aún no subidos a su
+         documento por proyecto (items/{id}): doCloudWrite solo sube
+         estos, nunca la tienda completa. persist()/persistLocalOnly()
+         marcan el proyecto activo (ver __cloudMarkDirty); el resto de
+         marcas las pone quien cambia la tienda (WS2). cloudMetaDirty
+         marca que activeProjectId o las lápidas cambiaron y el
+         documento meta (proyectos/{uid}) debe reescribirse. */
+      var cloudDirtyProjects = {};
+      var cloudMetaDirty = false;
+      window.__cloudDirtyProjects = cloudDirtyProjects;
+      window.__cloudMetaDirty = function () { return cloudMetaDirty; };
+      function markCloudDirtyProject(id) { if (id) cloudDirtyProjects[id] = true; }
+      function markCloudMetaDirty() { cloudMetaDirty = true; }
+      window.__cloudMarkDirty = markCloudDirtyProject;
+      window.__cloudMarkMetaDirty = markCloudMetaDirty;
+      window.__cloudDirtyList = function () { return Object.keys(cloudDirtyProjects); };
+      /* v17.28 (WS2) · Marca TODOS los proyectos de una tienda como sucios
+         (y el meta): lo usa quien adopta una fusión que puede haber tocado
+         varios proyectos —la entrada, la fusión con la copia guardada— para
+         que la subida lleve la tienda fusionada entera y no solo el
+         proyecto activo. */
+      function markStoreDirty(shape) {
+        try {
+          Object.keys((shape && shape.projects) || {}).forEach(function (id) { markCloudDirtyProject(id); });
+          markCloudMetaDirty();
+        } catch (e) {}
+      }
       /* v17.27 (WS1) · La fusión con la nube ya NO ocurre una sola vez al
          entrar: cada escritura en la nube lee primero el documento,
          fusiona (mergeStores) y sube la FUSIÓN, nunca la copia local
@@ -14825,18 +14936,39 @@
          próximo guardado— y si la fusión trajera menos respuestas o
          menos componentes cerrados que la nube, la subida se niega.
          Una pestaña marcada como vieja no escribe nunca. */
+      /* v17.28 · Tamaño real en BYTES UTF-8 de un texto. Firestore
+         cobra el límite de 1 MiB por documento en bytes UTF-8, no en
+         unidades UTF-16 de JavaScript: raw.length subestimaba el
+         tamaño (una «ó» o un emoji pesan más de 1 byte) y un paquete
+         que «cabía» según length podía rebotar por payload-too-large.
+         TextEncoder cuando existe; si no, el rodeo clásico con
+         encodeURIComponent. */
+      function utf8Bytes(s) {
+        if (typeof s !== "string") s = String(s == null ? "" : s);
+        if (typeof TextEncoder !== "undefined") {
+          try { return new TextEncoder().encode(s).length; } catch (e) {}
+        }
+        return unescape(encodeURIComponent(s)).length;
+      }
+      window.__utf8Bytes = utf8Bytes;
       /* v17.26 (WS5) · El paquete que sube: la tienda completa, pero
          si se acerca al límite de 1 MiB se recorta ANTES de intentarlo
          (historial del lienzo y resultados de investigación viejos), en
          vez de reintentar una escritura que no puede tener éxito. Lo
-         local nunca se recorta: solo el paquete de la nube. */
+         local nunca se recorta: solo el paquete de la nube.
+         v17.28 · Ahora el paquete es UN SOLO PROYECTO (su documento
+         items/{id}), y el tamaño se mide en BYTES UTF-8 (utf8Bytes),
+         no en raw.length: el límite de Firestore es 1.048.576 bytes
+         UTF-8 por documento. Los recortes (trimProject, niveles 1–3)
+         ya operan por proyecto, así que siguen valiendo tal cual
+         cuando la entrada es un proyecto solo. */
       function cloudPayloadJson(src) {
         src = src || store || state;
         var raw = "";
         try { raw = JSON.stringify(src); } catch (e) { return { json: null, bytes: 0, trimmed: false, tooBig: true }; }
-        if (raw.length <= CLOUD_MAX_BYTES) return { json: raw, bytes: raw.length, trimmed: false, tooBig: false };
+        if (utf8Bytes(raw) <= CLOUD_MAX_BYTES) return { json: raw, bytes: utf8Bytes(raw), trimmed: false, tooBig: false };
         var copy = null;
-        try { copy = JSON.parse(raw); } catch (e) { return { json: null, bytes: raw.length, trimmed: false, tooBig: true }; }
+        try { copy = JSON.parse(raw); } catch (e) { return { json: null, bytes: utf8Bytes(raw), trimmed: false, tooBig: true }; }
         function trimProject(pr, level) {
           if (!pr) return;
           if (pr.canvas && Array.isArray(pr.canvas.history)) {
@@ -14858,11 +14990,12 @@
         var out = raw;
         for (var level = 1; level <= 3; level++) {
           projectsOf(copy).forEach(function (pr) { trimProject(pr, level); });
-          try { out = JSON.stringify(copy); } catch (e) { return { json: null, bytes: raw.length, trimmed: true, tooBig: true }; }
-          if (out.length <= CLOUD_MAX_BYTES) return { json: out, bytes: out.length, trimmed: true, tooBig: false };
+          try { out = JSON.stringify(copy); } catch (e) { return { json: null, bytes: utf8Bytes(raw), trimmed: true, tooBig: true }; }
+          if (utf8Bytes(out) <= CLOUD_MAX_BYTES) return { json: out, bytes: utf8Bytes(out), trimmed: true, tooBig: false };
         }
-        return { json: null, bytes: out.length, trimmed: true, tooBig: true };
+        return { json: null, bytes: utf8Bytes(out), trimmed: true, tooBig: true };
       }
+      window.__cloudPayloadJson = cloudPayloadJson;
       /* v17.27 (WS1) · Conteos de una tienda para la guarda de
          no-pérdida: respuestas con texto y componentes cerrados de
          verdad (isModuleComplete), sumados en todos los proyectos.
@@ -14903,6 +15036,283 @@
         setCloudStatus("failed");
         toast("Detecté un conflicto entre tus copias y no subí nada para no perder respuestas.");
       }
+      /* ---------- v17.28 · Nube por proyecto ----------
+         DISPOSICIÓN (antes: un solo documento proyectos/{uid} con el
+         campo data = toda la tienda en JSON; con 12 proyectos pasaba
+         de 1 MiB y NADA podía subir):
+         - proyectos/{uid}/items/{projectId}: UN proyecto por
+           documento. Campos: email, data (el proyecto entero en JSON,
+           misma forma que el respaldo .json de un proyecto) y
+           actualizadoEn. Límite de 950.000 bytes POR PROYECTO, no por cuenta.
+         - proyectos/{uid} (documento META): solo email,
+           activeProjectId, deleted (lápidas {id: {at, contentAt,
+           savedAt, answered}}) y actualizadoEn. Es pequeño por
+           diseño y nunca se acerca al límite. Se escribe SIEMPRE con
+           {merge:true} para NO borrar el campo data del documento
+           viejo que queda debajo.
+         - El documento VIEJO (proyectos/{uid} con data = tienda
+           completa) NO se borra en esta versión: queda como
+           respaldo de lectura (__cloudReadStore) hasta que la
+           migración se verifique. La migración lo lee y reparte sus
+           proyectos en items/{id}, fusionando (mergeProjects) si el
+           documento por proyecto ya existe, nunca pisando.
+         - Cada escritura en items/{id} lee primero ese documento,
+           fusiona pregunta por pregunta (mergeProjects) y sube la
+           FUSIÓN; la guarda de no-pérdida es POR PROYECTO (la fusión
+           nunca trae menos respuestas ni menos componentes cerrados
+           que la copia de la nube de ese proyecto). */
+      function cloudItemsRef(uid) {
+        return db.collection("proyectos").doc(uid || (me && me.uid)).collection("items");
+      }
+      function cloudMetaRef(uid) {
+        return db.collection("proyectos").doc(uid || (me && me.uid));
+      }
+      function parseItemData(raw) {
+        if (raw == null) return null;
+        if (typeof raw === "object") return raw;
+        return JSON.parse(raw);
+      }
+      /* Lectura única de un proyecto de la nube (sin suscripciones).
+         Resuelve null si no existe; RECHAZA si existe pero no se
+         puede leer (ese proyecto no se sube ni se fusiona). */
+      function readCloudProject(uid, projectId) {
+        var u = uid || (me && me.uid), id = projectId;
+        return cloudItemsRef(u).doc(id).get().then(function (snap) {
+          if (!snap || !snap.exists || !snap.data || !snap.data() || snap.data().data == null) return null;
+          try { return parseItemData(snap.data().data); }
+          catch (e) { var err = new Error("cloud-parse-failed"); err.code = "cloud-parse-failed"; throw err; }
+        });
+      }
+      /* Lectura única del documento meta (activeProjectId + lápidas).
+         El campo data del documento viejo, si existe, se ignora aquí:
+         para él está __cloudReadStore. */
+      function readCloudMeta(uid) {
+        var u = uid || (me && me.uid);
+        return cloudMetaRef(u).get().then(function (snap) {
+          if (!snap || !snap.exists || !snap.data) return null;
+          var d = snap.data() || {};
+          /* v17.28 (WS2) · Sin campos de meta (activeProjectId, deleted)
+             el documento es solo el viejo de un solo documento, no un
+             meta: devolver un meta vacío haría creer que la nube no
+             tiene proyectos y el respaldo del documento viejo nunca se
+             usaría. El meta real siempre trae ambos campos (los escribe
+             writeCloudMeta juntos). */
+          if (!('activeProjectId' in d) && !('deleted' in d)) return null;
+          return { email: d.email || null, activeProjectId: d.activeProjectId || null, deleted: d.deleted || {} };
+        });
+      }
+      /* Lista todos los proyectos de la nube (subcolección items).
+         Un documento ilegible NO tumba la lectura entera: se salta,
+         se anota en unreadable y se marca conflicto. Con quiet=true la
+         lectura es silenciosa (la lista de Administración lee proyectos
+         de OTROS usuarios: un documento ilegible de otro no debe marcar
+         un conflicto en la sesión del administrador). */
+      function readCloudAllProjects(uid, quiet) {
+        var u = uid || (me && me.uid);
+        return cloudItemsRef(u).get().then(function (qs) {
+          var out = { projects: {}, unreadable: [] };
+          if (!qs || qs.empty) return out;
+          qs.forEach(function (docSnap) {
+            var d = docSnap.data() || {};
+            if (d.data == null) return;
+            try { out.projects[docSnap.id] = parseItemData(d.data); }
+            catch (e) { out.unreadable.push(docSnap.id); }
+          });
+          if (out.unreadable.length && !quiet) {
+            window.__cloudConflict = true;
+            window.__cloudUnreadableItems = out.unreadable.slice();
+            window.__cloudError = { code: "cloud-parse-failed", message: "Algunos proyectos de la nube no se pudieron leer (" + out.unreadable.join(", ") + "): se dejaron como estaban." };
+          }
+          return out;
+        });
+      }
+      window.__cloudReadProject = readCloudProject;
+      window.__cloudReadMeta = readCloudMeta;
+      window.__cloudReadAll = readCloudAllProjects;
+      /* Conteos de UN proyecto para la guarda de no-pérdida. */
+      function projectCountsFor(p) {
+        return { answers: projectContentScore(p).answered, completed: completedModulesFor(p) };
+      }
+      /* Escritura del documento meta. Siempre con {merge:true}: el
+         documento viejo comparte este camino y su campo data debe
+         sobrevivir (es el respaldo de lectura hasta que la migración
+         se verifique). El meta es diminuto por diseño. */
+      function writeCloudMeta(localShape) {
+        var meta = {
+          email: (me && me.email) || "",
+          activeProjectId: (localShape && localShape.activeProjectId) || null,
+          deleted: (localShape && localShape.deleted) || {},
+          actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        return cloudMetaRef().set(meta, { merge: true });
+      }
+      /* Negarse a subir UN proyecto: ese proyecto queda marcado como
+         sucio (el próximo guardado lo reintenta) y el conflicto queda
+         anotado; los demás proyectos de la misma pasada no se ven
+         afectados y la copia local queda intacta. */
+      function cloudRefuseProject(id, code, message) {
+        window.__cloudConflict = true;
+        if (!window.__cloudProjectErrors) window.__cloudProjectErrors = {};
+        window.__cloudProjectErrors[id] = { code: code, message: message };
+        window.__cloudError = { code: code, message: message };
+      }
+      /* Migración del documento viejo (tienda completa en data) a
+         documentos por proyecto. Idempotente: si el documento
+         items/{id} ya trae exactamente el contenido que se subiría,
+         no se escribe; si trae otro contenido, se fusiona
+         (mergeProjects) y se sube la fusión. Sin copia en la nube,
+         el proyecto se fusiona consigo mismo antes de subirlo, para
+         dejarlo en su forma canónica y que una segunda migración lo
+         reconozca byte a byte. Antes de darla por buena, RELEE cada
+         proyecto de la nube y compara conteos (respuestas +
+         componentes cerrados, antes vs. después): el resultado queda
+         en window.__migrationCheck y la migración solo se marca
+         verificada (__cloudMigrated = true) si todos los proyectos
+         pasaron. Una lápida que borra de verdad no crea documento.
+         El documento viejo NUNCA se borra. */
+      window.__migrationCheck = null;
+      window.__cloudMigrated = false;
+      window.__cloudMigrationRunning = false;
+      var cloudMigrationPromise = null;
+      function migrateOldDocToItems(cloudRaw) {
+        if (!me) return Promise.resolve(null);
+        if (cloudMigrationPromise) return cloudMigrationPromise;
+        var oldStore = null;
+        try { oldStore = toStoreShape(cloudRaw); } catch (e) { return Promise.resolve(null); }
+        var ids = Object.keys(oldStore.projects || {});
+        var before = {};
+        ids.forEach(function (id) { before[id] = projectCountsFor(oldStore.projects[id]); });
+        var check = { ok: false, at: new Date().toISOString(), projects: {}, writes: 0, skipped: 0, refused: [], metaWritten: false };
+        window.__migrationCheck = check;
+        window.__cloudMigrationRunning = true;
+        var chain = Promise.resolve();
+        ids.forEach(function (id) {
+          chain = chain.then(function () {
+            var localProj = oldStore.projects[id];
+            var tomb = oldStore.deleted ? oldStore.deleted[id] : null;
+            return cloudItemsRef().doc(id).get().then(function (snap) {
+              var cloudProj = null, hasCloud = false;
+              if (snap && snap.exists && snap.data && snap.data() && snap.data().data != null) {
+                try { cloudProj = parseItemData(snap.data().data); hasCloud = true; }
+                catch (e) {
+                  check.refused.push(id);
+                  check.projects[id] = { before: before[id], after: null, ok: false, reason: "cloud-parse-failed" };
+                  return;
+                }
+              }
+              var up = localProj;
+              if (hasCloud) {
+                if (tomb && tombstoneDrops(tomb, cloudProj)) {
+                  check.projects[id] = { before: before[id], after: null, ok: true, dropped: true };
+                  return;
+                }
+                try { up = mergeProjects(localProj, cloudProj).proj; }
+                catch (e) {
+                  check.refused.push(id);
+                  check.projects[id] = { before: before[id], after: null, ok: false, reason: "cloud-merge-failed" };
+                  return;
+                }
+                var cc = projectCountsFor(cloudProj), mc = projectCountsFor(up);
+                if (mc.answers < cc.answers || mc.completed < cc.completed) {
+                  check.refused.push(id);
+                  check.projects[id] = { before: before[id], after: cc, ok: false, reason: "cloud-conflict" };
+                  return;
+                }
+              } else {
+                if (tomb && tombstoneDrops(tomb, localProj)) {
+                  check.projects[id] = { before: before[id], after: null, ok: true, dropped: true };
+                  return;
+                }
+                /* v17.28 · Sin copia en la nube, la fusión consigo
+                   misma deja el proyecto en su forma canónica (la que
+                   devuelve cualquier fusión posterior: p. ej. añade
+                   reviewedAt/archivedAt vacíos): así una segunda
+                   migración lo reconoce byte a byte y no reescribe.
+                   La fusión consigo misma no cambia ninguna
+                   respuesta (mergeAnswer con el mismo texto devuelve
+                   ese texto). Si normalizar fallara, se sube tal cual. */
+                try { up = mergeProjects(localProj, localProj).proj; }
+                catch (e) { up = localProj; }
+              }
+              var payload = cloudPayloadJson(up);
+              if (!payload.json || payload.tooBig) {
+                check.refused.push(id);
+                check.projects[id] = { before: before[id], after: null, ok: false, reason: "payload-too-large" };
+                return;
+              }
+              if (hasCloud && snap.data().data === payload.json) {
+                check.skipped++;
+                check.projects[id] = { before: before[id], after: projectCountsFor(up), ok: true, skipped: true };
+                return;
+              }
+              return cloudItemsRef().doc(id).set({
+                email: me.email,
+                data: payload.json,
+                actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
+              }).then(function () {
+                check.writes++;
+                check.projects[id] = { before: before[id], after: projectCountsFor(up), ok: true };
+              });
+            });
+          });
+        });
+        cloudMigrationPromise = chain.then(function () {
+          return writeCloudMeta(oldStore).then(function () {
+            check.metaWritten = true;
+          }).catch(function () { check.metaWritten = false; });
+        }).then(function () {
+          var verify = Promise.resolve();
+          ids.forEach(function (id) {
+            verify = verify.then(function () {
+              return readCloudProject(me.uid, id).then(function (p) {
+                var entry = check.projects[id] || (check.projects[id] = { before: before[id], after: null, ok: false });
+                if (entry.dropped) { if (p) entry.ok = false; return; }
+                if (!p) { entry.ok = false; entry.after = null; return; }
+                var ac = projectCountsFor(p);
+                entry.after = ac;
+                if (ac.answers < before[id].answers || ac.completed < before[id].completed) entry.ok = false;
+              }).catch(function () {
+                var entry = check.projects[id];
+                if (entry) entry.ok = false;
+              });
+            });
+          });
+          return verify;
+        }).then(function () {
+          check.ok = ids.every(function (id) { var e = check.projects[id]; return e && e.ok; }) && check.metaWritten;
+          if (check.ok) window.__cloudMigrated = true;
+          return check;
+        }).catch(function () {
+          check.ok = false;
+          return check;
+        }).then(function (c) {
+          cloudMigrationPromise = null;
+          window.__cloudMigrationRunning = false;
+          /* Lo que llegó mientras migraba quedó marcado como sucio:
+             ahora sí puede subir (writeCloudNow se aplaza mientras la
+             migración corre). */
+          if (cloudDirty) { try { writeCloudNow(); } catch (e) {} }
+          return c;
+        });
+        return cloudMigrationPromise;
+      }
+      window.__cloudMigrate = migrateOldDocToItems;
+      /* Disparo manual de la migración: lee el documento viejo y lo
+         reparte. Si ya hay una migración en curso, devuelve su
+         resultado en vez de arrancar otra. La lectura es directa del
+         documento viejo: __cloudReadStore ya devuelve el diseño nuevo
+         (items + meta) y migrar eso no migraría nada. */
+      window.__cloudMigrateNow = function () {
+        if (cloudMigrationPromise) return cloudMigrationPromise;
+        if (window.__cloudMigrated) return Promise.resolve(window.__migrationCheck);
+        if (!me) return Promise.resolve(null);
+        return db.collection("proyectos").doc(me.uid).get().then(function (snap) {
+          if (!snap || !snap.exists || !snap.data || !snap.data() || !snap.data().data) return null;
+          var raw = null;
+          try { raw = JSON.parse(snap.data().data); } catch (e) { return null; }
+          return migrateOldDocToItems(raw);
+        }).catch(function () { return null; });
+      };
       /* v17.27 (WS1) · Escritura con fusión: cada subida lee primero
          el documento de la nube, fusiona (mergeStores) y sube la
          FUSIÓN, nunca la copia local sola. Sin documento en la nube
@@ -14914,6 +15324,25 @@
          cerrados que la nube, la subida se niega —una fusión correcta
          por unión nunca reduce, así que eso solo puede ser un error
          y el error no se sube. */
+      /* v17.28 · Escritura con fusión POR PROYECTO: cada subida lee
+         primero el documento items/{id} de cada proyecto sucio,
+         fusiona pregunta por pregunta (mergeProjects) y sube SOLO
+         ese documento — nunca la tienda completa. Sin documento en
+         la nube se sube lo local (no hay nada que proteger). Si la
+         lectura, la fusión o el tamaño fallan para UN proyecto, ESE
+         proyecto no se sube (queda sucio para el próximo guardado)
+         y los demás siguen. La guarda dura es por proyecto: si la
+         fusión trajera menos respuestas o menos componentes cerrados
+         que la nube de ese proyecto, la subida se niega. Solo los
+         fallos de RED reintentan (2 s, 5 s, 15 s); las negativas
+         nunca reintentan. La generación (cloudWriteGen) y la puerta
+         de la fusión de entrada (__cloudMergeDone, en writeCloudNow)
+         se conservan tal cual. Al final, si algo cambió en el meta
+         (activeProjectId, lápidas), sube el documento meta con
+         {merge:true}. Una restauración (restoreProjectFromData)
+         termina en __cloudSaveNow → writeCloudNow → esta función, y
+         su proyecto llega marcado como sucio por persist(), así que
+         sube por este mismo camino. */
       function doCloudWrite() {
         if (!me || (!state && !store)) { cloudWriteInFlight = false; return; }
         var localShape = null;
@@ -14923,86 +15352,23 @@
         }
         cloudWriteInFlight = true;
         var myGen = ++cloudWriteGen; /* esta escritura es la más reciente: solo su resultado vale */
-        db.collection("proyectos").doc(me.uid).get().then(function (snap) {
-          if (myGen !== cloudWriteGen) return; /* una escritura más reciente ya arrancó: esta lectura es vieja y no manda */
-          var cloudRaw = null, hasCloud = false;
-          if (snap && snap.exists && snap.data && snap.data() && snap.data().data) {
-            try { cloudRaw = JSON.parse(snap.data().data); hasCloud = true; }
-            catch (e) {
-              cloudRefuseUpload("cloud-parse-failed", "La copia de la nube no se pudo leer: no subí nada para no perder respuestas.");
-              return;
-            }
-          }
-          var uploadShape = localShape;
-          if (hasCloud) {
-            var merged = null;
-            try { merged = mergeStores(localShape, toStoreShape(cloudRaw)); }
-            catch (e) {
-              cloudRefuseUpload("cloud-merge-failed", "No pude fusionar tus copias: no subí nada para no perder respuestas.");
-              return;
-            }
-            var droppedIds = tombstonedDropsIn(merged.store, cloudRaw);
-            var cloudCounts = storeCountsFor(cloudRaw, droppedIds);
-            var mergedCounts = storeCountsFor(merged.store);
-            if (mergedCounts.answers < cloudCounts.answers || mergedCounts.completed < cloudCounts.completed) {
-              cloudRefuseUpload("cloud-conflict", "La fusión traería menos respuestas (" + mergedCounts.answers + ") que la nube (" + cloudCounts.answers + "): no subí nada para no perder respuestas.");
-              return;
-            }
-            uploadShape = merged.store;
-            if (merged.changed) adoptMergedStore(merged.store);
-          }
-          var payload = cloudPayloadJson(uploadShape);
-          window.__cloudPayloadBytes = payload.bytes || 0;
-          window.__cloudTrimmed = !!payload.trimmed;
-          if (!payload.json || payload.tooBig) {
-            /* Ni recortando cabe: reintentarlo no puede tener éxito. */
-            window.__cloudError = { code: "payload-too-large", message: "El proyecto supera el límite de 1 MiB por documento de la nube (" + (payload.bytes || 0) + " bytes). No se reintenta: ni recortando el historial cabe." };
-            cloudWriteInFlight = false;
-            setCloudStatus("failed");
-            return;
-          }
-          return db.collection("proyectos").doc(me.uid).set({
-            email: me.email,
-            nombreProyecto: (state && state.project) ? state.project.name : "",
-            data: payload.json,
-            actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
-          }).then(function () {
-            if (myGen !== cloudWriteGen) return; /* una escritura más reciente ya arrancó: este éxito es viejo y no manda */
-            cloudWriteInFlight = false;
-            cloudRetries = 0;
-            window.__cloudRetries = 0;
-            window.__cloudError = null;
-            window.__cloudConflict = false;
-            if (cloudDirty) {
-              /* Un cambio llegó mientras esta escritura volaba: no quedó
-                 dentro de ella. Se programa un guardado nuevo con ese
-                 cambio. */
-              cloudDirty = false;
-              setCloudStatus("ok");
-              window.__cloudSave();
-            } else {
-              setCloudStatus("ok");
-            }
-          });
-        }).catch(function (err) {
-          if (myGen !== cloudWriteGen) return; /* una escritura más reciente ya arrancó: este fallo es viejo — no borra su «ok», no reprograma nada */
-          /* v17.26 (WS5) · El fallo ya no se traga: el código y el
-             mensaje quedan guardados y se muestran en el indicador.
-             Sin esto, un «reintentando» sin fin no se podía
-             diagnosticar (¿permiso? ¿límite de 1 MiB? ¿red?).
-             v17.27 (WS1) · Este catch es solo para fallos de RED
-             (la lectura o la subida): la lectura fallida no subió
-             nada y cada reintento vuelve a leer y fusionar, así que
-             reintentar es seguro. Los fallos de fusión y de lectura
-             de la copia ya se negaron arriba, sin reintento. */
-          cloudWriteInFlight = false;
-          window.__cloudError = { code: (err && err.code) || "cloud-read-failed", message: String((err && err.message) || err || "") };
+        var dirtyIds = Object.keys(cloudDirtyProjects);
+        if (!dirtyIds.length) {
+          /* Sin marca de cambio (llamadas sin persist previo): sube
+             el proyecto activo, que es el que acaba de cambiar. */
+          if (state && state.id) dirtyIds = [state.id];
+          else if (localShape.activeProjectId) dirtyIds = [localShape.activeProjectId];
+        }
+        var metaNeeded = cloudMetaDirty || dirtyIds.length > 0;
+        var refusals = [];
+        var refusalCodes = {}; /* v17.28 (WS3) · código por proyecto negado: el aviso final solo habla de «conflicto» cuando de verdad hubo uno; un «payload-too-large» no es un conflicto */
+        var networkFailed = false;
+        var idx = 0;
+        function scheduleRetry() {
           if (cloudRetries < CLOUD_RETRY_DELAYS.length) {
             var delay = CLOUD_RETRY_DELAYS[cloudRetries];
             cloudRetries++;
             window.__cloudRetries = cloudRetries;
-            /* El reintento pendiente lee y fusiona de nuevo, así que
-               el cambio que llegó mientras tanto viaja en él. */
             cloudDirty = false;
             setCloudStatus("pending");
             clearTimeout(cloudRetryTimer);
@@ -15010,7 +15376,180 @@
           } else {
             setCloudStatus("failed");
           }
-        });
+        }
+        function onProjectError(id, err) {
+          if (myGen !== cloudWriteGen) return;
+          /* Fallo de RED en este proyecto: no se subió nada de él;
+             sigue con los demás y el reintento cubre los que
+             faltaron (siguen sucios). */
+          networkFailed = true;
+          window.__cloudError = { code: (err && err.code) || "cloud-read-failed", message: String((err && err.message) || err || "") };
+          return nextProject();
+        }
+        function writeOneProject(id) {
+          var localProj = localShape.projects ? localShape.projects[id] : null;
+          var tomb = localShape.deleted ? localShape.deleted[id] : null;
+          if (!localProj) {
+            /* Proyecto borrado en local: solo se borra su documento
+               por proyecto si la lápida lo borra de verdad. */
+            if (!tomb) { delete cloudDirtyProjects[id]; return nextProject(); }
+            return cloudItemsRef().doc(id).get().then(function (snap) {
+              if (myGen !== cloudWriteGen) return;
+              if (!snap || !snap.exists || !snap.data || !snap.data() || snap.data().data == null) { delete cloudDirtyProjects[id]; return nextProject(); }
+              var cloudProj = null;
+              try { cloudProj = parseItemData(snap.data().data); }
+              catch (e) {
+                refusals.push(id);
+                refusalCodes[id] = "cloud-parse-failed";
+                cloudRefuseProject(id, "cloud-parse-failed", "La copia de la nube de ese proyecto no se pudo leer: no subí nada para no perder respuestas.");
+                return nextProject();
+              }
+              if (!tombstoneDrops(tomb, cloudProj)) { delete cloudDirtyProjects[id]; return nextProject(); }
+              return cloudItemsRef().doc(id).delete().then(function () {
+                if (myGen !== cloudWriteGen) return;
+                delete cloudDirtyProjects[id];
+                return nextProject();
+              });
+            }).catch(function (err) { return onProjectError(id, err); });
+          }
+          return cloudItemsRef().doc(id).get().then(function (snap) {
+            if (myGen !== cloudWriteGen) return;
+            var cloudProj = null, hasCloud = false;
+            if (snap && snap.exists && snap.data && snap.data() && snap.data().data != null) {
+              try { cloudProj = parseItemData(snap.data().data); hasCloud = true; }
+              catch (e) {
+                refusals.push(id);
+                refusalCodes[id] = "cloud-parse-failed";
+                cloudRefuseProject(id, "cloud-parse-failed", "La copia de la nube de ese proyecto no se pudo leer: no subí nada para no perder respuestas.");
+                return nextProject();
+              }
+            }
+            var uploadProj = localProj, merged = null;
+            if (hasCloud) {
+              try { merged = mergeProjects(localProj, cloudProj); }
+              catch (e) {
+                refusals.push(id);
+                refusalCodes[id] = "cloud-merge-failed";
+                cloudRefuseProject(id, "cloud-merge-failed", "No pude fusionar tus copias de ese proyecto: no subí nada para no perder respuestas.");
+                return nextProject();
+              }
+              if (tomb && tombstoneDrops(tomb, merged.proj)) {
+                return cloudItemsRef().doc(id).delete().then(function () {
+                  if (myGen !== cloudWriteGen) return;
+                  delete cloudDirtyProjects[id];
+                  return nextProject();
+                });
+              }
+              var cc = projectCountsFor(cloudProj), mc = projectCountsFor(merged.proj);
+              if (mc.answers < cc.answers || mc.completed < cc.completed) {
+                refusals.push(id);
+                refusalCodes[id] = "cloud-conflict";
+                cloudRefuseProject(id, "cloud-conflict", "La fusión de ese proyecto traería menos respuestas (" + mc.answers + ") que la nube (" + cc.answers + "): no subí nada para no perder respuestas.");
+                return nextProject();
+              }
+              uploadProj = merged.proj;
+            }
+            var payload = cloudPayloadJson(uploadProj);
+            window.__cloudPayloadBytes = payload.bytes || 0;
+            window.__cloudTrimmed = !!payload.trimmed;
+            if (!payload.json || payload.tooBig) {
+              /* Ni recortando cabe en 950.000 bytes: reintentarlo no
+                 puede tener éxito. Se saca de sucios (el próximo
+                 cambio lo vuelve a marcar) y no se reintenta. El
+                 mensaje guarda el tamaño medido en UTF-8 y el
+                 proyecto, para que el indicador (renderSaveStatus)
+                 lo diga con honestidad: nunca «se reintentará». */
+              refusals.push(id);
+              refusalCodes[id] = "payload-too-large";
+              delete cloudDirtyProjects[id];
+              var tooBigName = (localProj && localProj.project && localProj.project.name) || "Ese proyecto";
+              window.__cloudError = { code: "payload-too-large", message: "«" + tooBigName + "» mide " + (payload.bytes || 0) + " bytes en UTF-8 y cada documento de la nube admite 950.000 bytes como máximo: ni recortando el historial cabe, así que no se sube." };
+              window.__cloudTooBigBytes = payload.bytes || 0;
+              window.__cloudTooBigProject = id;
+              window.__cloudTooBigName = tooBigName;
+              window.__cloudConflict = true;
+              return nextProject();
+            }
+            return cloudItemsRef().doc(id).set({
+              email: me.email,
+              data: payload.json,
+              actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(function () {
+              if (myGen !== cloudWriteGen) return;
+              /* La fusión adoptó respuestas de la nube: esta pestaña
+                 las adopta en local también, para no volver a subir
+                 una copia vieja en el próximo guardado. La adopción
+                 vuelve a marcar sucio; la marca se quita después. */
+              if (merged && merged.adoptedAnswersFromB) {
+                try {
+                  if (store && store.projects) store.projects[id] = uploadProj;
+                  if (state && state.id === id) { state = uploadProj; ensureAnswers(); }
+                  persistLocalOnly(true, true);
+                } catch (e) {}
+              }
+              delete cloudDirtyProjects[id];
+              return nextProject();
+            });
+          }).catch(function (err) { return onProjectError(id, err); });
+        }
+        function nextProject() {
+          if (myGen !== cloudWriteGen) return; /* una escritura más reciente ya arrancó: esta pasada es vieja y no manda */
+          if (idx >= dirtyIds.length) return finishRun();
+          var id = dirtyIds[idx++];
+          return writeOneProject(id);
+        }
+        function finishRun() {
+          if (myGen !== cloudWriteGen) return;
+          if (networkFailed) {
+            cloudWriteInFlight = false;
+            scheduleRetry();
+            return;
+          }
+          var afterMeta = function () {
+            cloudWriteInFlight = false;
+            cloudRetries = 0;
+            window.__cloudRetries = 0;
+            if (refusals.length) {
+              window.__cloudConflict = true;
+              setCloudStatus("failed");
+              /* v17.28 (WS3) · El aviso de «conflicto» solo cuando de
+                 verdad hubo un conflicto (o un fallo de lectura o de
+                 fusión): un proyecto demasiado grande no es un
+                 conflicto —su explicación ya está en el indicador— y
+                 llamarlo conflicto confundía. */
+              var onlyTooBig = refusals.every(function (rid) { return refusalCodes[rid] === "payload-too-large"; });
+              if (!onlyTooBig) toast("Detecté un conflicto entre tus copias y no subí nada para no perder respuestas.");
+            } else {
+              window.__cloudError = null;
+              window.__cloudConflict = false;
+              if (cloudDirty) {
+                /* Un cambio llegó mientras esta escritura volaba: no
+                   quedó dentro de ella. Se programa un guardado
+                   nuevo con ese cambio. */
+                cloudDirty = false;
+                setCloudStatus("ok");
+                window.__cloudSave();
+              } else {
+                setCloudStatus("ok");
+              }
+            }
+          };
+          if (metaNeeded) {
+            writeCloudMeta(localShape).then(function () {
+              if (myGen !== cloudWriteGen) return;
+              cloudMetaDirty = false;
+              afterMeta();
+            }).catch(function (err) {
+              if (myGen !== cloudWriteGen) return;
+              /* El meta no subió: los proyectos ya subidos quedan;
+                 el meta se reintenta con el próximo cambio. */
+              window.__cloudError = { code: (err && err.code) || "cloud-write-failed", message: String((err && err.message) || err || "") };
+              cloudWriteInFlight = false;
+              scheduleRetry();
+            });
+          } else afterMeta();
+        }
+        nextProject();
       }
       function writeCloudNow(closing) {
         if (!me || (!state && !store)) return;
@@ -15019,6 +15558,10 @@
            no se toca. Lo local ya se guardó; la subida queda aplazada
            hasta que syncOnLogin ponga cloudMergeDone en true. */
         if (!window.__cloudMergeDone) { cloudDirty = true; return; }
+        /* v17.28 · La migración a documentos por proyecto está
+           corriendo: la nube no se toca hasta que termine (ella
+           misma dispara la subida aplazada al cerrar). */
+        if (window.__cloudMigrationRunning) { cloudDirty = true; return; }
         clearTimeout(saveTimer);
         saveTimer = null;
         /* v17.26 (WS5) · El temporizador de reintento ya disparó (o se
@@ -15061,11 +15604,41 @@
          igual con restoredAt en la escritura con fusión). Nunca
          rechaza: sin sesión, sin documento o sin lectura, devuelve
          null y la restauración sigue con sus demás guardas. */
+      /* v17.28 (WS2) · Lectura única de la tienda de la nube, solo para
+         que la restauración COMPRUEBE la lápida de la nube antes de
+         registrar: ahora lee el diseño NUEVO —proyectos de items +
+         lápidas del meta— y solo si no hay ni items ni meta cae al
+         documento viejo. Las lápidas del documento viejo se unen a las
+         del meta cuando existen en ambos lados (una migración a medias
+         puede dejar una lápida solo en el viejo): la más reciente manda.
+         Nunca rechaza: sin sesión, sin documentos o sin lectura, devuelve
+         null y la restauración sigue con sus demás guardas. */
       window.__cloudReadStore = function () {
         if (!me) return Promise.resolve(null);
-        return db.collection("proyectos").doc(me.uid).get().then(function (snap) {
-          if (!snap || !snap.exists || !snap.data || !snap.data() || !snap.data().data) return null;
-          try { return JSON.parse(snap.data().data); } catch (e) { return null; }
+        return readCloudAllProjects(me.uid, true).then(function (all) {
+          return readCloudMeta(me.uid).then(function (meta) {
+            var hasItems = all && Object.keys(all.projects || {}).length > 0;
+            var hasMeta = !!meta;
+            var shape = null;
+            if (hasItems || hasMeta) {
+              shape = { app: "analia", version: 3, activeProjectId: (meta && meta.activeProjectId) || null, projects: (all && all.projects) || {}, deleted: (meta && meta.deleted) || {} };
+              if (!shape.activeProjectId) { var ids = Object.keys(shape.projects); shape.activeProjectId = ids.length ? ids[0] : null; }
+            }
+            return db.collection("proyectos").doc(me.uid).get().then(function (snap) {
+              var oldShape = null;
+              if (snap && snap.exists && snap.data && snap.data() && snap.data().data) {
+                try { oldShape = JSON.parse(snap.data().data); } catch (e) { oldShape = null; }
+              }
+              if (!shape) return oldShape;
+              if (oldShape && oldShape.deleted && typeof oldShape.deleted === "object") {
+                Object.keys(oldShape.deleted).forEach(function (did) {
+                  var cur = shape.deleted[did], nv = oldShape.deleted[did];
+                  if (!cur || tombAtOf(nv) > tombAtOf(cur)) shape.deleted[did] = nv;
+                });
+              }
+              return shape;
+            });
+          });
         }).catch(function () { return null; });
       };
       window.__cloudSaveNow = function (closing) {
@@ -15084,9 +15657,20 @@
         window.__cloudRetries = 0;
         writeCloudNow(closing);
       };
+      /* v17.28 (WS2) · Borrar la nube de esta cuenta borra TODOS los
+         documentos por proyecto (items/{id}) además del meta: antes solo
+         se borraba el documento viejo y los items quedaban huérfanos. */
       window.__cloudClear = function () {
         if (!me) return;
-        db.collection("proyectos").doc(me.uid).delete().catch(function () {});
+        cloudItemsRef().get().then(function (qs) {
+          var chain = Promise.resolve();
+          if (qs) qs.forEach(function (docSnap) {
+            chain = chain.then(function () { return cloudItemsRef().doc(docSnap.id).delete().catch(function () {}); });
+          });
+          return chain;
+        }).catch(function () {}).then(function () {
+          db.collection("proyectos").doc(me.uid).delete().catch(function () {});
+        });
       };
 
       function validProject(data) {
@@ -15132,24 +15716,68 @@
         window.__cloudConflict = false;
         var localUser = readPersisted(lsKey());
         var localLegacy = readPersisted(LS_KEY);
-        db.collection("proyectos").doc(user.uid).get().then(function (snap) {
+        var hasLocal = !!(localUser || localLegacy);
+        /* v17.28 (WS2) · La entrada lee el diseño NUEVO: la subcolección
+           items (readCloudAllProjects) y el documento meta (readCloudMeta)
+           son la fuente principal; el documento viejo de un solo documento
+           solo es el respaldo cuando todavía no hay documentos por
+           proyecto. La lectura del documento viejo no bloquea la entrada:
+           si falla, se sigue con items + meta. Si la lectura de items o
+           del meta falla, se trabaja con la copia local (rama .catch,
+           como antes): sin meta no se conocen las lápidas y fusionar a
+           ciegas podría resucitar un proyecto borrado. */
+        var cloudItemsP = readCloudAllProjects(user.uid);
+        var cloudMetaP = readCloudMeta(user.uid);
+        var cloudOldP = db.collection("proyectos").doc(user.uid).get().catch(function () { return null; });
+        Promise.all([cloudItemsP, cloudMetaP, cloudOldP]).then(function (res) {
+          var items = res[0] || { projects: {}, unreadable: [] };
+          var meta = res[1];
+          var snap = res[2];
           var cloudRaw = null, cloudParseFailed = false;
-          if (snap.exists && snap.data() && snap.data().data) {
+          if (snap && snap.exists && snap.data && snap.data() && snap.data().data) {
             try { cloudRaw = JSON.parse(snap.data().data); } catch (e) { cloudRaw = null; cloudParseFailed = true; }
           }
-          var hasLocal = !!(localUser || localLegacy);
+          var hasItems = Object.keys(items.projects || {}).length > 0;
+          var hasMeta = !!meta;
+          /* La tienda de la nube en el diseño nuevo: proyectos de items
+             con activeProjectId y lápidas del meta. Sin items ni meta, la
+             nube solo puede venir del documento viejo. */
+          var cloudShape = null;
+          if (hasItems || hasMeta) {
+            cloudShape = { app: "analia", version: 3, activeProjectId: (meta && meta.activeProjectId) || null, projects: items.projects || {}, deleted: (meta && meta.deleted) || {} };
+            if (!cloudShape.activeProjectId) { var cids = Object.keys(cloudShape.projects); cloudShape.activeProjectId = cids.length ? cids[0] : null; }
+          } else if (cloudRaw) {
+            try { cloudShape = toStoreShape(cloudRaw); } catch (e) { cloudShape = null; }
+          }
+          /* v17.28 · Migración a documentos por proyecto, en segundo
+             plano: no bloquea la entrada ni la fusión; la lectura del
+             documento viejo sigue siendo la referencia hasta que la
+             migración se verifique (window.__migrationCheck). Las
+             escrituras se aplazan mientras corre (writeCloudNow). */
+          if (cloudRaw && cloudRaw.projects && Object.keys(cloudRaw.projects).length && !window.__cloudMigrated) {
+            try {
+              var migP = migrateOldDocToItems(cloudRaw);
+              if (migP && migP.catch) migP.catch(function () {});
+            } catch (e) {}
+          }
           /* v17.27 (WS1) · La copia de la nube no se pudo leer: NO se
-             sube lo local por encima de algo ilegible. Se queda lo
-             local, se avisa del conflicto y el próximo guardado
-             reintenta la fusión (las escrituras ya leen y fusionan). */
-          if (cloudParseFailed) {
+             sube lo local por encima de algo ilegible. En el diseño nuevo
+             esto solo manda cuando NO hay documentos por proyecto legibles:
+             con items presentes, el documento viejo es un respaldo heredado
+             que ninguna escritura toca ya (el meta se escribe con
+             {merge:true} y nunca toca su campo data), así que su
+             ilegibilidad no bloquea la entrada. Un documento por proyecto
+             ilegible lo marca readCloudAllProjects (conflicto) y lo protege
+             la negativa por proyecto de doCloudWrite: nunca se sube nada
+             por encima de él. */
+          if (cloudParseFailed && !hasItems) {
             state = localUser || localLegacy || state;
             window.__cloudConflict = true;
             window.__cloudError = { code: "cloud-parse-failed", message: "La copia de la nube no se pudo leer." };
             setCloudStatus("failed");
             markCloudMergeDone();
             toast("Detecté un conflicto entre tus copias y no subí nada para no perder respuestas.");
-          } else if (cloudRaw && hasLocal) {
+          } else if (cloudShape && hasLocal) {
             /* v17.14 · Fusión por contenido: si la nube trae C1 con fecha
                más nueva y lo local trae C12, el resultado es C12 (y se
                sube). Ninguna respuesta que exista en una de las dos copias
@@ -15174,13 +15802,13 @@
                 }
               } catch (e3) {}
               if (!localStoreShape) localStoreShape = toStoreShape(localUser || localLegacy);
-              merged = mergeStores(localStoreShape, toStoreShape(cloudRaw));
+              merged = mergeStores(localStoreShape, cloudShape);
               /* v17.27 (WS1) · Guarda de no-pérdida también al entrar:
                  una fusión que trajera menos respuestas o menos
                  componentes cerrados que la nube no se adopta ni se
                  sube: es un error, y el error no se sube. */
               if (merged) {
-                var mc = storeCountsFor(merged.store), cc = storeCountsFor(cloudRaw, tombstonedDropsIn(merged.store, cloudRaw));
+                var mc = storeCountsFor(merged.store), cc = storeCountsFor(cloudShape, tombstonedDropsIn(merged.store, cloudShape));
                 if (mc.answers < cc.answers || mc.completed < cc.completed) merged = null;
               }
             } catch (e) { merged = null; }
@@ -15189,6 +15817,11 @@
               state = store.projects[store.activeProjectId] || null;
               ensureAnswers();
               persistLocalOnly(true, true);
+              /* v17.28 (WS2) · La fusión puede haber adoptado respuestas
+                 de la nube en CUALQUIER proyecto, no solo en el activo:
+                 todos quedan marcados sucios para que la subida lleve la
+                 tienda fusionada entera, y el meta con las lápidas. */
+              markStoreDirty(store);
               markCloudMergeDone();
               window.__cloudSaveNow();
               if (state) {
@@ -15198,7 +15831,7 @@
                  y no merece ese aviso. Las dos puertas difieren a
                  propósito: la de pestaña vieja (storedCopyAhead) también
                  es solo de respuestas, y no se afloja. */
-              var diverged = merged.stats.adoptedAnswersFromB || storesAnswerKeysDiffer(localStoreShape, cloudRaw);
+              var diverged = merged.stats.adoptedAnswersFromB || storesAnswerKeysDiffer(localStoreShape, cloudShape);
               if (merged.stats.adoptedAnswersFromB && merged.stats.fromA > 0) toast("Se fusionaron tus copias de este navegador y de la nube: no se perdió ninguna respuesta (" + merged.stats.fromB + " venían de la nube y " + merged.stats.fromA + " de este navegador).");
                 else if (diverged) toast("Tu proyecto se sincronizó con tu cuenta: " + state.project.name + ".");
                 /* v17.27 (WS2) · Copias idénticas en contenido: silencio. Ni aviso de fusión ni «copia más reciente»: no se fusionó nada ni se afirmó ninguna subida. */
@@ -15215,20 +15848,20 @@
               markCloudMergeDone();
               toast("Detecté un conflicto entre tus copias y no subí nada para no perder respuestas.");
             }
-          } else if (cloudRaw) {
-            var cloudEmptyStore = cloudRaw.projects && typeof cloudRaw.projects === "object" && Object.keys(cloudRaw.projects).length === 0;
+          } else if (cloudShape) {
+            var cloudEmptyStore = cloudShape.projects && typeof cloudShape.projects === "object" && Object.keys(cloudShape.projects).length === 0;
             if (cloudEmptyStore) {
               /* v17.27 (WS2) · Cero proyectos en la nube no es una copia
                  rota: es una cuenta vacía (p. ej. se borró el último
                  proyecto y solo quedan las lápidas). Se adopta la tienda
                  tal cual —lápidas incluidas— sin aviso de conflicto. */
-              try { store = toStoreShape(cloudRaw); } catch (e) {}
+              try { store = toStoreShape(cloudShape); } catch (e) {}
               state = null;
               persist();
               markCloudMergeDone();
             } else {
             var cloud = null;
-            try { cloud = validProject(cloudRaw); } catch (e) { cloud = null; }
+            try { cloud = validProject(cloudShape); } catch (e) { cloud = null; }
             if (cloud) {
               state = cloud;
               persistLocalOnly(true, true); /* no tocar savedAt: la copia viene de la nube */
@@ -15252,6 +15885,10 @@
               try { window.localStorage.removeItem(LS_KEY); } catch (e) {}
             }
             persistLocalOnly(false, true);
+            /* v17.28 (WS2) · Primera subida de esta cuenta: lo local
+               puede traer VARIOS proyectos y todos deben estrenar su
+               documento por proyecto, no solo el activo. */
+            markStoreDirty(store);
             markCloudMergeDone();
             window.__cloudSaveNow();
             if (localLegacy && !localUser) toast("Tu proyecto se migró a tu cuenta: " + state.project.name + ". Desde ahora se sincroniza en la nube.");
@@ -15524,6 +16161,9 @@
         n = Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
         try { window.localStorage.setItem("analia.admin.founderTotal", String(n)); } catch (e) {}
         try { if (store) { if (!store.adminSettings) store.adminSettings = {}; store.adminSettings.founderTotal = n; } } catch (e) {}
+        /* v17.28 (WS2) · El cambio termina en __cloudSave: el proyecto
+           activo queda marcado sucio antes, como en cualquier mutación. */
+        if (state && window.__cloudMarkDirty) window.__cloudMarkDirty(state.id);
         if (window.__cloudSave) window.__cloudSave();
         renderFounderState();
       }
@@ -15600,18 +16240,76 @@
           return (pr.project && pr.project.name) || pr.name || pr.nombreProyecto || "Proyecto";
         }).filter(function (n) { return !!n; });
       }
+      /* v17.28 (WS2) · La lista de Administración lee los proyectos de
+         cada usuario del diseño NUEVO (items + meta) y solo cae al
+         documento viejo cuando el usuario todavía no tiene documentos
+         por proyecto. La lectura es silenciosa (quiet): un documento
+         ilegible de OTRO usuario no debe marcar un conflicto en la
+         sesión del administrador. Devuelve la forma de la tienda o
+         null si el usuario no tiene proyectos. */
+      function readUserStoreForAdmin(uid) {
+        return readCloudAllProjects(uid, true).then(function (all) {
+          return readCloudMeta(uid).then(function (meta) {
+            var hasItems = all && Object.keys(all.projects || {}).length > 0;
+            if (hasItems || meta) {
+              var shape = { app: "analia", version: 3, activeProjectId: (meta && meta.activeProjectId) || null, projects: (all && all.projects) || {}, deleted: (meta && meta.deleted) || {} };
+              if (!shape.activeProjectId) { var ids = Object.keys(shape.projects); shape.activeProjectId = ids.length ? ids[0] : null; }
+              return shape;
+            }
+            return db.collection("proyectos").doc(uid).get().then(function (ps) {
+              if (!ps.exists || !ps.data() || !ps.data().data) return null;
+              return normalizeUserStore(ps.data().data);
+            });
+          });
+        });
+      }
+      window.__readUserStoreForAdmin = readUserStoreForAdmin;
       function setProjectPayment(uid, projectId, activate, planKey) {
-        db.collection("proyectos").doc(uid).get().then(function (ps) {
-          if (!ps.exists || !ps.data() || !ps.data().data) throw new Error("sin proyecto");
-          var storeData = normalizeUserStore(ps.data().data);
-          var proj = storeData && storeData.projects && storeData.projects[projectId];
-          if (!proj) throw new Error("sin proyecto");
+        /* v17.28 (WS2) · La activación ya no reescribe la tienda completa
+           en el documento viejo: eso borraba activeProjectId y las
+           lápidas del meta, y rebotaba por payload-too-large con 12
+           proyectos. Ahora lee SOLO el documento por proyecto de ese
+           proyecto, lo fusiona con la copia local cuando es la propia
+           cuenta, cambia el pago y escribe SOLO ese documento, con la
+           medición UTF-8 y el recorte por proyecto. Si el proyecto
+           todavía vive solo en el documento viejo, se lee de ahí y se
+           estrena su documento por proyecto; el viejo queda como
+           respaldo y nunca se reescribe. El documento meta no se toca. */
+        var emailForItem = "";
+        readCloudMeta(uid).then(function (meta) {
+          emailForItem = (meta && meta.email) || "";
+          return readCloudProject(uid, projectId);
+        }).then(function (cloudProj) {
+          if (cloudProj) return { base: cloudProj, legacy: false };
+          return db.collection("proyectos").doc(uid).get().then(function (ps) {
+            if (!ps.exists || !ps.data() || !ps.data().data) throw new Error("sin proyecto");
+            var storeData = normalizeUserStore(ps.data().data);
+            var proj = storeData && storeData.projects && storeData.projects[projectId];
+            if (!proj) throw new Error("sin proyecto");
+            if (!emailForItem) emailForItem = ps.data().email || "";
+            return { base: proj, legacy: true };
+          });
+        }).then(function (res) {
+          var proj = res.base;
+          /* La propia cuenta tiene copia local: se fusiona antes de
+             cambiar el pago, para no pisar respuestas que este navegador
+             tenga y la nube no. La guarda de no-pérdida es la misma de la
+             escritura con fusión: la fusión nunca trae menos que la nube. */
+          if (uid === (me && me.uid) && store && store.projects && store.projects[projectId]) {
+            var merged = mergeProjects(store.projects[projectId], proj);
+            var mc = projectCountsFor(merged.proj), cc = projectCountsFor(proj);
+            if (mc.answers < cc.answers || mc.completed < cc.completed) throw new Error("La fusión traería menos respuestas que la nube: no cambié el pago para no perder respuestas.");
+            proj = merged.proj;
+            store.projects[projectId] = proj;
+            if (state && state.id === projectId) state = proj;
+          }
           if (!proj.payment) proj.payment = { status: "none" };
           if (!Array.isArray(proj.paymentHistory)) proj.paymentHistory = [];
           var now = new Date();
           if (activate) {
             proj.payment.status = "active";
             proj.payment.paidUntil = new Date(now.getTime() + 365 * 86400000).toISOString();
+            proj.payment.updatedAt = now.toISOString();
             if (planKey) proj.payment.plan = planKey;
             var last = null;
             for (var i = proj.paymentHistory.length - 1; i >= 0; i--) {
@@ -15621,11 +16319,21 @@
           } else {
             proj.payment.status = "none";
             proj.payment.paidUntil = null;
+            proj.payment.updatedAt = now.toISOString();
           }
-          return db.collection("proyectos").doc(uid).set({
-            email: ps.data().email || "",
-            nombreProyecto: (proj.project && proj.project.name) || ps.data().nombreProyecto || "",
-            data: JSON.stringify(storeData),
+          /* Solo el documento por proyecto, con medición UTF-8 y recorte:
+             un proyecto que no cabe ni recortado se niega, nunca se
+             reintenta a ciegas ni se escribe la tienda completa. */
+          var payload = cloudPayloadJson(proj);
+          if (!payload.json || payload.tooBig) {
+            var payName = (proj && proj.project && proj.project.name) || "Ese proyecto";
+            var err = new Error("«" + payName + "» mide " + (payload.bytes || 0) + " bytes en UTF-8 y cada documento de la nube admite 950.000 bytes como máximo: no se pudo cambiar el acceso.");
+            err.code = "payload-too-large";
+            throw err;
+          }
+          return cloudItemsRef(uid).doc(projectId).set({
+            email: emailForItem,
+            data: payload.json,
             actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
           });
         }).then(function () {
@@ -15693,16 +16401,9 @@
             row.appendChild(payBox);
             list.appendChild(row);
             pending++;
-            db.collection("proyectos").doc(docSnap.id).get().then(function (ps) {
+            readUserStoreForAdmin(docSnap.id).then(function (storeData) {
               var el = row.querySelector("[data-proj]");
               var payEl = row.querySelector("[data-pay]");
-              if (!ps.exists || !ps.data() || !ps.data().data) {
-                if (el) el.textContent = " · Proyecto: sin proyecto todavía";
-                if (payEl) payEl.textContent = " · Pago: sin proyecto todavía";
-                payFetchDone();
-                return;
-              }
-              var storeData = normalizeUserStore(ps.data().data);
               var projects = (storeData && storeData.projects) ? storeData.projects : {};
               var ids = Object.keys(projects);
               if (!ids.length && docSnap.id === (me && me.uid) && typeof store !== "undefined" && store && store.projects) {
@@ -15800,7 +16501,21 @@
           btn.textContent = "Se borra su registro y su proyecto. Toca de nuevo para confirmar";
           return;
         }
-        db.collection("proyectos").doc(uid).delete().catch(function () {}).then(function () {
+        /* v17.28 (WS2) · Borrar la cuenta borra TODOS sus documentos por
+           proyecto (items/{id}) además del meta y del registro: sin esto
+           quedaban documentos huérfanos que la lista de Administración
+           volvería a leer. La lista se lee sin leer el contenido, para
+           borrar también un documento ilegible. Si la lista falla, igual
+           se borran el meta y el registro. */
+        cloudItemsRef(uid).get().then(function (qs) {
+          var chain = Promise.resolve();
+          if (qs) qs.forEach(function (docSnap) {
+            chain = chain.then(function () { return cloudItemsRef(uid).doc(docSnap.id).delete().catch(function () {}); });
+          });
+          return chain;
+        }).catch(function () {}).then(function () {
+          return db.collection("proyectos").doc(uid).delete().catch(function () {});
+        }).then(function () {
           return db.collection("usuarios").doc(uid).delete();
         }).then(function () {
           toast("Usuario eliminado: " + email + ". Sin su registro, esa cuenta ya no puede entrar a Analía.");
