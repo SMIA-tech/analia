@@ -161,7 +161,11 @@
         background: var(--gold-bright); color: #1e3325;
         display: grid; place-items: center;
         font-family: "Lora", Georgia, serif; font-weight: 700; font-size: 21px;
+        position: relative; overflow: hidden;
       }
+      /* v17.31 · El avatar de Analía vive dentro de la marca: el video
+         cubre la «A» dorada; si el video o la foto fallan, la «A» queda. */
+      .brand-mark video, .brand-mark img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
       .brand-name { font-size: 21px; font-weight: 800; letter-spacing: -.01em; line-height: 1.05; }
       .brand-tag { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
       .project-box {
@@ -948,7 +952,7 @@
       <div class="auth-card">
         <div class="auth-top">
           <div class="brand">
-            <div class="brand-mark">A</div>
+            <div class="brand-mark">A<video class="brand-avatar-video" autoplay muted loop playsinline poster="assets/analia-verde.webp" aria-label="Analía"><source src="assets/analia-verde.mp4" type="video/mp4"></video><img class="brand-avatar-img" src="assets/analia-verde.webp" alt="Analía" hidden></div>
             <div>
               <div class="brand-name">Analía</div>
               <div class="brand-tag">La radiografía de tu negocio</div>
@@ -995,7 +999,7 @@
     <div class="app">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-mark">A</div>
+          <div class="brand-mark">A<video class="brand-avatar-video" autoplay muted loop playsinline poster="assets/analia-verde.webp" aria-label="Analía"><source src="assets/analia-verde.mp4" type="video/mp4"></video><img class="brand-avatar-img" src="assets/analia-verde.webp" alt="Analía" hidden></div>
           <div>
             <div class="brand-name">Analía</div>
             <div class="brand-tag">La radiografía de tu negocio</div>
@@ -16183,6 +16187,14 @@
       if (cv) cv.hidden = true;
       if (ca) ca.hidden = false;
     }
+    /* v17.31 · Si el video de la marca falla, queda la foto fija (y si
+       también falla la foto, detrás sigue la «A» dorada). */
+    function showBrandAvatarStill(videoEl) {
+      if (!videoEl) return;
+      videoEl.hidden = true;
+      var img = videoEl.parentElement ? videoEl.parentElement.querySelector(".brand-avatar-img") : null;
+      if (img) img.hidden = false;
+    }
     function applyAvatarOutfit(outfit) {
       if (!AVATAR_OUTFITS[outfit]) outfit = "verde";
       try { window.localStorage.setItem(AVATAR_KEY, outfit); } catch (e) {}
@@ -16220,6 +16232,26 @@
       }
       var ca = $("chatAvatarImg");
       if (ca) ca.src = avatarStillSrc(outfit);
+      /* v17.31 · El avatar también vive en la marca (inicio de sesión y
+         barra lateral): el video cubre la «A» dorada, con la foto fija
+         como respaldo y la «A» detrás de todo. */
+      document.querySelectorAll(".brand-avatar-video").forEach(function (bv) {
+        bv.poster = avatarStillSrc(outfit);
+        var bsrc = bv.querySelector("source");
+        if (bsrc) bsrc.src = avatarVideoSrc(outfit);
+        else bv.src = avatarVideoSrc(outfit);
+        bv.hidden = false;
+        var bi = bv.parentElement ? bv.parentElement.querySelector(".brand-avatar-img") : null;
+        if (bi) bi.hidden = true;
+        try {
+          bv.load();
+          var bp = bv.play();
+          if (bp && bp.catch) bp.catch(function () { showBrandAvatarStill(bv); });
+        } catch (e) { showBrandAvatarStill(bv); }
+      });
+      document.querySelectorAll(".brand-avatar-img").forEach(function (bi) {
+        bi.src = avatarStillSrc(outfit);
+      });
       document.querySelectorAll("[data-outfit]").forEach(function (b) {
         b.classList.toggle("on", b.getAttribute("data-outfit") === outfit);
       });
@@ -16240,6 +16272,11 @@
         var csrc = cv.querySelector("source");
         if (csrc) csrc.addEventListener("error", showChatAvatarStill);
       }
+      document.querySelectorAll(".brand-avatar-video").forEach(function (bv) {
+        bv.addEventListener("error", function () { showBrandAvatarStill(bv); });
+        var bsrc = bv.querySelector("source");
+        if (bsrc) bsrc.addEventListener("error", function () { showBrandAvatarStill(bv); });
+      });
     })();
     applyAvatarOutfit(avatarOutfit());
 
