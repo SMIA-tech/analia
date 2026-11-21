@@ -7181,11 +7181,26 @@
           var n = parseInt(m[1].replace(/[.,]/g, ""), 10);
           if (!isNaN(n) && n > 0 && n < 1000) return n;
         }
-        var w = t.match(/(\d[\d.,]*)\s*veces?\s+por\s+semana/i);
+        /* v17.32.1 · Frecuencia semanal y diaria: «1 vez por semana»
+           (singular «vez», no «veces») no casaba con la regex anterior
+           y el margen por venta se devolvía como total de vida. Semanal
+           × 4 (convención del propio dueño: 4 semanas por mes), diaria
+           × 30. Números en palabra («una», «dos»…) también valen. */
+        var WORDNUM = { una: 1, un: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10 };
+        var w = t.match(/\b(\d[\d.,]*|una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s*(?:veces|vez)\s+(?:por|a la)\s+semana/i);
         if (w) {
-          var nw = parseInt(w[1].replace(/[.,]/g, ""), 10);
-          if (!isNaN(nw) && nw > 0 && nw < 100) return nw * 4;
+          var rw = String(w[1]).toLowerCase();
+          var nw = /^\d/.test(rw) ? parseInt(rw.replace(/[.,]/g, ""), 10) : WORDNUM[rw];
+          if (nw != null && !isNaN(nw) && nw > 0 && nw < 100) return nw * 4;
         }
+        if (/\bcada semana\b/i.test(t)) return 4;
+        var d = t.match(/\b(\d[\d.,]*|una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s*(?:veces|vez)\s+(?:por|al)\s+d[ií]a/i);
+        if (d) {
+          var rd = String(d[1]).toLowerCase();
+          var nd = /^\d/.test(rd) ? parseInt(rd.replace(/[.,]/g, ""), 10) : WORDNUM[rd];
+          if (nd != null && !isNaN(nd) && nd > 0 && nd < 100) return nd * 30;
+        }
+        if (/\bcada d[ií]a\b|\ba diario\b/i.test(t)) return 30;
       }
       return null;
     }
@@ -7248,6 +7263,10 @@
       for (var k = 0; k < figs.length; k++) {
         var part = cacSegment(t, figs[k], k, figs);
         if (!/(valor de vida|lo que paga en total|vale en total|vida del cliente|en total)/i.test(part.seg)) continue;
+        /* v17.32.1 · Una tarifa semanal o diaria («$9.000 a la semana»)
+           no es un total de vida: antes se devolvía como total. Sin
+           frecuencia que la convierta, no hay total que devolver. */
+        if (/\b(a la|por)\s+semana\b|\bsemanal\b|\b(a l|al|por)\s+d[ií]a\b|\bdiario\b|\bcada (semana|d[ií]a)\b/i.test(part.seg)) continue;
         var isMonthly = figs[k].unit === "mensual" || /\b(al mes|por mes|mensual(?:es)?|cada mes)\b/i.test(part.seg);
         if (isMonthly) { if (!monthlyCand) monthlyCand = figs[k]; }
         else if (totalCand == null) totalCand = figs[k];
