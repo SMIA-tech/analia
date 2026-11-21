@@ -6581,6 +6581,23 @@
       return null;
     }
     function isYoungBusiness() { var a = businessAgeMonths(); return a != null && a < 12; }
+    /* v17.33 (WS7) · H15: un negocio MADURO que opera (12 meses o más,
+       etapa Operando / En crecimiento / Escalando / Consolidado / En
+       reestructuración) nunca recibe el marco de prelanzamiento
+       («primeros clientes», «cuando lleguen», «primeros tres meses»):
+       un cero declarado en C0 suele ser de UN canal («0 ventas por
+       Facebook», «ningún cliente por esa vía»), no del negocio, y
+       reescribir todas las preguntas como hipótesis le pregunta a un
+       negocio de 6 años por clientes que todavía no llegaron. La
+       reescritura de cero datos solo vale para negocios jóvenes o en
+       etapa sin ventas; «Operando, primeros clientes» no es maduro
+       por etapa, aunque lleve meses: su marco temprano es correcto. */
+    function isMatureOperatingBusiness() {
+      var a = businessAgeMonths();
+      if (a == null || a < 12) return false;
+      var st = currentStage();
+      return st === "Operando y vendiendo" || st === "En crecimiento" || st === "Escalando" || st === "Consolidado" || st === "En reestructuración";
+    }
     /* v17.30 (WS1) · Reescritura de negocio joven: SOLO las reglas de
        pasado («año pasado», «hace seis meses», «último año») sobre q,
        exige, chain Y why — el why también se imprime en el hilo, así
@@ -6646,7 +6663,10 @@
       if (sz && q.zq && q.zq[sz]) { v = q.zq[sz]; for (k in v) if ((sz === "Solo yo" || (k !== "q" && k !== "chain")) && Object.prototype.hasOwnProperty.call(v, k)) out[k] = v[k]; }
       /* v17.26 (WS1) · Regla de cero datos: nunca preguntar por clientes
          o ventas del pasado a un negocio con 0 clientes o 0 ventas. */
-      if (hasZeroDataBusiness()) reframeZeroData(out);
+      /* v17.33 (WS7) · H15: la reescritura de cero datos no toca
+         a un negocio maduro que opera (ver isMatureOperatingBusiness):
+         su cero es de un canal, no del negocio. */
+      if (hasZeroDataBusiness() && !isMatureOperatingBusiness()) reframeZeroData(out);
       /* v17.30 (WS1) · Regla de negocio joven: con menos de 12 meses no
          se pregunta por «el año pasado», «hace seis meses» ni «el
          último año» — ese pasado todavía no existe. */
@@ -6658,9 +6678,15 @@
       var d = new Date();
       return d.toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" });
     }
+    /* v17.33 (WS5) · H10: el aviso tiene UN solo temporizador,
+       guardado. Sin esto, un aviso viejo apagaba antes de tiempo
+       el aviso nuevo que lo reemplazaba: su setTimeout seguía
+       vivo y quitaba «show» del texto nuevo. */
+    var toastTimer = null;
     function toast(msg) {
       var t = $("toast"); t.textContent = msg; t.classList.add("show");
-      setTimeout(function () { t.classList.remove("show"); }, 3200);
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toastTimer = null; t.classList.remove("show"); }, 3200);
     }
     /* v17.32 (WS5) · Limpia el aviso (toast) por completo: al salir de un
        componente, su aviso de cierre no debe seguir visible en el
@@ -6668,6 +6694,7 @@
        aviso seguiría en el DOM aunque no se viera. */
     function hideToast() {
       var t = $("toast"); if (!t) return;
+      if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
       t.classList.remove("show");
       t.textContent = "";
     }
@@ -7415,6 +7442,7 @@
        solo en C6/C10. El CAC vive en C4/C6 y el margen en C0/C6/C10. */
     function contradictionMods(key) {
       if (key === "cac-supera-margen" || key === "cac-supera-margen-ltv" || key === "cac-distinto" || key === "cac-distinto-canal") return ["M0", "M4", "M6", "M10"];
+      if (key === "cero-ventas-corregido") return ["M0", "M1", "M2", "M6"]; /* v17.33 (WS1) · H1: la retractación del cero vive en el chat de su origen (C1), de la sonda (C2) y de las cifras (C0/C6) */
       if (key === "ingresos-fuentes-vs-total") return ["M0", "M6"];
       if (key && key.indexOf("unidad-") === 0) return ["M0", "M4", "M6", "M10"]; /* v17.29 (WS4) · la aclaración de unidad vive en los mismos chats que su aviso */
       if (key === "costo-mayor-precio") return ["M0", "M6", "M10"];
@@ -9293,17 +9321,32 @@
         var raw = window.localStorage.getItem(lsKey());
         if (!raw) { clearTabStale(); return; }
         var incoming = JSON.parse(raw);
+        var prevActiveId = store ? store.activeProjectId : null;
         var merged = mergeStores(toStoreShape(store || state), toStoreShape(incoming));
         store = merged.store;
         state = store.projects[store.activeProjectId] || state;
         ensureAnswers();
         clearTabStale();
-        persistLocalOnly(false, true);
-        /* v17.28 (WS2) · La fusión con la copia guardada puede haber
-           adoptado contenido en cualquier proyecto: todos quedan
-           marcados para subir, no solo el activo. */
-        markStoreDirty(store);
-        if (window.__cloudSaveNow) window.__cloudSaveNow();
+        /* v17.33 (WS8) · H12: fusionar con una copia que no trae nada
+           nuevo no escribe nada: antes se forzaba el guardado local
+           (persistLocalOnly con force) y se subía todo a la nube, y el
+           indicador parpadeaba «Guardando…» sin ningún cambio. Solo
+           se escribe y se sube cuando la fusión cambió algo o cambió
+           el proyecto activo (el meta). */
+        if (merged.changed || merged.store.activeProjectId !== prevActiveId) {
+          persistLocalOnly(false, true);
+          /* v17.28 (WS2) · La fusión con la copia guardada puede haber
+             adoptado contenido en cualquier proyecto: todos quedan
+             marcados para subir, no solo el activo. */
+          /* v17.33 (WS8 E9) · markStoreDirty vive dentro del bloque de
+             nube y NO es visible desde este script: llamarlo aquí
+             lanzaba ReferenceError, la fusión con cambios reales caía
+             en el catch y recargaba la página sin subir nada. Se marca
+             por los ganchos exportados, proyecto por proyecto + meta. */
+          if (window.__cloudMarkDirty) Object.keys((store.projects || {})).forEach(function (id) { window.__cloudMarkDirty(id); });
+          if (window.__cloudMarkMetaDirty) window.__cloudMarkMetaDirty();
+          if (window.__cloudSaveNow) window.__cloudSaveNow();
+        }
         renderSidebar(); renderChat();
         toast("Fusioné lo más reciente en esta pestaña: no se perdió ninguna respuesta.");
       } catch (e) { window.location.reload(); }
@@ -10411,7 +10454,15 @@
       var parts = [state.answers[mid][qi] || ""];
       var steps = fuSteps(mid, qi);
       var n = (typeof uptoStep === "number") ? Math.min(uptoStep + 1, steps.length) : steps.length;
-      for (var j = 0; j < n; j++) if (steps[j].answer) parts.push(steps[j].answer);
+      for (var j = 0; j < n; j++) {
+        if (!steps[j].answer) continue;
+        /* v17.33 (WS2) · H2c: la respuesta a la sonda del grado
+           declarado es una etiqueta, no contenido: no entra en lo
+           acumulado (igual que en combinedAnswerEvidence). La sonda
+           de evidencia SI entra: su respuesta trae las cifras. */
+        if (isGradeWordStep(steps[j])) continue;
+        parts.push(steps[j].answer);
+      }
       return parts.join(" ");
     }
     /* v17.29 (WS3) - Un paso de grado no es contenido puntuable: las
@@ -10489,6 +10540,14 @@
        «0 presencia» y «$0 de inversión» son ceros sobre lo que la
        pregunta pide (C4 Q1/Q2), no texto sin unidad. */
     var ZERO_UNITS = /(clientes?|ventas?|pedidos?|reservas?|personas?|ingresos?|ganancias?|suscriptores?|seguidores?|socios?|empleados?|proveedores?|productos?|unidades?|casos?|recomendaciones?|reseñas?|testimonios?|visitas?|llamadas?|mensajes?|pesos?|dinero|facturaci[oó]n|facturas?|alquileres?|contratos?|hu[eé]spedes?|habitaciones?|noches?|turistas?|n[oó]madas?|perfil|p[aá]gina|plataforma|presencia|inversi[oó]n)/i;
+    /* v17.33 (WS2) · H2d: «caso», «perfil», «página» y «presencia» NO
+       son unidades de cero: la ausencia de un ejemplo («no tengo un
+       caso con nombre») o de un perfil («no tengo perfil ni página»)
+       no es un cero medido sobre lo que la pregunta pide — es una
+       negación con cifras al lado. ZERO_UNITS sigue valiendo para
+       askedNouns (lo que la pregunta pide); el emparejamiento del
+       cero usa solo estas. */
+    var HONEST_ZERO_UNITS = /(clientes?|ventas?|pedidos?|reservas?|personas?|ingresos?|ganancias?|suscriptores?|seguidores?|socios?|empleados?|proveedores?|productos?|unidades?|recomendaciones?|reseñas?|testimonios?|visitas?|llamadas?|mensajes?|pesos?|dinero|facturaci[oó]n|facturas?|alquileres?|contratos?|hu[eé]spedes?|habitaciones?|noches?|turistas?|n[oó]madas?|plataforma|inversi[oó]n)/i;
     /* v17.25 · Un cero honesto ES el dato — pero solo cuando el cero es
        sobre LA CANTIDAD QUE ESTA PREGUNTA PIDE, y en su propia frase.
        Antes se comprobaban dos condiciones sueltas sobre TODO el texto
@@ -10529,14 +10588,14 @@
           if (/^(?:\$?0|cero)$/.test(mm[0])) hasBareZero = true;
           if (mm.index === reM.lastIndex) reM.lastIndex++;
         }
-        var reS = new RegExp("\\bsin\\s+" + ZERO_UNITS.source, "gi"), ms;
+        var reS = new RegExp("\\bsin\\s+" + HONEST_ZERO_UNITS.source, "gi"), ms;
         while ((ms = reS.exec(cl)) !== null) { markers.push(ms.index + ms[0].length); if (ms.index === reS.lastIndex) reS.lastIndex++; }
         if (!markers.length) return;
         /* La unidad tiene que estar pegada al marcador (a 20 caracteres
            como mucho): «no tengo tiempo para los clientes» no es cero
            clientes, y «sin embargo, tengo 5 clientes» tampoco. */
         var paired = false;
-        var reU = new RegExp(ZERO_UNITS.source, "gi"), mu;
+        var reU = new RegExp(HONEST_ZERO_UNITS.source, "gi"), mu;
         while ((mu = reU.exec(cl)) !== null) {
           var us = mu.index, ue = us + mu[0].length;
           var near = markers.some(function (me) { return Math.abs(us - me) <= 20 || Math.abs(me - ue) <= 20; });
@@ -10553,6 +10612,23 @@
           }
         }
       });
+      /* v17.33 (WS3b) · H3/F6c: «caso» solo vale como cero cuando ES
+         la afirmación principal de la respuesta: «No hay ningún caso
+         todavía» (sin cifras, sin caso con nombre, sin fechas) es un
+         cero honesto — «No tengo un caso con nombre…, pero el precio
+         es $40.000» no lo es, porque trae el dato en dinero, y «No
+         tengo un caso con nombre para ninguno de los tres dolores»
+         tampoco, porque trae el conteo de los dolores. Por eso el
+         hueco de ejemplo de C3 Q1 sigue en pie y el control F6c
+         vuelve a «Dato real». */
+      if (!zeroNouns.length) {
+        var casoAbs = /\b(no\s+hay|no\s+tengo|nunca|sin)\b[^.!?;]{0,40}\bcasos?\b/i.exec(t);
+        if (casoAbs) {
+          var rest = t.slice(0, casoAbs.index) + t.slice(casoAbs.index + casoAbs[0].length);
+          var restHasContent = /\d/.test(rest) || /\b(dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cincuenta|cien|mil)\b/i.test(rest) || moneySpans(rest).some(function (sp) { return sp.v > 0; }) || hasNamedCase(rest) || hasDateIn(rest);
+          if (!restHasContent) zeroNouns.push("caso");
+        }
+      }
       if (!zeroNouns.length) return false;
       if (asked.length) {
         var matchesAsked = zeroNouns.some(function (n) { return asked.some(function (a) { return sameZeroFamily(n, a); }); });
@@ -10616,6 +10692,68 @@
         if (/\b\d[\d.,]*\b[^.!?;]{0,60}\b(pagan|pagaron|compraron|reservaron)\b/i.test(s)) return true;
         if (/\b(pagan|pagaron|compraron|reservaron)\b[^.!?;]{0,60}\$\s*\d/i.test(s)) return true;
       }
+      /* v17.33 (WS2) · H2d: una cifra de dinero en el texto también
+         contradice el cero: «no tengo el dato de la venta típica…
+         paga $40.000» trae el dato en dinero, así que la negación no
+         es la medida de hoy. Solo vale el dinero afirmado (>$0):
+         «$0» no contradice nada.
+         v17.33 (WS3b) · Pero el dinero solo desmiente el cero según
+         DE QUÉ es el cero: un cero de VENTAS (clientes/ventas/
+         pedidos/ingresos…) solo lo desmiente evidencia de ventas —
+         facturación mensual propia o volumen servido (la misma regla
+         que usa declaresZeroSales) o una venta pasada con cifra
+         («vendí $500.000 ayer»). El precio, los ahorros o el costo
+         no son ventas: sin esta distinción, la Lavandería (0 ventas,
+         $4.000.000 ahorrados, precio $25.000) dejaba de declarar su
+         cero honesto y el Retar perdía su caso (F4b). Un cero sobre
+         otra cosa (caso, dato, reseña, fecha, canal…) sí lo desmiente
+         cualquier cifra en dinero. */
+      var revenueZero = (zeroNouns || []).some(function (n) {
+        return REVENUE_NOUNS.some(function (rn) { return sameZeroFamily(n, rn); });
+      });
+      if (revenueZero) {
+        if (positiveSalesEvidenceInText(t)) return true;
+        /* Una transacción con cifra («el cliente paga $40.000 por la
+           venta», «vendí $500.000 ayer») también es evidencia de
+           ventas, aunque no sea mensual ni volumen: alguien pagó.
+           Solo valen verbos de venta inequívocos — el comprador paga
+           (paga/pagó/compró/reservó) o el negocio vendió/cobró/
+           facturó en pasado. El precio («el precio es $25.000»), los
+           ahorros («tengo $4.000.000 ahorrados»), el cobro en presente
+           («cobro $40.000 por venta») y lo que el dueño PAGA («pago
+           $50.000 de arriendo») no son ventas.
+           v17.33 (WS9) · G7-7: una cifra de la ALTERNATIVA no es una
+           venta propia — lo que alguien paga A la alternativa («Mi
+           cliente paga por la alternativa unos $15.000») no lo vende
+           este negocio, así que no desmiente el cero. Se excluye por
+           la palabra en el tramo verbo–cifra o por la etiqueta que
+           moneyFigures da a la cifra. (El alcance por oración se
+           descartó: D-A C2 Q2 necesita el verbo de la oración
+           siguiente — «no tengo el dato… paga $40.000 por la venta»
+           — para seguir bloqueando.) */
+        var saleVerb = "(paga|pagan|pagó|pagaron|compró|compraron|reservó|reservaron|vend[ií]|vendió|vendimos|factur[eéó]|facturamos|cobr[eéó]|cobramos|ingres[eé]|gan[eé])";
+        var altFigs = moneyFigures(t).filter(function (f) { return f.label === "alternativa"; });
+        var isAltFigure = function (dollarPos) {
+          for (var af = 0; af < altFigs.length; af++) {
+            var fi = altFigs[af].i, fl = altFigs[af].len || 0;
+            if (dollarPos >= fi && dollarPos < fi + fl) return true;
+          }
+          return false;
+        };
+        var reV = new RegExp("\\b" + saleVerb + "\\b[^.!?;]{0,60}\\$\\s*\\d", "gi"), mv;
+        while ((mv = reV.exec(t)) !== null) {
+          if (/alternativa/i.test(mv[0]) || isAltFigure(mv.index + mv[0].indexOf("$"))) { if (mv.index === reV.lastIndex) reV.lastIndex++; continue; }
+          return true;
+        }
+        var reM = new RegExp("\\$\\s*\\d[^.!?;]{0,60}\\b" + saleVerb + "\\b", "gi"), mm2;
+        while ((mm2 = reM.exec(t)) !== null) {
+          if (/alternativa/i.test(mm2[0]) || isAltFigure(mm2.index)) { if (mm2.index === reM.lastIndex) reM.lastIndex++; continue; }
+          return true;
+        }
+      } else {
+        var money = moneySpans(t);
+        for (var mi = 0; mi < money.length; mi++) if (money[mi].v > 0) return true;
+      }
       var reN = /(\d[\d.,]*)\s*(clientes?|ventas?|pedidos?|reservas?|personas?|hu[eé]spedes?|habitaciones?|noches?|turistas?|n[oó]madas?|unidades?|productos?|reseñas?|testimonios?)/gi, m;
       /* v17.32 (WS4b) · G7: el «antes» no contradice el «ahora»: un
          conteo positivo en una cláusula de antes («antes me traían 40
@@ -10662,10 +10800,14 @@
        2026») o una expresión relativa que resuelve a una fecha («en
        dos semanas», «el próximo mes», «el lunes»). Un año suelto
        («En 2026 queremos…»), una duración («Llevamos 3 años») y las
-       palabras vagas de periodo («hoy», «esta semana», «este mes»,
-       «este año», «mañana» — que también es «la mañana»—) NO son
+       «hoy», «esta semana», «este mes», «este año», «mañana» — que también es «la mañana»—) NO son
        fecha por sí solas: antes, cualquier «2026» o «hoy» hacía
-       creer que la respuesta traía la fecha pedida. */
+       creer que la respuesta traía la fecha pedida.
+       v17.33 (WS3) · H3 «fecha»: una duración en MESES («en 12
+       meses») es un horizonte, no una fecha: antes, «Voy a contratar
+       un ayudante en 12 meses» hacía decir «la fecha que me diste»
+       sin haber ninguna fecha. Las duraciones cortas que resuelven a
+       una fecha cercana («en dos semanas») siguen contando. */
     function hasDateIn(text) {
       var t = String(text || "");
       if (/\b\d{1,2}\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i.test(t)) return true;
@@ -10673,7 +10815,7 @@
       if (/\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+20\d\d\b/i.test(t)) return true;
       if (/\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b/i.test(t)) return true;
       if (/\b(la pr[oó]xima semana|el pr[oó]ximo mes|el mes que viene|la semana que viene)\b/i.test(t)) return true;
-      if (/\b(en|dentro de)\s+(un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|\d+)\s+(d[ií]as?|semanas?|meses?)\b/i.test(t)) return true;
+      if (/\b(en|dentro de)\s+(un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|\d+)\s+(d[ií]as?|semanas?)\b/i.test(t)) return true;
       return false;
     }
     /* v17.32 (WS4b) · G8: un ejemplo/caso solo cuenta con casos
@@ -10689,8 +10831,21 @@
        sustancia para la etiqueta en assessEvidence y
        evidenceMissingCore se deja como está, para no mover la
        solidez (Laundry M0:4 pasaría de Fuerte a Por validar). */
+    /* v17.33 (WS3) · H3 «caso»: una negación no es un caso. Se
+       borran las cláusulas negadas («no tengo un caso…», «ningún
+       ejemplo…», «sin caso…») antes de buscar un caso o un ejemplo,
+       para que «No tengo un caso con nombre» no cuente como haber
+       contado un caso — antes, la negación misma disparaba «el caso
+       que me contaste» en la burbuja y borraba el hueco del ejemplo.
+       La negación no cruza coma ni punto: «no tengo reseñas, pero te
+       cuento un caso» conserva el caso afirmado. La cola opcional se
+       traga «de doña Rosa» o «con nombre…» para que el nombre
+       negado tampoco cuente como caso con nombre. */
+    function stripNegatedCase(t) {
+      return String(t || "").replace(/\b(no|nunca|jam[aá]s|sin|tampoco|ning[uú]n(?:a|o|os|as)?)\b[^.!?;,]{0,60}?\b(casos?|ejemplos?)\b(?:\s+de\s+(?:(?:doña|don)\s+)?[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?(?:\s+con\s+nombre[^.!?;,]*)?/gi, "");
+    }
     function hasNamedCase(text) {
-      var t = String(text || "");
+      var t = stripNegatedCase(String(text || ""));
       /* Tratamiento + nombre: «doña Rosa», «don Rafael». */
       if (/\b(doña|don)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+/.test(t)) return true;
       /* «el señor de la ferretería», «la señora del mercado». */
@@ -10707,7 +10862,7 @@
       return false;
     }
     function hasExample(text) {
-      var t = String(text || "");
+      var t = stripNegatedCase(String(text || ""));
       if (/(por ejemplo|ejemplo|un caso|el caso)/i.test(t)) return true;
       if (hasNamedCase(t)) return true;
       /* v17.32 (WS4b) · G8: las palabras sueltas («cliente», «cuando»,
@@ -10733,10 +10888,13 @@
       var ex = String(q.exige || "") + " " + String(q.q || "");
       var t = String(text || "");
       var forms = [
-        ["reconocimiento", "reconocimiento|reconocido|reconocida"],
-        ["premio", "premio|premiado|premiada"],
-        ["mención", "mención|mencionado|mencionada|mencionaron"],
-        ["distinción", "distinción|distinguido|distinguida"],
+        /* v17.33 (WS3) · H3 «fecha»: premio, reconocimiento, mención
+           y distinción son UNA familia de evidencia: la fecha pedida
+           («un reconocimiento con fecha») es la fecha de cualquiera
+           de ellos, así que negar uno cualquiera dispensa la fecha
+           de todos — antes, «nunca he ganado un premio» no dispensaba
+           la fecha atada a «reconocimiento» (C11 Q2). */
+        ["reconocimiento", "reconocimiento|reconocido|reconocida|premio|premiado|premiada|mención|mencionado|mencionada|mencionaron|distinción|distinguido|distinguida"],
         ["reseña", "reseña|reseñado"],
         ["testimonio", "testimonio"],
         ["proceso", "proceso"],
@@ -10788,6 +10946,27 @@
     /* v17.24 · Lo que la propia pregunta pide (q.exige): si la respuesta
        trae cifras pero no lo que esta pregunta pide, el veredicto no puede
        ser Fuerte. Devuelve el hueco nombrado, o null si lo pedido está. */
+    /* v17.33 (WS3) · H3 «fecha»: una fecha que la propia exige pide
+       solo «si hay alguna» es condicional, no obligatoria: «solo si
+       hay alguna — la fecha de la más reciente» no se le exige a
+       quien trae la prueba sin la fecha anotada (C5 Q1). La fecha
+       real, cuando la hay, se sigue reconociendo en la burbuja
+       (evidenceFoundText): esto solo quita el hueco, no la cita. */
+    function dateIsConditional(q, t) {
+      if (!q) return false;
+      var ex = String(q.exige || "");
+      if (!/(solo\s+si\s+hay|si\s+hay\s+alguna)/i.test(ex) || !/\b(fecha|plazo)\b/i.test(ex)) return false;
+      var a = String(t || "");
+      /* v17.33 (WS3b) · H3/F6c: la dispensa condicional solo la rompe
+         una fuente CON fecha (reseñas en Google/TripAdvisor/Facebook:
+         la fecha de la más reciente existe y se puede mirar). Decir
+         «no tengo la fecha anotada» sobre testimonios escritos sin
+         fecha no es un hueco: es la prueba tal como existe, y el WS3
+         la dispensa. Sin fuente fechada, la fecha no se le exige a
+         quien trae la prueba sin la fecha anotada. */
+      if (/\b(google|tripadvisor|facebook)\b/i.test(a)) return false;
+      return true;
+    }
     function exigeGap(text, q) {
       if (!q) return null;
       var needs = exigeNeeds(q);
@@ -10811,7 +10990,7 @@
       /* v17.32 (WS4b) · G8: la fecha de algo declarado inexistente no
          se pide (absenceWaiver): «un reconocimiento con fecha» no
          tiene fecha que dar cuando no hay reconocimiento (C11 Q2). */
-      if (needs.date && !hasDateIn(t) && !zeroWaiver && !absenceWaiver(t, q))
+      if (needs.date && !hasDateIn(t) && !zeroWaiver && !absenceWaiver(t, q) && !dateIsConditional(q, t))
         return { text: "la fecha o el plazo que pide esta pregunta", needsNumber: false };
       return null;
     }
@@ -10880,6 +11059,19 @@
       var s = ((q.q || "") + " " + (q.exige || "")).toLowerCase();
       return /(hip[oó]tesis|apuesta|apostar|tesis|supuesto|conviene|te rinde|coherencia|contradicci[oó]n)/.test(s);
     }
+    /* v17.33 (WS3) · H3 «supuesto»: una pregunta contrafáctica de
+       dependencia («si desaparecieras dos semanas, ¿qué seguiría
+       funcionando?») PIDE un juicio, no una hipótesis a probar: la
+       respuesta ES el juicio pedido, aunque empiece con «creo que» y
+       aunque traiga su cifra de lo que se pierde. Igual que las
+       preguntas de hipótesis/apuesta/tesis, no se marca «supuesto
+       sin probar» — salvo que el dueño añada un plan de probar a
+       futuro, que sigue sin probarse. */
+    function asksDependencyJudgment(q) {
+      if (!q) return false;
+      var s = ((q.q || "") + " " + (q.exige || "")).toLowerCase();
+      return /(si\s+desaparecier[as]|si\s+desapareces|si\s+faltar[as]|si\s+faltaras|qu[eé]\s+seguir[ií]a|qu[eé]\s+se\s+detiene|qu[eé]\s+pasar[ií]a\s+si)/.test(s);
+    }
     function hasFutureTestPlan(text) {
       var t = String(text || "").toLowerCase();
       return /(pienso probar|voy a probar|lo voy a probar|voy a validar|pienso validar|voy a testear|pienso testear|voy a hacer una prueba|pienso hacer una prueba)/.test(t);
@@ -10887,7 +11079,7 @@
     function isUntestedHypothesis(text, q, stage) {
       var t = String(text || "").toLowerCase();
       if (honestZero(text, q)) return false;
-      if (asksHypothesisOrBet(q) && !hasFutureTestPlan(text)) return false;
+      if ((asksHypothesisOrBet(q) || asksDependencyJudgment(q)) && !hasFutureTestPlan(text)) return false;
       var hasHyp = /(creo|supongo|pienso|mi hip[oó]tesis|hip[oó]tesis|supuesto|apuesta|imagino|me parece|mi idea es|espero que|voy a probar|lo voy a)/.test(t);
       if (!hasHyp) return false;
       if (hasTestedEvidence(text)) return false;
@@ -10912,7 +11104,15 @@
          podía subir el veredicto aunque la pregunta no pidiera fecha. */
       var hasDate = needs.date ? hasDateIn(t) : false;
       var hasSource = /(seg[uú]n|fuente|registro|factura|plataforma|lista|conteo|med[ií]|encuesta|reseña)/i.test(t);
-      var hasExample = /(por ejemplo|ejemplo|un caso|el caso|cliente|cuando|vez que|la vez|pasada|pasado|ayer|la semana|el mes)/i.test(t);
+      /* v17.33 (WS3) · H3 «caso»: la misma regla que hasExample: la
+         negación no es un caso («no tengo un caso» no cuenta) y las
+         palabras sueltas («cliente», «cuando», «la semana»…) solo
+         cuentan como ejemplo con un caso con nombre o una cifra de
+         dinero al lado — «mi cliente cada semana» sin más no es un
+         ejemplo. */
+      var affT = stripNegatedCase(t);
+      var hasExample = /(por ejemplo|ejemplo|un caso|el caso)/i.test(affT) || hasNamedCase(affT) ||
+        (/(cliente|cuando|vez que|la vez|pasada|pasado|ayer|la semana|el mes)/i.test(affT) && (hasNamedCase(affT) || moneySpans(t).some(function (sp) { return sp.v > 0; })));
       var len = t.trim().length;
       var evidencePresent = hasNum || hasDate || hasSource || hasExample;
       var askedMet = (!needs.number || hasNum) && (!needs.date || hasDate) && (!needs.example || hasExample);
@@ -11025,6 +11225,208 @@
     /* v17.32 (WS4) · Orden de veredictos para el guarda de
        no-degradación de storeVerdict: una repregunta nunca baja el
        veredicto. */
+    /* v17.33 (WS6) · H7/H11/H14: calidad de contenido. Analía
+       cerraba componentes con respuestas genéricas, repetidas o
+       fuera de tema sin avisar, y la revisión de cierre afirmaba
+       que todas traían evidencia concreta. Este chequeo es
+       determinista (sin modelo externo) y corre en vivo en cada
+       renderizado — o sea, en cada respuesta que se guarda
+       (commitAnswer pinta de nuevo), en el cierre del componente,
+       en el lienzo y en el informe del Brief — y nunca bloquea:
+       solo avisa y deja la señal abierta para rehacer la respuesta. */
+    var WS6_STOP = { el: 1, la: 1, los: 1, las: 1, de: 1, en: 1, y: 1, que: 1, por: 1, para: 1, con: 1, un: 1, una: 1, unos: 1, unas: 1, es: 1, se: 1, me: 1, mi: 1, mis: 1, su: 1, sus: 1, al: 1, lo: 1, del: 1, no: 1, si: 1, ya: 1, le: 1, les: 1, como: 1, mas: 1, pero: 1, este: 1, esta: 1, esto: 1, eso: 1, ese: 1, esa: 1, son: 1, fue: 1, hay: 1, te: 1, tu: 1, tus: 1, a: 1, o: 1, u: 1, e: 1, sin: 1, sobre: 1, entre: 1, cuando: 1, donde: 1, porque: 1, puede: 1, pueden: 1, ser: 1, estar: 1, estoy: 1, tengo: 1, tiene: 1, tienen: 1, hace: 1, cada: 1, vez: 1, veces: 1, muy: 1, tambien: 1, solo: 1, hasta: 1, desde: 1 };
+    function ws6StripAccents(s) {
+      return String(s || "").toLowerCase().replace(/[áàä]/g, "a").replace(/[éèë]/g, "e").replace(/[íìï]/g, "i").replace(/[óòö]/g, "o").replace(/[úùü]/g, "u").replace(/ñ/g, "n");
+    }
+    /* Palabras de contenido de un texto (sin acentos, sin
+       puntuación, sin palabras vacías, sin duplicados). */
+    function ws6Tokens(text) {
+      var t = ws6StripAccents(text).replace(/[^a-z0-9\s]/g, " ").split(/\s+/);
+      var seen = {}, list = [];
+      t.forEach(function (w) { if (w.length >= 3 && !WS6_STOP[w] && !seen[w]) { seen[w] = 1; list.push(w); } });
+      return list;
+    }
+    /* Solape de vocabulario entre dos textos: palabras comunes
+       sobre el vocabulario mayor. 1 es el mismo texto. */
+    function ws6Overlap(a, b) {
+      var A = ws6Tokens(a), B = ws6Tokens(b);
+      if (!A.length || !B.length) return 0;
+      var inB = {}; B.forEach(function (w) { inB[w] = 1; });
+      var inter = 0; A.forEach(function (w) { if (inB[w]) inter++; });
+      return inter / Math.max(A.length, B.length);
+    }
+    /* ¿Esta respuesta repite una respuesta ANTERIOR (otro
+       componente o la misma, pregunta anterior)? Umbral alto
+       (0,8) y mínimo de 8 palabras de contenido y 60 caracteres:
+       las respuestas cortas o las que solo comparten el tema no
+       son repetición. La primera aparición es el original y no se
+       marca; la repetición cita la pregunta original. */
+    function ws6RepeatedSource(mid, qi) {
+      if (!state) return null;
+      var mine = mainAnswerText(mid, qi);
+      if (!mine || mine.trim().length < 60) return null;
+      if (ws6Tokens(mine).length < 8) return null;
+      var order = {}; MODULES.forEach(function (m, i) { order[m.id] = i; });
+      var best = null;
+      MODULES.forEach(function (m) {
+        var arr = (state.answers && state.answers[m.id]) || [];
+        arr.forEach(function (other, oj) {
+          if (!other || !other.trim()) return;
+          if (m.id === mid && oj === qi) return;
+          if (order[m.id] > order[mid] || (m.id === mid && oj > qi)) return;
+          if (other.trim().length < 60) return;
+          if (ws6Tokens(other).length < 8) return;
+          var ov = ws6Overlap(mine, other);
+          if (ov >= 0.8 && (!best || ov > best.overlap)) best = { mid: m.id, qi: oj, overlap: ov };
+        });
+      });
+      return best;
+    }
+    /* ¿Este texto SON las tres tesis juntas, sin elegir una?
+       «Mis tres tesis son…», dos de «primera/segunda/tercera
+       tesis», o dos letras A)/B)/C) junto a la palabra tesis. */
+    function ws6IsThreeTheses(text) {
+      var t = ws6StripAccents(String(text || ""));
+      if (/tres tesis/.test(t)) return true;
+      var markers = 0;
+      ["primera tesis", "segunda tesis", "tercera tesis"].forEach(function (mm) { if (t.indexOf(mm) >= 0) markers++; });
+      if (markers >= 2) return true;
+      var letters = (t.match(/\b[abc]\)/g) || []).length;
+      if (letters >= 2 && /tesis/.test(t)) return true;
+      return false;
+    }
+    /* Elementos de una presentación que debe tener una versión
+       (30 segundos o 2 minutos): problema, valor, diferencia,
+       cliente. Una versión con cero de los cuatro es un texto
+       general, no una versión. */
+    function ws6PitchElements(text) {
+      var t = ws6StripAccents(String(text || ""));
+      var n = 0;
+      if (/(problema|dolor|pierde|le cuesta|no encuentra)/.test(t)) n++;
+      if (/(ofrezco|vendo|entrego|resuelvo|ayudo|te doy|te dejo)/.test(t)) n++;
+      if (/(distinto|diferente|unico|exacto|sin dar vueltas|mismo dia|referencia)/.test(t)) n++;
+      if (/(cliente|para ti|para los|para las|para quien|maestro)/.test(t)) n++;
+      return n;
+    }
+    /* Señales de calidad de la respuesta PRINCIPAL de una
+       pregunta. Devuelve [] cuando no hay nada que señalar.
+       kind: "repeated" | "offtopic" | "unchosen". La evidencia de
+       una repregunta no se juzga aquí: el defecto vivo es la
+       respuesta principal repetida o fuera de tema. */
+    function ws6QualityFlags(mid, qi) {
+      var out = [];
+      if (!state) return out;
+      var main = mainAnswerText(mid, qi);
+      if (!main || !main.trim()) return out;
+      var dup = null; try { dup = duplicateInfo(mid, qi); } catch (e) { dup = null; }
+      if (dup && dup.kind === "full") return out;
+      var rep = ws6RepeatedSource(mid, qi);
+      if (rep) out.push({ kind: "repeated", refMid: rep.mid, refQi: rep.qi });
+      /* H11: la tesis elegida (C12 Q5) tiene que ser UNA tesis. */
+      if (mid === "M12" && qi === 4) {
+        if (ws6IsThreeTheses(main)) out.push({ kind: "unchosen" });
+        return out;
+      }
+      /* H7/H11: en C11 la presentación se reutilizó como evidencia,
+         como pedido, como decisiones y como versiones. Una versión
+         (30 segundos / 2 minutos) también se señala cuando es la
+         tracción, el mercado o el perfil, o un texto general sin
+         ningún elemento de presentación. Solo se marca el desajuste
+         claro: solape >= 0,6 con el otro contenido, o cero
+         elementos de presentación en un texto largo. */
+      if (mid === "M11") {
+        var pitch = mainAnswerText("M11", 0) || "";
+        if (qi === 1 && pitch && ws6Overlap(main, pitch) >= 0.6) {
+          out.push({ kind: "offtopic", looksLike: "tu presentación", wants: "la evidencia que respalda tu presentación" });
+        } else if (qi === 2 && pitch && ws6Overlap(main, pitch) >= 0.6) {
+          out.push({ kind: "offtopic", looksLike: "tu presentación", wants: "tu pedido concreto" });
+        } else if (qi === 3 && pitch && ws6Overlap(main, pitch) >= 0.6) {
+          out.push({ kind: "offtopic", looksLike: "tu presentación", wants: "tus tres primeras decisiones" });
+        } else if (qi === 6 || qi === 7) {
+          var trac = mainAnswerText("M11", 5) || "";
+          var market = mainAnswerText("M11", 4) || "";
+          var profile = mainAnswerText("M0", 0) || "";
+          var want = qi === 6 ? "tu versión de 30 segundos" : "tu versión de 2 minutos";
+          if (trac && ws6Overlap(main, trac) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu tracción", wants: want });
+          else if (market && ws6Overlap(main, market) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu mercado", wants: want });
+          else if (profile && ws6Overlap(main, profile) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu perfil", wants: want });
+          else if (main.trim().length >= 60 && ws6PitchElements(main) === 0) out.push({ kind: "offtopic", looksLike: "un texto general", wants: want });
+        }
+      }
+      return out;
+    }
+    function ws6ModuleFlags(mid) {
+      var out = [];
+      var m = mod(mid); if (!m) return out;
+      m.questions.forEach(function (q, qi) {
+        ws6QualityFlags(mid, qi).forEach(function (f) { out.push({ mid: mid, qi: qi, flag: f }); });
+      });
+      return out;
+    }
+    function ws6ModuleFlagCount(mid) { return ws6ModuleFlags(mid).length; }
+    /* La frase de la señal, en primera persona de Analía y
+       segunda del dueño, sin punto final (lo pone quien la usa). */
+    function ws6FlagText(f) {
+      if (!f) return "";
+      if (f.kind === "repeated") return "esta respuesta repite lo que ya me dijiste en " + codeOf(f.refMid) + " Pregunta " + (f.refQi + 1) + ", así que no la cuento como evidencia nueva para esta pregunta";
+      if (f.kind === "unchosen") return "esto todavía son tus tres tesis juntas: aún no elegiste una. Elige una sola tesis y defiéndela con tu evidencia";
+      if (f.kind === "offtopic") return "esto parece " + f.looksLike + ", no " + f.wants + ": cuéntame " + f.wants + " con tus datos y lo revisamos";
+      return "";
+    }
+    function ws6FlagsText(flags) {
+      return (flags || []).map(ws6FlagText).filter(function (s) { return !!s; }).join(" ");
+    }
+    /* H7: el punto de equilibrio se CALCULA, no se repite.
+       Costos fijos mensuales divididos entre el margen por venta,
+       redondeado hacia arriba: con 300,1 ventas no se cubre. */
+    function computeBreakEven(fixedCostsMonthly, marginPerSale) {
+      var f = Number(fixedCostsMonthly), mg = Number(marginPerSale);
+      if (!isFinite(f) || !isFinite(mg) || f <= 0 || mg <= 0) return null;
+      return Math.ceil(f / mg);
+    }
+    function ws6ParseMoneyNum(s) {
+      var n = parseInt(String(s || "").replace(/[^0-9]/g, ""), 10);
+      return isNaN(n) ? null : n;
+    }
+    /* Entradas del equilibrio, leídas de las respuestas del dueño:
+       fijos de C10 Q1, margen neto de C0 Q8 (o precio menos costo
+       por venta de C10 Q1), ventas actuales y equilibrio declarado
+       de C10 Q2. */
+    function breakEvenInputs() {
+      var fixed = null, margin = null, salesNow = null, stated = null;
+      var q0 = mainAnswerText("M10", 0) || "";
+      var fm = q0.match(/costos fijos[^$]{0,60}?\$?\s*([\d][\d.,]*)/i);
+      if (fm) fixed = ws6ParseMoneyNum(fm[1]);
+      if (fixed == null) {
+        var figs0 = moneyFigures(q0);
+        if (figs0.length) { fixed = figs0[0].v; figs0.forEach(function (fg) { if (fg.v > fixed) fixed = fg.v; }); }
+      }
+      var neto = null; try { neto = thesisNetoFigure(); } catch (e) { neto = null; }
+      if (neto && neto.v) margin = neto.v;
+      if (margin == null) {
+        var price = null; try { price = ownPrice(); } catch (e) { price = null; }
+        var cm = q0.match(/cada (venta|servicio) me cuesta[^$]{0,40}?\$?\s*([\d][\d.,]*)/i);
+        if (price != null && cm) margin = price - ws6ParseMoneyNum(cm[2]);
+        if (margin != null && margin <= 0) margin = null;
+      }
+      var q1 = mainAnswerText("M10", 1) || "";
+      var vm = q1.match(/vendo[^.]{0,60}?(\d[\d.,]*)\s*(ventas|servicios)/i);
+      if (vm) salesNow = ws6ParseMoneyNum(vm[1]);
+      var stm = q1.match(/punto de equilibrio[^.]{0,80}?(\d[\d.,]*)\s*(ventas|servicios)/i);
+      if (stm) stated = ws6ParseMoneyNum(stm[1]);
+      return { fixed: fixed, margin: margin, salesNow: salesNow, stated: stated, computed: computeBreakEven(fixed, margin) };
+    }
+    /* La línea del equilibrio calculado, lista para mostrarse:
+       el número, la división que lo sostiene, la distancia de hoy
+       y, si lo declarado contradice lo calculado, el aviso. */
+    function breakEvenLine() {
+      var be = breakEvenInputs();
+      if (be.computed == null) return "";
+      var s = "Tu punto de equilibrio es " + be.computed + " ventas al mes: costos fijos de $" + be.fixed.toLocaleString("es-CO") + " al mes divididos entre $" + be.margin.toLocaleString("es-CO") + " de margen por venta.";
+      if (be.salesNow != null) s += " Hoy vendes unas " + be.salesNow + " ventas al mes, " + (be.salesNow >= be.computed ? "por encima del equilibrio." : "por debajo del equilibrio.");
+      if (be.stated != null && be.stated !== be.computed) s += " Tu respuesta dice " + be.stated + " ventas, pero la división da " + be.computed + ": revisa cuál de las dos cifras es la buena.";
+      return s;
+    }
     function verdictRank(label, miss) {
       if (label === "Fuerte") return 5;
       if (typeof label === "string" && label.indexOf("Dato real") === 0) return 4;
@@ -11168,20 +11570,25 @@
       if (/(precio|cobro|cu[aá]nto|vale|cobras|te pagan|tarifa)/.test(s)) return "propio";
       return null;
     }
-    /* v17.29 (WS2) · UNA sola regla de cita de cifras, compartida por
-       la burbuja «Lo que yo veo» (evidenceFoundText) y la revisión de
-       cierre: se cita LA cifra que esta pregunta pide, por etiqueta
-       (propio, costo, alternativa, objetivo, CAC o neto); si hay
-       varias con esa etiqueta, la ÚLTIMA con unidad conocida (si
-       ninguna la tiene, la última de ellas); si la pregunta no pide
-       una cifra con etiqueta, la última cifra ETIQUETADA del texto; y
-       solo si ninguna cifra lleva etiqueta, la última cifra con ancla
-       de dinero. Un número sin ancla ($, pesos, COP) nunca se cita.
-       «extraCount» cuenta solo las demás cifras DISTINTAS (por valor)
-       con la MISMA etiqueta y la MISMA unidad que la citada, sobre EL
-       MISMO texto que se cita: así el precio de la competencia, el
-       costo, una cifra mensual y una cifra repetida en una repregunta
-       no inflan el «y N cifras más». Devuelve null si no hay cifra. */
+    /* v17.33 (WS2) · H2b: UNA sola regla de cita de cifras,
+       compartida por la burbuja «Lo que yo veo» (evidenceFoundText)
+       y la revisión de cierre. Se cita LA cifra que esta pregunta
+       pide, por etiqueta (propio, costo, alternativa, objetivo, CAC
+       o neto) o por clase (neto); entre las cifras con esa etiqueta
+       manda la que la propia respuesta nombra como total o como meta
+       («en total $X», «mi meta es facturar $X»); si ninguna se nombra
+       así, manda la PRIMERA con unidad conocida (si ninguna la tiene,
+       la primera de ellas). La última era arbitraria: en «costos
+       fijos $4.500.000… cada venta me cuesta $25.000» citaba el costo
+       por venta y escondía el total, y en los escenarios citaba un
+       costo del mes bueno. Si la pregunta no pide una cifra con
+       etiqueta, se mantiene la caída anterior: la última cifra
+       ETIQUETADA del texto; y solo si ninguna cifra lleva etiqueta,
+       la última cifra con ancla de dinero. Un número sin ancla ($,
+       pesos, COP) nunca se cita. «extraCount» cuenta TODAS las demás
+       cifras DISTINTAS (por valor) del texto citado (total − 1): el
+       «y N cifras más» nunca esconde cifras que la respuesta sí trae.
+       Devuelve null si no hay cifra. */
     function citedFigure(text, q) {
       var t = String(text || "");
       /* v17.32 (WS1b) · Una cifra que el dueño descarta («no $96.000»)
@@ -11200,8 +11607,24 @@
       } else if (kind) {
         cands = figs.filter(function (f) { return f.label === kind; });
       }
+      /* La cifra pedida que la respuesta nombra como total o meta
+         manda; si no, la primera con unidad conocida, si no la
+         primera de las pedidas. */
+      function firstAsked(list) {
+        if (!list.length) return null;
+        for (var i = 0; i < list.length; i++) {
+          var f = list[i];
+          var fi = figs.indexOf(f);
+          var prevEnd = fi > 0 ? figs[fi - 1].i + (figs[fi - 1].len || 0) : 0;
+          var before = t.slice(Math.max(prevEnd, f.i - 80), f.i);
+          if (/\b(total|en total|suman|suma)\b/i.test(before)) return f;
+          if (kind === "objetivo" && /\b(meta|objetivo|facturar|quiero llegar)\b/i.test(before)) return f;
+        }
+        var wu = list.filter(function (g) { return g.unit && g.unit !== "desconocida"; });
+        return wu.length ? wu[0] : list[0];
+      }
       var cited = null;
-      if (cands.length) cited = lastWithUnit(cands);
+      if (cands.length) cited = firstAsked(cands);
       if (!cited) {
         var labeled = figs.filter(function (f) { return f.label && f.label !== "ninguna"; });
         if (labeled.length) cited = lastWithUnit(labeled);
@@ -11211,7 +11634,6 @@
       var extra = 0;
       figs.forEach(function (f) {
         if (f.v === cited.v) return;
-        if (f.label !== cited.label || f.unit !== cited.unit) return;
         if (seen[f.v]) return;
         seen[f.v] = true; extra++;
       });
@@ -11222,8 +11644,7 @@
       var parts = [];
       /* La cifra citada sigue la regla única de citedFigure: lo que
          pide la pregunta, por etiqueta; el «y N cifras más» cuenta
-         solo las demás cifras distintas con su misma etiqueta y unidad,
-         sobre este mismo texto. */
+         TODAS las demás cifras distintas del texto citado. */
       var cf = citedFigure(t, q);
       if (cf) parts.push("la cifra de $" + cf.value.toLocaleString("es-CO") + (cf.extraCount > 0 ? " y " + cf.extraCount + " cifra" + (cf.extraCount > 1 ? "s" : "") + " más" : ""));
       /* v17.29 (WS2) · La fecha solo se reconoce cuando ESTA pregunta
@@ -11231,8 +11652,14 @@
          —un año suelto, un «hoy»— hacía decir «la fecha que me
          diste» aunque la pregunta no pidiera fecha. */
       if (exigeNeeds(q).date && hasDateIn(t)) parts.push("la fecha que me diste");
-      if (/(por ejemplo|ejemplo|un caso|el caso)/i.test(t)) parts.push("el caso que me contaste");
-      else if (/\bcliente\b/i.test(t)) parts.push("lo de tu cliente");
+      /* v17.33 (WS3) · H3 «caso»: «el caso que me contaste» solo con
+         un caso AFIRMADO (mención explícita sin negar, o caso con
+         nombre); «lo de tu cliente» solo con un caso con nombre o
+         una cifra de dinero que ancle la mención — la palabra
+         «cliente» sola no es un caso. */
+      var aff = stripNegatedCase(t);
+      if (/(por ejemplo|ejemplo|un caso|el caso)/i.test(aff) || hasNamedCase(aff)) parts.push("el caso que me contaste");
+      else if (/\bcliente\b/i.test(aff) && (hasNamedCase(aff) || (cf && cf.value > 0))) parts.push("lo de tu cliente");
       return parts.join(" y ");
     }
     /* v17.32 (WS4) · Un hueco nunca lleva su propio «todavía» cuando
@@ -11241,6 +11668,17 @@
        «todavía» inicial del hueco en cada sitio que lo presenta. */
     function cleanMissText(s) { return String(s || "").replace(/^\s*todav[ií]a\s+/i, ""); }
     function cleanMissJoin(miss) { return (miss || []).map(cleanMissText).join("; "); }
+    /* v17.33 (WS2) · H2a: el tema de una pregunta, en sus palabras:
+       su exige sin la cola del grado («grado Supuesto/Media/Alta…»),
+       cortada por palabra. Es lo que hace que la burbuja hable de
+       ESTA pregunta y no de cualquiera: dos respuestas distintas
+       nunca comparten la segunda línea. */
+    function bubbleTopic(q) {
+      var s = String((q && (q.exige || q.q)) || "");
+      s = s.split(/;\s*grado\s+Supuesto/i)[0].split(/grado Supuesto/i)[0].replace(/\s+/g, " ").trim();
+      if (!s) return "esta pregunta";
+      return excerptOf(s, 70);
+    }
     function microDiagBubble(m, qi, text, quoteText) {
       /* v17.30 (WS1) · La burbuja lee el veredicto CONGELADO (y su
          pregunta congelada), no lo re-deriva: con respuestas
@@ -11273,9 +11711,11 @@
          no dice «aunque sea cero» porque la repregunta traiga uno
          (C2 Q7). */
       var stepText = quoteText || text || "";
-      var mainText = (state.answers[m.id] && state.answers[m.id][qi]) || "";
-      var isMainStep = !!mainText && stepText === mainText;
-      var citeText = isMainStep ? (text || "") : stepText;
+      /* v17.33 (WS2) · H2c: la cita es SOLO del texto de ESTE paso
+         (quoteText): la principal nunca cita cifras de una
+         repregunta — ni de la sonda del grado ni de su evidencia —,
+         y la repregunta nunca cita cifras de la principal. */
+      var citeText = stepText;
       var isZero = honestZero(stepText, q);
       /* v17.25 · La primera línea nombra lo que SÍ se encontró (la
          cifra, la fecha o el caso): cinco plantillas fijas no podían
@@ -11298,23 +11738,39 @@
          guardaba lo encontrado al responder y la burbuja repetía la
          misma cita en la principal y en cada repregunta. */
       var found = evidenceFoundText(citeText, q);
-      var veo = sol.label === "Fuerte" ? "esto ya tiene sustento: " + (found ? "me diste " + found : "lo que me cuentas ya trae lo que pedía esta pregunta")
-        : isZero ? "esto es un dato real, aunque sea cero: «" + esc(excerptOf(stepText, 120)) + "» es la medida de hoy, y cero es un número que vale como punto de partida"
-        : sol.label.indexOf("Dato real") === 0 ? "esto es un dato real: " + (found ? "ya me diste " + found : "lo que me cuentas ya es la medida de hoy")
-        : sol.label === "Por validar" ? "esto va por buen camino: " + (found ? "ya me diste " + found + ", y lo que sigue es afinarlo" : "ya trae algo concreto, y lo que sigue es afinarlo")
+      /* v17.33 (WS2) · H2a: la primera línea varía con lo que ESTE
+         paso trae: la clase de la cifra citada (tu precio, tu costo,
+         tu meta, lo que te queda neto…) y, cuando no hay cifra, el
+         tema de esta pregunta. Dos respuestas distintas nunca dicen
+         lo mismo en la primera línea. */
+      var cf = citedFigure(citeText, q);
+      var kindNoun = !cf ? "" : cf.label === "propio" ? "tu precio" : cf.label === "costo" ? "tu costo" : cf.label === "alternativa" ? "lo que cobra la alternativa" : cf.label === "objetivo" ? "tu meta" : (cf.label === "neto" || cf.kind === "neto") ? "lo que te queda neto" : cf.label === "cac" ? "tu costo de adquirir un cliente" : cf.label === "techo" ? "tu tope" : "";
+      var kindClause = kindNoun ? " (" + kindNoun + ")" : "";
+      var topic = bubbleTopic(q);
+      /* v17.33 (WS9) · G7-7: el aviso de cero es POR PASO y va
+         primero: si ESTE paso trae un cero real, la burbuja lo dice
+         aunque el veredicto congelado (sobre lo acumulado) sea
+         Fuerte — el «Fuerte» describe lo acumulado, no este paso. */
+      var veo = isZero ? "esto es un dato real, aunque sea cero: «" + esc(excerptOf(stepText, 120)) + "» es la medida de hoy, y cero es un número que vale como punto de partida"
+        : sol.label === "Fuerte" ? "esto ya tiene sustento: " + (found ? "me diste " + found + kindClause : "lo que me cuentas sobre «" + esc(topic) + "» ya trae lo que pedía esta pregunta")
+        : sol.label.indexOf("Dato real") === 0 ? "esto es un dato real: " + (found ? "ya me diste " + found + kindClause : "lo que me cuentas ya es la medida de hoy")
+        : sol.label === "Por validar" ? "esto va por buen camino: " + (found ? "ya me diste " + found + kindClause + ", y lo que sigue es afinarlo" : "ya trae algo concreto sobre «" + esc(topic) + "», y lo que sigue es afinarlo")
         : sol.label.indexOf("Pendiente") === 0 ? "esto queda como pendiente, y está bien: un «todavía no lo sé» honesto vale más que una respuesta larga sin sustento"
-        : "esto todavía está flojo: " + (found ? "me diste " + found + ", pero " : "") + "lo seguimos trabajando con las siguientes preguntas, sin prisa";
+        : "esto todavía está flojo: " + (found ? "me diste " + found + kindClause + ", pero " : "") + "lo seguimos trabajando con las siguientes preguntas, sin prisa";
       var falta;
       if (sol.label === "Fuerte" || isZero || isDone(sol.label, sol.miss)) {
-        falta = "en esta respuesta no me falta nada crítico; se afinará cuando la cruce con lo que me cuentes más adelante.";
+        /* v17.33 (WS2) · H2a: la línea de cierre también es de ESTA
+           pregunta: nombra su tema, así que nunca es la misma frase
+           fija para huecos distintos. */
+        falta = "en esta respuesta no me falta nada crítico sobre «" + topic + "»; se afinará cuando la cruce con lo que me cuentes más adelante.";
       } else if (sol.label === "Por validar") {
         falta = "todavía me falta: " + cleanMissJoin(sol.miss) + ". Queda anotado y lo retomamos sin detenerte.";
         if (pend && pend.qi === qi) falta += " Lo pedimos en la siguiente pregunta de seguimiento, en el flujo normal.";
       } else if (sol.label.indexOf("Pendiente") === 0) {
-        falta = "el dato concreto todavía no lo tienes: cuando lo tengas, vuelve y cuéntamelo aquí mismo.";
+        falta = "el dato concreto todavía no lo tienes («" + topic + "»): cuando lo tengas, vuelve y cuéntamelo aquí mismo.";
         if (pend && pend.qi === qi) falta += " La siguiente pregunta de seguimiento te lo pedirá en el flujo normal.";
       } else {
-        falta = "todavía me falta: " + (sol.miss.length ? cleanMissJoin(sol.miss) : "evidencia concreta que respalde lo que me contaste") + ".";
+        falta = "todavía me falta: " + (sol.miss.length ? cleanMissJoin(sol.miss) : "evidencia concreta sobre «" + topic + "» que respalde lo que me contaste") + ".";
         if (pend && pend.qi === qi) falta += " Lo pedimos en la siguiente pregunta de seguimiento, en el flujo normal.";
       }
       /* La lista de objetivos vive solo en el panel lateral: en el chat
@@ -11324,43 +11780,112 @@
          así que citarla entera la duplicaba en pantalla. En las
          repreguntas se cita la respuesta nueva de ese paso, nunca la
          principal otra vez. */
+      /* v17.33 (WS6) · H7: la señal de calidad de contenido vive en
+         esta misma burbuja, solo en la respuesta principal (la de la
+         repregunta no repite la señal): una respuesta repetida o
+         fuera de tema se dice de frente y no se cuenta como
+         evidencia nueva. El punto de equilibrio de C10 también se
+         muestra aquí, calculado, no repetido. */
+      var ws6Extra = "";
+      try {
+        var ws6IsMain = state && (quoteText || "") === (((state.answers || {})[m.id] || [])[qi] || "");
+        if (ws6IsMain) {
+          var ws6Flags = ws6QualityFlags(m.id, qi);
+          if (ws6Flags.length) ws6Extra += "<br><strong>Ojo con esta respuesta:</strong> " + esc(ws6FlagsText(ws6Flags)) + ".";
+          if (m.id === "M10" && qi === 1) {
+            var ws6Be = breakEvenLine();
+            if (ws6Be) ws6Extra += "<br><strong>Tu punto de equilibrio, calculado por mí:</strong> " + esc(ws6Be);
+          }
+        }
+      } catch (e) { ws6Extra = ""; }
       return analiaBubbleCls(
         '<span class="qtag">Lo que yo veo</span>' +
         "De lo que me acabas de contar, yo me quedo con esto: «" + esc(excerptOf(quoteText || text, 120)) + "»<br>" +
-        "<strong>Lo que yo veo es:</strong> " + veo + ". <strong>Y lo que todavía me falta:</strong> " + esc(falta),
+        "<strong>Lo que yo veo es:</strong> " + veo + ". <strong>Y lo que todavía me falta:</strong> " + esc(falta) + ws6Extra,
         "micro");
     }
-    function objectiveConfirmBubble(m, objIdx, isModuleLast) {
-      /* v17.26 (WS2) · «Lo siguiente» es el primer objetivo que sigue
-         incompleto (no solo el de número mayor): con objetivos no
-         monótonos, el siguiente en número podía estar ya completo y
-         el texto mandaba a un objetivo cerrado. Y «Era lo último…»
-         solo sale cuando este es el último objetivo Y es la última
-         pregunta del componente: antes salía a mitad de bloque
-         cuando el último objetivo cerraba antes que las preguntas. */
-      var nextObj = null;
-      for (var j = 0; j < m.objectives.length; j++) {
-        if (j === objIdx) continue;
-        if (!objectiveComplete(m, j)) { nextObj = j; break; }
-      }
-      var inner = "✅ <strong>Esto ya quedó claro: " + esc(m.objectives[objIdx]) + "</strong><br>" +
+    /* v17.33 (WS5) · H5: la cabeza del resumen («Esto ya quedó
+       claro») es fija — el título del objetivo no cambia — y es
+       lo único que se congela en el registro. La cola se calcula
+       en vivo al pintar (ver objectiveConfirmBubble). */
+    function objectiveConfirmHead(m, objIdx) {
+      return "✅ <strong>Esto ya quedó claro: " + esc(m.objectives[objIdx]) + "</strong><br>" +
         "¡Bien hecho! Lo cerramos con tus propias respuestas, y yo lo anoto como un avance concreto de tu diagnóstico.";
-      if (nextObj != null) inner += "<br>Lo siguiente que yo quiero entender contigo es: " + esc(m.objectives[nextObj]);
-      else if (isModuleLast) inner += "<br>Era lo último que yo te pedía en este bloque: con esto lo dejamos completo.";
-      else inner += "<br>Con esto dejamos ese objetivo claro.";
-      return analiaBubbleCls(inner, "objdone");
+    }
+    function objectiveQuestionAnswered(m, qi) {
+      var arr = (state && state.answers && state.answers[m.id]) || [];
+      if ((arr[qi] || "").trim()) return true;
+      var dup = duplicateInfo(m.id, qi);
+      return !!(dup && dup.kind === "full");
+    }
+    function objectiveFirstQi(m, objIdx) {
+      var first = -1;
+      m.questions.forEach(function (q, qi) { if (q.obj === objIdx && first < 0) first = qi; });
+      return first;
+    }
+    function objectiveFirstOpenQi(m, objIdx) {
+      var first = -1;
+      m.questions.forEach(function (q, qi) { if (q.obj === objIdx && !objectiveQuestionAnswered(m, qi) && first < 0) first = qi; });
+      return first;
+    }
+    /* v17.33 (WS5) · H5: «Lo siguiente» se calcula EN VIVO, con
+       las respuestas de hoy (state.answers), nunca de una lista
+       congelada: nombra el primer tema que todavía no se tocó
+       (ninguna pregunta respondida), por orden de pregunta; si
+       ya se tocó todo, el primer tema con preguntas abiertas.
+       Un tema con todas sus preguntas respondidas NUNCA se
+       nombra — ni aunque su veredicto siga «Por validar»: ya se
+       contó, y lo que sigue es otro tema. Así la Q4 de C10 ya
+       no manda a «Calcular el punto de equilibrio» (contestado
+       en Q2) y dos resúmenes congelados en la misma llamada ya
+       no repiten el mismo «Lo siguiente» rancio. */
+    function nextObjectiveToUnderstand(m, selfIdx) {
+      if (!m || !m.objectives) return null;
+      var untouched = null, untouchedQi = Infinity;
+      var open = null, openQi = Infinity;
+      m.objectives.forEach(function (o, j) {
+        if (j === selfIdx) return;
+        var prog = objectiveProgress(m, j);
+        if (!prog || !prog.total) return;
+        if (prog.done <= 0) {
+          var fq = objectiveFirstQi(m, j);
+          if (fq >= 0 && fq < untouchedQi) { untouchedQi = fq; untouched = j; }
+        } else if (prog.done < prog.total) {
+          var oq = objectiveFirstOpenQi(m, j);
+          if (oq >= 0 && oq < openQi) { openQi = oq; open = j; }
+        }
+      });
+      return untouched != null ? untouched : open;
+    }
+    function objectiveConfirmTailLive(m, objIdx, isLastEntry) {
+      var nextObj = nextObjectiveToUnderstand(m, objIdx);
+      if (nextObj != null) return "<br>Lo siguiente que yo quiero entender contigo es: " + esc(m.objectives[nextObj]);
+      if (isLastEntry) return "<br>Era lo último que yo te pedía en este bloque: con esto lo dejamos completo.";
+      return "<br>Con esto dejamos ese objetivo claro.";
+    }
+    /* La burbuja completa, con la cola en vivo: la cabeza sale
+       del objetivo (fija) y la cola de las respuestas de hoy.
+       isModuleLast aquí significa «último resumen del hilo»:
+       solo él dice «Era lo último…» cuando ya no queda nada
+       abierto. */
+    function objectiveConfirmBubble(m, objIdx, isModuleLast) {
+      return analiaBubbleCls(objectiveConfirmHead(m, objIdx) + objectiveConfirmTailLive(m, objIdx, !!isModuleLast), "objdone");
     }
     /* v17.32 (WS6) · Registro append-only de confirmaciones de
        objetivo (G9, decisión D7 opción (i)): cada «Esto ya quedó
-       claro» y su «Lo siguiente» se escriben UNA sola vez, como HTML
-       congelado, en state.objectiveConfirmations, en el momento en
-       que se producen. Nada reescribe, mueve ni borra una entrada:
-       una pregunta posterior nunca cambia una entrada anterior. El
-       chat lee SOLO este registro (ver renderChat): la vista en vivo
-       y la guardada son la misma, porque ambas leen lo mismo. Las
-       puertas WS2 (cuándo se dispara un resumen) NO cambian: un
-       resumen puede seguir llegando una pregunta tarde, por diseño;
-       eso es un límite conocido, no un defecto. */
+       claro» se escribe UNA sola vez, como HTML congelado, en
+       state.objectiveConfirmations, en el momento en que se
+       produce. Nada reescribe, mueve ni borra una entrada: una
+       pregunta posterior nunca cambia una entrada anterior. El
+       chat lee SOLO este registro (ver renderChat): la vista en
+       vivo y la guardada son la misma, porque ambas leen lo mismo.
+       v17.33 (WS5) · H5: lo congelado es la CABEZA del resumen y
+       su sitio (mid, obj, afterQi). La COLA («Lo siguiente» /
+       «Era lo último») NO se congela: se calcula en vivo al
+       pintar con las respuestas de hoy (ver
+       objectiveConfirmBubble). Congelarla nombraba temas ya
+       contestados y repetía el mismo «Lo siguiente» en cada
+       resumen de la misma llamada. */
     function ensureObjectiveConfirmations() {
       if (!state) return [];
       if (!Array.isArray(state.objectiveConfirmations)) state.objectiveConfirmations = [];
@@ -11382,14 +11907,51 @@
       var firing = [];
       m.objectives.forEach(function (o, oi) {
         if (objectiveConfirmationRegistered(m.id, oi)) return;
-        if (!objectivesRenderedThrough(m, oi, qi)) return;
+        /* v17.33 (WS5) · H5: cada objetivo se congela cuando SUS
+           preguntas ya se vieron (su última pregunta está a la
+           altura de qi o antes) y él está completo. Las puertas
+           WS2 (objectivesRenderedThrough +
+           allLowerObjectivesComplete) ya no se usan aquí:
+           esperaban a que TODOS los objetivos menores
+           completaran y retrasaban el resumen hasta el final
+           del componente — la de renuncias de C12 (pregunta 3)
+           salía última, tras el cierre de la 6, y varias se
+           congelaban en la misma llamada con el mismo
+           «Lo siguiente» rancio. La posición la da la propia
+           última pregunta del objetivo (afterQi), no la pregunta
+           en la que se detectó el cierre: un cierre tardío
+           (repregunta, edición, cierre del componente) sigue
+           pintando el resumen tras su pregunta. */
+        if (objectiveLastQi(m, oi) > qi) return;
         if (!objectiveComplete(m, oi)) return;
-        if (!allLowerObjectivesComplete(m, oi)) return;
         firing.push(oi);
       });
-      firing.forEach(function (oi, k) {
-        var isLast = qi === m.questions.length - 1 && k === firing.length - 1;
-        reg.push({ mid: m.id, obj: oi, html: objectiveConfirmBubble(m, oi, isLast), afterQi: qi, at: new Date().toISOString() });
+      firing.forEach(function (oi) {
+        /* v17.33 (WS5) · H5: afterQi es la última pregunta DEL
+           objetivo (orden por pregunta, no por detección), y el
+           HTML guardado es solo la cabeza («Esto ya quedó
+           claro» + el elogio): la cola («Lo siguiente» / «Era
+           lo último») se calcula EN VIVO al pintar
+           (objectiveConfirmBubble), con las respuestas de hoy.
+           El registro sigue siendo el dueño de QUÉ resúmenes
+           existen, en qué orden y en qué sitio (mid, obj,
+           afterQi): la vista en vivo y la guardada son la misma
+           en eso. */
+        reg.push({ mid: m.id, obj: oi, html: analiaBubbleCls(objectiveConfirmHead(m, oi), "objdone"), afterQi: objectiveLastQi(m, oi), at: new Date().toISOString() });
+      });
+      /* v17.33 (WS5) · H5: el registro queda ordenado como lo
+         deja la fusión (módulo, afterQi, objetivo): la vista en
+         vivo y la guardada leen el mismo orden. Sin esto, el
+         registro en vivo listaba las entradas en orden de
+         disparo y la copia guardada/fusionada en orden de
+         pregunta. */
+      var ocOrder = {};
+      MODULES.forEach(function (mm, ii) { ocOrder[mm.id] = ii; });
+      reg.sort(function (x, y) {
+        var dx = (ocOrder[x.mid] != null ? ocOrder[x.mid] : 99) - (ocOrder[y.mid] != null ? ocOrder[y.mid] : 99);
+        if (dx) return dx;
+        if (x.afterQi !== y.afterQi) return x.afterQi - y.afterQi;
+        return x.obj - y.obj;
       });
       return firing.length;
     }
@@ -11743,6 +12305,7 @@
        19xx/20xx visible en titulo, fragmento o enlace. Sin ano visible
        no se inventa: queda null y se muestra como «sin fecha visible». */
     var RESEARCH_MAX_AGE_YEARS = 3;
+    var RESEARCH_MAX_UNDATED = 3; /* v17.33 (WS8) · H9: con ninguna fecha visible, las mejores referencias relevantes que se muestran (siempre marcadas «sin fecha visible»). */
     function researchYear(r) {
       if (!r) return null;
       /* v17.29 (WS3) · Un resultado ya guardado trae su ano: se usa
@@ -11845,22 +12408,21 @@
         if (!relevant) return;
         scored.push({ r: { title: String(r.title), link: String(r.link), snippet: String(r.snippet || ""), date: r.date || "", hasPrice: researchHasPrice(r) }, score: sc.score, year: researchYear(r) });
       });
-      /* v17.30 (WS3) - FECHA ANTES QUE NADA: una lista toda sin fecha
-         no es evidencia de mercado. Si ninguna referencia relevante
-         trae año visible, no se guarda nada: el intento queda como
-         sin nada útil y se puede volver a buscar, en vez de presentar
-         cinco enlaces sin fecha como el mercado de hoy. Con fecha,
-         manda lo reciente (año, luego relevancia); las sin fecha
-         solo acompañan, como mucho 2 de 5 y siempre detrás de las
+      /* v17.30 (WS3) - FECHA ANTES QUE NADA: con fecha, manda lo
+         reciente (año, luego relevancia); las sin fecha solo
+         acompañan, como mucho 2 de 5 y siempre detrás de las
          fechadas; las de más de 3 años solo quedan cuando no hay
-         ninguna otra, marcadas como antiguas. */
+         ninguna otra, marcadas como antiguas.
+         v17.33 (WS8) · H9: una lista TODA sin fecha ya no se descarta:
+         si hay referencias relevantes sin fecha visible, se muestran
+         las mejores por relevancia, como mucho RESEARCH_MAX_UNDATED,
+         marcadas «sin fecha visible» — nunca como mercado fechado.
+         Sin referencias relevantes no hay nada que mostrar: se
+         devuelve vacío y manda el mensaje honesto de
+         irrelevante/sin resultados. */
       var nowY = new Date().getFullYear();
       scored.forEach(function (x) { x.old = (x.year != null && (nowY - x.year) > RESEARCH_MAX_AGE_YEARS); });
       var dated = scored.filter(function (x) { return x.year != null; });
-      /* Solo es «sin fecha» cuando HUBO referencias relevantes: un lote
-         irrelevante no trae fecha ni producto, y su mensaje honesto es
-         el de irrelevante, no el de sin fecha. */
-      if (!dated.length) { var _nd = []; _nd.noDated = scored.length > 0; return _nd; }
       var datedFresh = dated.filter(function (x) { return !x.old; });
       var datedOld = dated.filter(function (x) { return x.old; });
       var undated = scored.filter(function (x) { return x.year == null; });
@@ -11869,6 +12431,15 @@
       datedFresh.sort(byYearScore);
       datedOld.sort(byScore);
       undated.sort(byScore);
+      if (!dated.length) {
+        if (!undated.length) return [];
+        return undated.slice(0, RESEARCH_MAX_UNDATED).map(function (x) {
+          var out = x.r;
+          out.year = x.year;
+          out.old = !!x.old;
+          return out;
+        });
+      }
       var base = datedFresh.length ? datedFresh : datedOld;
       var pool = base.concat(undated.slice(0, 2));
       return pool.slice(0, 5).map(function (x) {
@@ -11976,7 +12547,7 @@
          pagarme $25.000» es el precio propio dicho en condicional —
          sin ella, ningún $25.000 de la lavandería se etiquetaba como
          propio y la ficha no tenía con qué contrastar la alternativa. */
-      var propioBeforePat = "(yo\\s+cobro|cobro|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|el\\s+precio\\s+es|me\\s+pagan|me\\s+paga\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar)";
+      var propioBeforePat = "(yo\\s+cobro|cobro|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|el\\s+precio\\s+es|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar)";
       var o = lastIdx(before, propioBeforePat);
       /* v17.30 (WS6) · El ancla «el precio es» es DEBIL: un «yo cobro /
          mi precio / me pagan» atribuye en firme, pero un «el precio
@@ -11985,7 +12556,7 @@
          si hay un ancla en primera persona; sin ella, el antes no
          decide todavia y el despues puede reclamar la cifra como
          techo o alternativa (ver weakOwn abajo). */
-      var propioStrongPat = "(yo\\s+cobro|cobro|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|me\\s+pagan|me\\s+paga\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar)";
+      var propioStrongPat = "(yo\\s+cobro|cobro|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar)";
       var oStrong = lastIdx(before, propioStrongPat);
       /* v17.32 (WS3) · «Me paga» con sujeto rival: en «la competencia
          me paga $X» quien paga es la competencia, no el cliente del
@@ -11993,7 +12564,7 @@
          cuando el rival va ANTES del ancla en el mismo tramo (el
          sujeto que paga); un «me paga a mí» sin rival antes sigue
          siendo propio. */
-      if (o >= 0 && /^me\s+pag[ae]n?\b/i.test(before.slice(o)) && /(competencia|alternativa|convencional|otro\s+negocio|la\s+cadena)\b/i.test(before.slice(0, o))) { o = -1; oStrong = -1; }
+      if (o >= 0 && /^me\s+pag(?:[ae]n?\b|ó(?![a-záéíóúñ])|aron\b)/i.test(before.slice(o)) && /(competencia|alternativa|convencional|otro\s+negocio|la\s+cadena)\b/i.test(before.slice(0, o))) { o = -1; oStrong = -1; }
       /* v17.32 (WS2) · Negación entre el ancla y la cifra: «mi precio
          NO es $18.000» descarta esa cifra, no la etiqueta como precio
          propio. Sin esto, la corrección del Retar etiquetaba la cifra
@@ -12017,6 +12588,10 @@
       var c = lastIdx(before, "(me\\s+cuesta|cuesta\\s+entregar|cuesta\\s+hacer|costo|coste|gasto\\s+en|gasto\\s+por|invierto|sale\\s+hacer|me\\s+cobrar[ií]a|me\\s+costar[ií]a|costar[ií]a)");
       var ob = lastIdx(before, "(tarifa\\s+objetivo|precio\\s+objetivo|objetivo|meta|quiero\\s+cobrar|quiero\\s+subir|quiero\\s+llegar)");
       var cac = lastIdx(before, "(costo\\s+de\\s+adquisici[oó]n|adquirir|conseguir\\s+(un\\s+)?cliente|por\\s+cliente\\s+nuevo|adquisici[oó]n)");
+      /* v17.33 (WS2) · H2b: «me quedan $X» es una etiqueta de margen:
+         sin ella el margen quedaba como «ninguna» y ninguna regla
+         podía citarlo. El margen es la etiqueta «neto». */
+      var ne = lastIdx(before, "(me\\s+quedan|me\\s+queda|quedan\\s+netos?|lo\\s+que\\s+me\\s+queda|ganancia\\s+neta|utilidad\\s+neta|margen\\s+neto)");
       /* v17.29 (WS2) · «me cobraría $X» es un costo (alguien te cobra
          a ti), no tu precio: si la última marca propia es un
          «cobraría» precedido de «me», se descarta y manda el costo
@@ -12024,11 +12599,11 @@
          sí es precio propio: es como el dueño en etapa Idea dice su
          precio planeado. */
       if (o >= 0 && /^cobrar[ií]a/i.test(before.slice(o)) && /me\s+$/.test(before.slice(0, o))) o = -1;
-      if (o >= 0 || a >= 0 || c >= 0 || ob >= 0 || cac >= 0 || te >= 0) {
+      if (o >= 0 || a >= 0 || c >= 0 || ob >= 0 || cac >= 0 || te >= 0 || ne >= 0) {
         /* A igual distancia manda la etiqueta más específica: «costo
            de adquisición» es cac aunque empiece donde empieza «costo»,
            y «precio objetivo» es objetivo aunque empiece en «precio». */
-        var cands = [["propio", o, 2], ["alternativa", a, 1], ["costo", c, 0], ["objetivo", ob, 3], ["cac", cac, 4]];
+        var cands = [["propio", o, 2], ["alternativa", a, 1], ["costo", c, 0], ["objetivo", ob, 3], ["cac", cac, 4], ["neto", ne, 5]];
         var win = null;
         cands.forEach(function (cd) { if (cd[1] >= 0 && (!win || cd[1] > win[1] || (cd[1] === win[1] && cd[2] > win[2]))) win = cd; });
         if (win && win[0] === "propio" && oStrong < 0) {
@@ -12083,14 +12658,14 @@
         }
         return -1;
       }
-      var oa = firstIdxAfter(after, "(lo\\s+que\\s+cobro|cobro|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|me\\s+pagan|me\\s+paga\\b|lo\\s+que\\s+cobrar[ií]a)");
+      var oa = firstIdxAfter(after, "(lo\\s+que\\s+cobro|cobro|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|lo\\s+que\\s+cobrar[ií]a)");
       /* v17.32 (WS3) · Lo mismo detrás de la cifra: «$25.000 me paga
          la competencia» no es precio propio. Solo vale si el rival va
          pegado al «me paga» y no hay un «a mí» que marque al dueño
          como quien recibe. */
       if (oa >= 0) {
         var oaAfter = after.slice(oa);
-        var oaM = oaAfter.match(/^me\s+pag[ae]n?\b/i);
+        var oaM = oaAfter.match(/^me\s+pag(?:[ae]n?\b|ó(?![a-záéíóúñ])|aron\b)/i);
         if (oaM) {
           var oaRest = oaAfter.slice(oaM[0].length, oaM[0].length + 30);
           if (!/\ba\s+m[ií]\b/i.test(oaRest) && /(la\s+)?competencia|el\s+otro|otro\s+negocio|la\s+cadena|alternativa/i.test(oaRest)) oa = -1;
@@ -12104,7 +12679,8 @@
          que cobra la competencia»): sin el «hasta» a secas, que detrás
          suele ser plazo («hasta diciembre»), no tope. */
       var tea = firstIdxAfter(after, "(techo|tope|m[aá]ximo|como\\s+m[aá]ximo|l[ií]mite)");
-      if (oa < 0 && ca < 0 && aa < 0 && oba < 0 && caca < 0 && tea < 0) {
+      var nea = firstIdxAfter(after, "(me\\s+quedan|me\\s+queda|quedan\\s+netos?|\\bnet[oa]s?\\b|lo\\s+que\\s+me\\s+queda)");
+      if (oa < 0 && ca < 0 && aa < 0 && oba < 0 && caca < 0 && tea < 0 && nea < 0) {
         if (weakOwn) return "propio";
         /* v17.32 (WS2) · Atribución por frase: si la frase de la cifra
            nombra la alternativa, la cifra es de la alternativa aunque
@@ -12121,6 +12697,7 @@
       if (oba >= 0 && oba < bestD) { best = "objetivo"; bestD = oba; }
       if (caca >= 0 && caca < bestD) { best = "cac"; bestD = caca; }
       if (tea >= 0 && tea < bestD) { best = "techo"; bestD = tea; }
+      if (nea >= 0 && nea < bestD) { best = "neto"; bestD = nea; }
       /* v17.30 (WS6) · Ancla débil: solo una atribución a otro (techo
          o alternativa) le quita la cifra al precio propio; un «costo»
          o un «cobro» detrás no la reclaman — el «costo» de la cifra
@@ -12216,6 +12793,47 @@
       var tied = order.some(function (v) { return v !== best && counts[v] === counts[best]; });
       return tied ? null : best;
     }
+    /* v17.33 (WS7) · H8: el precio propio se dice en varias respuestas
+       de C0 (y C1), no solo en C0 Q5: «cobro $40.000 por venta» en C0
+       Q7/Q8 y en C1 es el mismo precio propio etiquetado, y la tesis
+       no puede decir «Falta: tu precio» cuando el dueño ya lo dijo
+       varias veces. Se escanean las respuestas PRINCIPALES de C0 y
+       luego de C1 con la misma disciplina de etiqueta que C0 Q5
+       (labeledPrice + mayoría): solo vale una cifra etiquetada como
+       propia; si dos valores propios distintos conviven en C0, no se
+       adivina (null) y el precio queda para confirmar. La alternativa
+       y la diferencia nunca entran: labeledPrice solo devuelve la
+       clase «propio», y un marcador de diferencia descalifica la
+       cifra en figureHasOwnMarker. C1 solo se consulta cuando C0 no
+       trae ningún precio propio: un precio de C1 nunca veta el de C0. */
+    function ownPriceScan() {
+      function scanModule(mid) {
+        var values = [], srcByValue = {};
+        var arr = (state && state.answers && state.answers[mid]) || [];
+        for (var qi = 0; qi < arr.length; qi++) {
+          var t = mainAnswerText(mid, qi);
+          if (!t) continue;
+          var v = labeledPrice(t, "propio");
+          if (v == null) v = propioMajorityValue(t);
+          if (v == null) continue;
+          if (values.indexOf(v) === -1) values.push(v);
+          if (srcByValue[v] == null) srcByValue[v] = t;
+        }
+        if (values.length === 1) return { v: values[0], text: srcByValue[values[0]] };
+        if (values.length > 1) return { v: null, text: null, conflict: true };
+        return null;
+      }
+      var c0 = scanModule("M0");
+      if (c0 && c0.conflict) return { v: null, text: null, conflict: true };
+      if (c0) return c0;
+      var c1 = scanModule("M1");
+      if (c1 && c1.conflict) return { v: null, text: null, conflict: true };
+      return c1;
+    }
+    function ownPriceFromBrief() {
+      var sc = ownPriceScan();
+      return sc ? sc.v : null;
+    }
     function ownPrice() {
       /* v17.26 (WS1) · Una corrección resuelta solo manda mientras su
          cifra siga estando en las respuestas actuales: si el dueño
@@ -12282,6 +12900,11 @@
          con etiqueta de precio propio, nunca la primera sin mirar. */
       var m6 = labeledPrice(mainAnswerText("M6", 1), "propio");
       if (m6 != null) return m6;
+      /* v17.33 (WS7) · H8: último rescate — el precio propio etiquetado
+         en cualquier respuesta principal de C0 (y, si C0 no trae
+         ninguno, de C1). */
+      var brief = ownPriceFromBrief();
+      if (brief != null) return brief;
       return null;
     }
     /* ¿Una cifra lleva un marcador de precio propio pegado, EN SU TRAMO?
@@ -12495,7 +13118,14 @@
          y se dice así, en vez de enmarcar un perfil sin precio como
          comparación. */
       var priceRefs = latest.results.filter(function (r) { return r.hasPrice != null ? !!r.hasPrice : researchHasPrice(r); });
-      if (p != null && priceRefs.length) html += "<p>Según lo que me contaste, tu precio es $" + p.toLocaleString("es-CO") + ": míralo frente a lo que muestran estas referencias y dime si lo que cobras se sostiene con lo que el mercado ya ofrece.</p>";
+      /* v17.33 (WS8) · H9: el contraste de precios solo vale con una
+         referencia FECHADA que traiga precio: una referencia sin fecha
+         no es el mercado de hoy y su cifra no puede contrastar tu
+         precio. Sin ninguna referencia fechada con precio, se dice
+         así en vez de enmarcar el contexto sin fecha como comparación. */
+      var datedPriceRefs = priceRefs.filter(function (r) { return researchYear(r) != null; });
+      if (p != null && datedPriceRefs.length) html += "<p>Según lo que me contaste, tu precio es $" + p.toLocaleString("es-CO") + ": míralo frente a lo que muestran estas referencias y dime si lo que cobras se sostiene con lo que el mercado ya ofrece.</p>";
+      else if (p != null && priceRefs.length) html += "<p>Tu precio es $" + p.toLocaleString("es-CO") + ", pero las referencias que traen precio no tienen fecha visible: no puedo contrastar tu precio con una referencia fechada, así que te las dejo como contexto sin fecha, no como comparación de precios. Si quieres comparar precios con fecha, toca «Investigar» de nuevo.</p>";
       else if (p != null) html += "<p>Tu precio es $" + p.toLocaleString("es-CO") + ", pero ninguna de estas referencias trae una cifra de precio: te las dejo como contexto de lo que se ofrece, no como comparación de precios. Si quieres comparar precios, toca «Investigar» de nuevo.</p>";
       else html += "<p>Todavía no me diste tu precio: cuando me lo des, yo lo pongo frente a estas referencias.</p>";
       /* v17.32 (WS3b) · G4: la búsqueda es historia, no lectura viva —
@@ -12601,8 +13231,22 @@
        gasta el cupo, pero el intento queda registrado en el historial
        de búsquedas (v17.29 WS5), para que el cliente pueda
        reintentarlo y quede constancia de lo buscado. */
+    /* v17.33 (WS8) · H9: el aviso de un toque de «Investigar» vale
+       solo para la pregunta en la que se tocó: la búsqueda es
+       asíncrona y, si el dueño ya avanzó cuando llega la respuesta,
+       el aviso no se muestra en la pregunta nueva ni se queda pegado.
+       La clave es módulo:pregunta en el momento del toque. Sin
+       clave (aviso sin toque registrado) se muestra como antes. */
+    function researchNoticeCurrent() {
+      if (!ui || !ui.researchNoticeFor) return true;
+      try { return ui.researchNoticeFor === (ui.module + ":" + answeredCount(ui.module)); }
+      catch (e) { return true; }
+    }
     function runExternalResearch() {
       if (!state) return;
+      /* v17.33 (WS8) · H9: el aviso de este toque vale para la pregunta
+         actual y ninguna otra (ver researchNoticeCurrent). */
+      ui.researchNoticeFor = ui.module + ":" + answeredCount(ui.module);
       if (tabStale) { toast("Esta pestaña quedó en solo lectura: recarga para ver lo más reciente antes de investigar."); return; }
       ensureAnswers();
       var done = researchSearches();
@@ -12654,20 +13298,6 @@
       }).then(function (data) {
         var raw = (data && Array.isArray(data.results)) ? data.results.filter(function (r) { return r && r.title && r.link; }) : [];
         var results = filterResearchResults(raw);
-        if (!results.length && results.noDated) {
-          /* v17.30 (WS3) · Llegaron referencias relevantes, pero
-             ninguna trae fecha visible: no se guardan como mercado de
-             hoy y no gastan cupo. El intento queda registrado para
-             poder volver a buscar con fecha. */
-          recordResearchAttempt(q, raw.length, false);
-          persist();
-          ui.researchError = true;
-          ui.researchIrrelevant = true;
-          ui.researchGate = "undated";
-          renderChat(); renderSidebar();
-          toast("Busqué, pero lo que trajo no trae fecha visible: no lo guardo como mercado de hoy. Vuelve a tocar «Investigar» para buscar referencias con fecha.");
-          return;
-        }
         if (!results.length) {
           /* Llegaron resultados, pero ninguno habla de lo que vendes ni
              de tu sector: no se guarda como referencia de mercado y no
@@ -12677,11 +13307,16 @@
              disfraza de mercado. */
           recordResearchAttempt(q, raw.length, false);
           persist();
-          ui.researchError = true;
-          ui.researchIrrelevant = raw.length > 0;
-          ui.researchGate = raw.length ? "irrelevant" : "no-results";
+          /* v17.33 (WS8) · H9: el aviso vale solo para la pregunta del
+             toque: si el dueño ya avanzó, el intento queda registrado
+             pero no se muestra el aviso en la pregunta nueva. */
+          if (researchNoticeCurrent()) {
+            ui.researchError = true;
+            ui.researchIrrelevant = raw.length > 0;
+            ui.researchGate = raw.length ? "irrelevant" : "no-results";
+            toast(raw.length ? "Busqué, pero nada de lo que trajo habla de lo que vendes: no lo guardo como referencia de tu mercado." : "No pude traer datos del mercado esta vez: sigo con lo que tú me contaste, sin inventar nada.");
+          }
           renderChat(); renderSidebar();
-          toast(raw.length ? "Busqué, pero nada de lo que trajo habla de lo que vendes: no lo guardo como referencia de tu mercado." : "No pude traer datos del mercado esta vez: sigo con lo que tú me contaste, sin inventar nada.");
           return;
         }
         var rec = { q: q, at: new Date().toISOString(), results: results, price: ownPrice(), priceKey: researchPriceKey() };
@@ -12700,7 +13335,12 @@
         ensureResearch().seenAt = ""; /* v17.20: la burbuja con los resultados se muestra en el chat actual al renderizar */
         persist();
         renderChat(); renderSidebar();
-        toast("Ya miré hacia afuera: traje " + results.length + " referencia(s) con su fuente. Te las muestro aquí mismo, en este chat.");
+        /* v17.33 (WS8) · H9: el aviso vale solo para la pregunta del
+           toque (la burbuja con los resultados es la que viaja en el
+           estado y se muestra igual); un lote todo sin fecha se dice
+           como tal, nunca como mercado fechado. */
+        var allUndated = results.length > 0 && results.every(function (r) { return researchYear(r) == null; });
+        if (researchNoticeCurrent()) toast(allUndated ? "Ya miré hacia afuera: traje " + results.length + " referencia(s) sin fecha visible: te las dejo como contexto, no como el mercado de hoy. Te las muestro aquí mismo, en este chat." : "Ya miré hacia afuera: traje " + results.length + " referencia(s) con su fuente. Te las muestro aquí mismo, en este chat.");
       }).catch(function () {
         if (timer) clearTimeout(timer);
         /* v17.20 · El fallo no es silencioso: además del aviso, queda
@@ -12709,10 +13349,15 @@
            en el historial, con su consulta y su fecha. */
         recordResearchAttempt(q, 0, true);
         persist();
-        ui.researchError = true;
-        ui.researchGate = "fetch";
+        /* v17.33 (WS8) · H9: el aviso vale solo para la pregunta del
+           toque (ver E3b): si el dueño ya avanzó, el intento queda
+           registrado pero no se muestra el aviso en la pregunta nueva. */
+        if (researchNoticeCurrent()) {
+          ui.researchError = true;
+          ui.researchGate = "fetch";
+          toast("No pude traer datos del mercado esta vez: sigo con lo que tú me contaste, sin inventar nada.");
+        }
         renderChat(); renderSidebar();
-        toast("No pude traer datos del mercado esta vez: sigo con lo que tú me contaste, sin inventar nada.");
       });
     }
     /* v17.25 · ¿Por qué vía llega el cliente, DE VERDAD? C0 Q2 nombra
@@ -13041,6 +13686,8 @@
       $("chatSubtitle").textContent = state.project.name + " — " + answeredCount(m.id) + " de " + m.questions.length + " preguntas respondidas" + (isLocked ? " · Solo lectura" : "") + (m.id === "M13" && taskPendingReport() ? " · Tarea de cierre asignada: falta el reporte del resultado" : "") + (m.id === "M13" && taskReported() ? (taskExecutionState() === "verified" ? " · Tarea de cierre verificada" : taskExecutionState() === "noexec" ? " · Tarea reportada: sin ejecución" : " · Tarea reportada: falta verificar la ejecución") : "");
       renderTabs();
       if (paymentGateApplies(m.id)) { renderPaywall(m); return; }
+      /* v17.33 (WS1c) · H1: la invalidación del cero va ANTES de pintar nada: el aviso del modo armado se pinta antes que el hilo, así que invalidar dentro del bucle llegaba tarde para ese renderizado. */
+      invalidateStaleZeroSnapshots();
       var t = "";
       if (m.id === "M0" && answeredCount("M0") === 0 && !pendingStep("M0")) {
         t += analiaBubble("<strong>Hola, soy Analía.</strong> Yo te acompaño en este diagnóstico, pregunta por pregunta, y yo me encargo de ordenar lo que tú me cuentes. Tú solo tienes que contarme tu negocio con tus palabras y con tus cifras: yo te pregunto, yo te escucho y yo te devuelvo lo que voy viendo.");
@@ -13072,12 +13719,35 @@
          sitio (su pregunta quedó cubierta por un dato anterior) se
          pintan al final del hilo, en orden, sin perderse. */
       var shownRegs = {};
+      /* v17.33 (WS5) · H5: la última confirmación en orden de
+         hilo (en bucle por afterQi y luego las huérfanas) es la
+         que puede decir «Era lo último…»: se calcula antes del
+         bucle, porque la cola «Lo siguiente» se arma en vivo al
+         pintar. */
+      var confirmOrder = ensureObjectiveConfirmations().filter(function (e) { return e.mid === m.id; }).sort(function (a, b) {
+        var ai = a.afterQi < step ? 0 : 1, bi = b.afterQi < step ? 0 : 1;
+        if (ai !== bi) return ai - bi;
+        if (a.afterQi !== b.afterQi) return a.afterQi - b.afterQi;
+        return a.obj - b.obj;
+      });
+      var lastConfirmKey = confirmOrder.length ? confirmOrder[confirmOrder.length - 1].mid + ":" + confirmOrder[confirmOrder.length - 1].obj : null;
+      function confirmIsLast(entry) { return lastConfirmKey != null && (entry.mid + ":" + entry.obj) === lastConfirmKey; }
       for (var i = 0; i < step; i++) {
         /* v17.25 · Pregunta ya cubierta por un dato anterior: se muestra el
            reconocimiento, no la pregunta repetida. */
         var dupHist = duplicateInfo(m.id, i);
         if (dupHist && dupHist.kind === "full" && !(state.answers[m.id][i] && state.answers[m.id][i].trim())) {
           t += analiaBubble('<span class="qtag">Pregunta ' + (i + 1) + " de " + m.questions.length + "</span><strong>Ya me contaste que «" + esc(dupHist.excerpt) + "».</strong> Por eso no te vuelvo a preguntar lo mismo: ese dato ya quedó registrado.", ansMetaAt(m.id, i));
+          /* v17.33 (WS5) · H5: la confirmación de esta pregunta
+             se pinta también aquí: antes el «continue» la
+             saltaba y caía al barrido de huérfanas al final del
+             hilo, fuera de orden (la de renuncias de C12 salía
+             última, tras el cierre). */
+          ensureObjectiveConfirmations().forEach(function (entry) {
+            if (entry.mid !== m.id || entry.afterQi !== i) return;
+            t += objectiveConfirmBubble(m, entry.obj, confirmIsLast(entry));
+            shownRegs[entry.mid + ":" + entry.obj] = true;
+          });
           continue;
         }
         var q = questionFor(m, i);
@@ -13101,6 +13771,7 @@
                reconstruye: sus cifras son las que había cuando se tocó
                Retar. Solo los retos sin foto (de antes de esta versión)
                se reconstruyen con las cifras de hoy, como antes. */
+            /* v17.33 (WS1c) · H1: la foto del cero ya se invalidó al inicio de renderChat: aquí solo se pinta. */
             if (_rec && _rec.probeMode === "retar" && !st.probeSnapshot) { probeText = buildRetarProbe(m, i); st.probe = probeText; }
             else if (st.probeSnapshot) { probeText = st.probeSnapshot; }
           }
@@ -13114,15 +13785,18 @@
           }
         });
         /* v17.32 (WS6) · El chat lee SOLO el registro congelado
-           (state.objectiveConfirmations): nunca re-deriva «Esto ya
-           quedó claro» ni «Lo siguiente» en vivo. Así la vista en
-           vivo y la guardada son la misma, y una entrada congelada
-           nunca se mueve ni se reescribe (G9, D7 opción (i)). Las
-           puertas WS2 que deciden CUÁNDO se congela una entrada
-           viven en freezeObjectiveConfirmations, no aquí. */
+           (state.objectiveConfirmations): qué resúmenes existen,
+           en qué orden y en qué sitio. Una entrada congelada
+           nunca se mueve ni se reescribe (G9, D7 opción (i)).
+           v17.33 (WS5) · H5: la COLA del resumen («Lo siguiente»
+           / «Era lo último») sí se calcula en vivo al pintar
+           (objectiveConfirmBubble): con las respuestas de hoy,
+           nunca nombra un tema ya contestado. Las puertas que
+           deciden CUÁNDO se congela una entrada viven en
+           freezeObjectiveConfirmations, no aquí. */
         ensureObjectiveConfirmations().forEach(function (entry) {
           if (entry.mid !== m.id || entry.afterQi !== i) return;
-          t += entry.html;
+          t += objectiveConfirmBubble(m, entry.obj, confirmIsLast(entry));
           shownRegs[entry.mid + ":" + entry.obj] = true;
         });
         if (m.id === "M0" && i === 7) {
@@ -13131,12 +13805,13 @@
         }
       }
       /* v17.32 (WS6) · Entradas del registro que no encontraron su
-         sitio en el hilo (p. ej. su pregunta quedó cubierta por un
-         dato anterior): se pintan aquí, una sola vez cada una, en
-         orden de registro, sin perderse. */
-      ensureObjectiveConfirmations().forEach(function (entry) {
-        if (entry.mid !== m.id || shownRegs[entry.mid + ":" + entry.obj]) return;
-        t += entry.html;
+         sitio en el hilo: se pintan aquí, una sola vez cada una,
+         sin perderse.
+         v17.33 (WS5) · H5: en orden de pregunta (afterQi,
+         objetivo), no en orden de registro: una entrada que se
+         congeló tarde no sale última por haberse congelado tarde. */
+      ensureObjectiveConfirmations().filter(function (entry) { return entry.mid === m.id && !shownRegs[entry.mid + ":" + entry.obj]; }).sort(function (a, b) { return (a.afterQi - b.afterQi) || (a.obj - b.obj); }).forEach(function (entry) {
+        t += objectiveConfirmBubble(m, entry.obj, confirmIsLast(entry));
         shownRegs[entry.mid + ":" + entry.obj] = true;
       });
       /* v17.25 · La aclaración resuelta se VE en el chat: antes solo
@@ -13166,6 +13841,11 @@
           }
           /* v17.29 (WS4) · La aclaración sin rol no cambió ninguna cifra:
              se pregunta el rol en el mismo hilo, en vez de callar. */
+          /* v17.33 (WS1) · H1: la retractación del cero falso se dice de frente, no solo con las cifras nuevas. */
+          if (rec.key === ZERO_SALES_KEY) {
+            var zeroMonthlyTxt = (rec.corrected && rec.corrected.ingresoTotal) ? ", facturas $" + rec.corrected.ingresoTotal.v.toLocaleString("es-CO") + " al mes" : "";
+            corrTxt += "<br>Con esto queda corregido lo que te dije antes: no es verdad que todavía no tengas ventas (0 ventas y 0 clientes) — sí tienes ventas" + zeroMonthlyTxt + ".";
+          }
           if (rec.needsRole) corrTxt += "<br>No me quedó claro a cuál cifra te refieres: dime si es el precio, el costo o lo neto, y yo la corrijo.";
           t += analiaBubbleCls('<span class="qtag">Aclaración registrada</span>Gracias por aclararlo: «' + esc(rec.resolution) + '»' + corrTxt, "micro");
         });
@@ -13235,6 +13915,13 @@
         m.questions.forEach(function (q2b, qi) {
           var dupGap = duplicateInfo(m.id, qi);
           if (dupGap && dupGap.kind === "full") return; /* v17.25 · el dato ya existe: no es un hueco */
+          /* v17.33 (WS6) · H7: una respuesta repetida o fuera de tema
+             es una señal abierta aunque traiga cifras: la revisión
+             de cierre la lista y nunca afirma que todas traen
+             evidencia concreta mientras exista una. */
+          ws6QualityFlags(m.id, qi).forEach(function (fl) {
+            gaps.push("<br>· <strong>Pregunta " + (qi + 1) + ":</strong> " + esc(ws6FlagText(fl)) + ".");
+          });
           var q2 = questionFor(m, qi);
           /* v17.32 (WS4) · La revisión de cierre lee el MISMO texto
              puntuable que el veredicto congelado
@@ -13259,6 +13946,25 @@
           if (cf2) why += " La cifra que me diste es de $" + cf2.value.toLocaleString("es-CO") + (cf2.extraCount > 0 ? " (y " + cf2.extraCount + " cifra" + (cf2.extraCount > 1 ? "s" : "") + " más)" : "");
           gaps.push("<br>· <strong>Pregunta " + (qi + 1) + ":</strong> todavía falta " + esc(why) + ".");
         });
+        /* v17.33 (WS3) · H3 cierre falso: el «todo claro» solo se
+           afirma con evidencia REAL por pregunta — una cifra citada,
+           una fecha o un caso (evidenceFoundText), un cero honesto o
+           un duplicado completo —, no con un veredicto «Por validar»
+           sin huecos: la palabra «cliente» sola ya contaba como
+           ejemplo y el cierre afirmaba evidencia que no tenía. Las
+           preguntas sin respuesta puntuable ya son hueco en gaps y
+           no se repiten aquí. */
+        var noFoundQs = [];
+        m.questions.forEach(function (q2c, qi) {
+          var dup2 = duplicateInfo(m.id, qi);
+          if (dup2 && dup2.kind === "full") return;
+          var comb2 = combinedAnswerEvidence(m.id, qi);
+          if (!comb2 || !String(comb2).trim()) return;
+          var q2d = questionFor(m, qi);
+          if (honestZero(comb2, q2d)) return;
+          if (evidenceFoundText(comb2, q2d)) return;
+          noFoundQs.push(qi + 1);
+        });
         /* v17.26 (WS2) · La contradicción abierta también se ve con el
            componente ya completo: si no, una contradicción de C4 nunca
            se podría aclarar desde su propio chat, porque la pregunta
@@ -13273,8 +13979,10 @@
              tarea CON su evidencia — aquí mismo, en este chat. */
           if (gaps.length) {
             t += analiaBubble("<strong>Revisión de cierre · Auditar.</strong> Antes de la tarea final, este es el registro honesto de lo que quedó como afirmación y todavía no como evidencia en tus respuestas:" + gaps.join(""));
-          } else if (!taskReported()) {
+          } else if (!taskReported() && !noFoundQs.length && !ws6ModuleFlagCount(m.id)) {
             t += analiaBubble("<strong>Revisión de cierre · Auditar.</strong> Todas las respuestas de este componente traen evidencia concreta — números, ejemplos o casos —. Nada quedó como afirmación suelta.");
+          } else if (!taskReported() && noFoundQs.length) {
+            t += analiaBubble("<strong>Revisión de cierre · Auditar.</strong> Antes de la tarea final, este es el registro honesto: estas respuestas quedaron como afirmación, sin una cifra, una fecha o un caso concreto que las respalde — Pregunta " + noFoundQs.join(", Pregunta ") + ". Cuando consigas esos datos, vuelve y amplía tus respuestas desde el Resumen.");
           }
           /* v17.26 (WS4) · La revisión de cierre cita EL MISMO
              diagnóstico del lienzo, recalculado en vivo: antes, el
@@ -13298,8 +14006,10 @@
         } else {
           if (gaps.length) {
             t += analiaBubble("<strong>Revisión de cierre · Auditar.</strong> El componente está completo y nada de esto bloquea tu avance: es el registro honesto de lo que quedó como afirmación y todavía no como evidencia. Cuando consigas esos datos, vuelve y amplía tus respuestas desde el Resumen." + gaps.join(""));
-          } else {
+          } else if (!noFoundQs.length && !ws6ModuleFlagCount(m.id)) {
             t += analiaBubble("<strong>Revisión de cierre · Auditar.</strong> Todas las respuestas de este componente traen evidencia concreta — números, ejemplos o casos —. Nada quedó como afirmación suelta.");
+          } else {
+            t += analiaBubble("<strong>Revisión de cierre · Auditar.</strong> El componente está completo y nada de esto bloquea tu avance: estas respuestas quedaron como afirmación, sin una cifra, una fecha o un caso concreto que las respalde — Pregunta " + noFoundQs.join(", Pregunta ") + ". Cuando consigas esos datos, vuelve y amplía tus respuestas desde el Resumen.");
           }
           /* v17.26 (WS4) · La revisión de cierre cita EL MISMO
              diagnóstico del lienzo, recalculado en vivo. */
@@ -13307,6 +14017,12 @@
              cerrar el Brief no se nombra ningún «bloque más débil». */
           var diagLine2 = closeAuditDiagnosisLine();
           if (diagLine2) t += analiaBubble("<strong>Diagnóstico del lienzo.</strong> " + esc(diagLine2));
+          /* v17.33 (WS6) · H7: el equilibrio se muestra calculado
+             en la revisión de cierre de C10, no solo repetido. */
+          if (m.id === "M10") {
+            var ws6BeClose = breakEvenLine();
+            if (ws6BeClose) t += analiaBubble("<strong>Tu punto de equilibrio, calculado por mí:</strong> " + esc(ws6BeClose));
+          }
           if (m.id === "M13" && taskReported()) t += taskDoneBubbles();
           t += systemBubble("✓ <strong>" + esc(m.name) + " completado.</strong> Tus informes de este bloque ya están en la sección Informes." +
             (next ? ' &nbsp;<button class="btn small primary" id="btnNextMod">Seguir con ' + codeOf(next.id) + " · " + esc(next.name) + "</button>" : ' &nbsp;<button class="btn small primary" id="btnGoPlan">Ver mi plan de negocio</button>') +
@@ -13318,17 +14034,24 @@
          componente; y si la búsqueda falló, se dice con honestidad
          en el hilo, no solo con un aviso. */
       if (ui.researchError) {
+        /* v17.33 (WS8) · H9: el aviso vale solo para la pregunta del
+           toque: si el dueño ya avanzó, se limpia en silencio y no se
+           muestra en la pregunta nueva. */
+        var noticeStale = !researchNoticeCurrent();
         ui.researchError = false;
         var irrel = !!ui.researchIrrelevant; ui.researchIrrelevant = false;
         /* v17.29 (WS3) - La burbuja dice QUE puerta fallo: sin palabras
            de producto (no hay consulta), sin resultados (no llego
            nada), o sin relevancia (llegaron, pero de otro tema). */
         var gate = ui.researchGate || (irrel ? "irrelevant" : "fetch"); ui.researchGate = "";
+        ui.researchNoticeFor = "";
+        if (!noticeStale) {
         var gateTxt = gate === "no-keywords" ? "<strong>Todav\u00eda no s\u00e9 qu\u00e9 vendes.</strong> Sin tus palabras de producto ni tu sector no puedo armar la consulta de mercado: resp\u00f3ndeme qu\u00e9 vendes y yo busco despu\u00e9s. No gast\u00e9 tu cupo de b\u00fasquedas."
           : gate === "no-results" ? "<strong>Busqu\u00e9 y no lleg\u00f3 ninguna referencia.</strong> El buscador no devolvi\u00f3 resultados para esta consulta: no es que no hubiera nada de tu tema, es que no lleg\u00f3 nada. Puedes volver a tocar \u00abInvestigar\u00bb cuando quieras: no gast\u00e9 tu cupo de b\u00fasquedas."
           : gate === "irrelevant" ? "<strong>Busqu\u00e9, pero nada de lo que trajo habla de lo que vendes.</strong> Las referencias que llegaron eran de otro tema, as\u00ed que no las guardo como contexto de tu mercado: guardarlas ser\u00eda disfrazarlas. Si me cuentas mejor qu\u00e9 vendes, yo vuelvo a buscar con eso."
           : "<strong>No pude traer datos del mercado esta vez.</strong> Intent\u00e9 buscar referencias con su fuente y no lleg\u00f3 nada: puede ser la conexi\u00f3n o el servicio. Sigo con lo que t\u00fa me contaste, sin inventar nada. Puedes volver a tocar \u00abInvestigar\u00bb cuando quieras: un fallo no gasta tu cupo de b\u00fasquedas.";
         t += analiaBubbleCls('<span class="qtag">Lo que encontr\u00e9 en el mercado</span>' + gateTxt, "market");
+        }
       } else {
         var rSearch = ensureResearch();
         var rDone = researchSearches();
@@ -13522,7 +14245,7 @@
            rescató por mayoría o desde la respuesta combinada: sigue
            siendo una cifra etiquetada como propia, no un número
            cualquiera. */
-        var ownLabelled = labOwn != null || labeledPrice(combinedAnswer("M0", 5), "propio") != null || propioMajorityValue(mainAnswerText("M0", 5)) != null || propioMajorityValue(combinedAnswer("M0", 5)) != null || correctedFigure("cobrado") != null || (state && typeof state.priceConfirmed === "number" && state.priceConfirmed === own);
+        var ownLabelled = labOwn != null || labeledPrice(combinedAnswer("M0", 5), "propio") != null || propioMajorityValue(mainAnswerText("M0", 5)) != null || propioMajorityValue(combinedAnswer("M0", 5)) != null || correctedFigure("cobrado") != null || (state && typeof state.priceConfirmed === "number" && state.priceConfirmed === own) || (ownPriceFromBrief() != null && ownPriceFromBrief() === own);
         return { text: fmtMoney(own) + " — tu precio", status: ownLabelled ? "validado" : "hipotesis" };
       }
       var t = mainAnswerText("M0", f.qi);
@@ -13654,7 +14377,66 @@
        cantidad que su pregunta pide, y además las formas directas
        («0 ventas», «no tengo clientes», «sin ingresos»). */
     var REVENUE_NOUNS = ["ventas", "venta", "clientes", "cliente", "ingresos", "ingreso", "pedidos", "pedido", "reservas", "reserva", "facturación", "facturacion", "personas", "persona", "huéspedes", "huésped"];
-    function declaresZeroSales() {
+    /* v17.33 (WS1) · H1: el cero de ventas solo existe por honestZero.
+       El segundo camino de antes —tres regex directas («no tengo» +
+       un sustantivo de ingresos a menos de 50 caracteres)— marcaba
+       cero donde no lo había: «No tengo a nadie de respaldo que
+       atienda a los clientes» no dice que no haya clientes, y «No
+       tengo el número exacto de clientes…, pero son unos 120
+       clientes» hasta dice cuántos hay. Esas regex se eliminan: un
+       cero solo vale si honestZero lo ve sobre la cantidad que su
+       pregunta pide, pegado a su unidad y sin evidencia positiva al
+       lado. Y aunque honestZero lo vea en una respuesta, el cero no
+       se sostiene si el proyecto ya declaró ventas: facturación
+       mensual o volumen de clientes/ventas en cualquier respuesta.
+       Tampoco sobrevive a una aclaración que lo corrigió. */
+    var ZERO_SALES_KEY = "cero-ventas-corregido";
+    /* v17.33 (WS1d) · H1: el cero dicho fuera de la pregunta principal.
+       Una repregunta o una sonda puede declarar el cero sobre algo que
+       la pregunta principal no pedía («No tengo clientes todavía» como
+       respuesta a una sonda de Retar sobre C0 Q0, que pide «ventas»):
+       la forma directa vale cuando el marcador y el sustantivo de
+       ingresos van pegados (a 20 caracteres, en la misma oración), sin
+       más que artículos, «ni», «todavía» o «solo» entre ellos, y sin
+       evidencia positiva al lado. La regla del hueco es la que deja
+       fuera «No tengo tiempo para los clientes» («tiempo» no es
+       artículo) y «No tengo a nadie de respaldo que atienda a los
+       clientes» (40 caracteres). «Personas» no es sustantivo de
+       ingresos aquí: «No tengo personas de respaldo» no dispara. */
+    var TIGHT_ZERO_GAP_OK = ["el", "la", "los", "las", "un", "una", "unos", "unas", "ni", "todavía", "todavia", "aún", "aun", "solo", "sola", "solos", "solas"];
+    function tightZeroSales(t) {
+      var s = String(t || "");
+      var sentences = s.split(/[.!?;]+/);
+      for (var si = 0; si < sentences.length; si++) {
+        var cl = sentences[si];
+        var markers = [];
+        var reM = /(\btodav[ií]a\s+no\s+(tengo|tenemos|hay)\b|\bno\s+(tengo|tenemos|hay)\b|\bning[uú]n(a|o|os|as)?\b|\b(0|cero|sin)\b)/gi, mm;
+        while ((mm = reM.exec(cl)) !== null) { markers.push(mm.index + mm[0].length); if (mm.index === reM.lastIndex) reM.lastIndex++; }
+        if (!markers.length) continue;
+        var reU = /\b(ventas?|clientes?|ingresos?|pedidos?|reservas?|facturaci[oó]n)\b/gi, mu;
+        var hitNouns = [];
+        while ((mu = reU.exec(cl)) !== null) {
+          var us = mu.index, ue = us + mu[0].length;
+          for (var k = 0; k < markers.length; k++) {
+            var me = markers[k];
+            var gap = null;
+            if (us >= me) gap = cl.slice(me, us);
+            else if (me >= ue) gap = cl.slice(ue, me);
+            if (gap == null) continue;
+            var d = Math.min(Math.abs(us - me), Math.abs(me - ue));
+            if (d > 20) continue;
+            var words = gap.toLowerCase().replace(/[.,;:]/g, " ").split(/\s+/).filter(function (w) { return w; });
+            var okGap = words.every(function (w) { return TIGHT_ZERO_GAP_OK.indexOf(w) >= 0; });
+            if (okGap) { hitNouns.push(mu[0].toLowerCase()); break; }
+          }
+          if (hitNouns.length) break;
+          if (mu.index === reU.lastIndex) reU.lastIndex++;
+        }
+        if (hitNouns.length && !positiveCounterEvidence(s, hitNouns)) return true;
+      }
+      return false;
+    }
+    function declaresZeroSalesRaw() {
       var found = null;
       MODULES.forEach(function (mm) {
         mm.questions.forEach(function (qq, qi) {
@@ -13668,12 +14450,183 @@
             var revenueAsked = asked.some(function (a) { return REVENUE_NOUNS.some(function (rn) { return sameZeroFamily(a, rn); }); });
             if (revenueAsked) { found = { src: src }; return; }
           }
-          if (/\b(0|cero)\s*(ventas?|clientes?|ingresos?|pedidos?|reservas?|facturaci[oó]n)\b/i.test(t) ||
-              /\b(no\s+(tengo|tenemos|hay)|todav[ií]a\s+no\s+(tengo|tenemos|hay)|ning[uú]n[oa]?)\b[^.!?;]{0,50}\b(ventas?|clientes?|ingresos?|pedidos?|reservas?)\b/i.test(t) ||
-              /\b(sin|0)\s+(ventas?|clientes?|ingresos?)\b/i.test(t)) { found = { src: src }; }
+          if (tightZeroSales(t)) { found = { src: src }; return; }
         });
       });
       return found;
+    }
+    /* Evidencia de ventas en UN texto: volumen servido (N clientes/
+       ventas/pedidos al día/mes, sin marca de pérdida ni de
+       adquisición) o facturación mensual propia (cifra mensual que
+       no es costo, alternativa ni CAC, ni neta, con etiqueta propia,
+       con una pregunta que pide ingresos, o con un verbo de ingreso
+       en primera persona del presente). Una meta («facturar
+       $2.700.000 al mes en 12 meses») no es facturación de hoy. */
+    function positiveSalesEvidenceInText(t, mid, qi) {
+      var s = String(t || "");
+      if (!s.trim()) return null;
+      /* v17.33 (WS1b) · La mensual va primero: una aclaración con volumen y facturación («225 clientes al mes, facturo $9.000.000 al mes») registra el total mensual en la retractación, no solo el volumen. */
+      var figs = moneyFigures(s);
+      for (var k = 0; k < figs.length; k++) {
+        var f = figs[k];
+        if (f.unit !== "mensual" || f.label === "costo" || f.label === "alternativa" || f.label === "cac") continue;
+        if (f.kind === "neto") continue;
+        var prevEnd = k > 0 ? figs[k - 1].i + (figs[k - 1].len || 0) : 0;
+        var nextStart = k + 1 < figs.length ? figs[k + 1].i : s.length;
+        var tramo = s.slice(prevEnd, nextStart);
+        var firstPerson = /(facturo|facturamos|ingreso|ingresamos|vendo|vendemos|cobro|cobramos|gano|ganamos|recibo|recibimos)\b/i.test(tramo);
+        var goalFraming = /(\bmeta\b|\bobjetivo\b|pr[oó]ximos?\s+\d+\s*meses|en\s+los\s+pr[oó]ximos|voy\s+a\s+(facturar|vender|cobrar)|facturar[eé]\b|vender[eé]\b|cobrar[eé]\b)/i.test(tramo) && !firstPerson;
+        if (goalFraming) continue;
+        if (f.label === "propio" || (mid && questionAsksIncome(mid, qi)) || firstPerson) return { kind: "monthly", v: f.v };
+      }
+      var volRe = /(\d[\d.,]*)\s*(ventas?|clientes?|pedidos?|reservas?|unidades?)\s*(?:al|por)\s*(d[ií]a|mes)/gi, vm;
+      /* v17.33 (WS9) · G7-3: el «antes» no contradice el «ahora»
+         tampoco en el volumen: «antes me traían 40 clientes al día»
+         no es evidencia de ventas de hoy cuando el texto trae un
+         cero de ahora («ahora me traen cero») — es una caída, no una
+         contradicción. Misma guarda que el conteo de
+         positiveCounterEvidence. */
+      var volZeroNow = /\b(ahora|hoy|actualmente)\b[^.!?;]{0,40}?(\b0\b|\$0\b|\bcero\b|\bning[uú]n(a|o|os|as)?\b)/i.test(s);
+      while ((vm = volRe.exec(s)) !== null) {
+        var vv = parseInt(String(vm[1] || "").replace(/[.,]/g, ""), 10);
+        if (isNaN(vv) || vv <= 0 || vv >= 100000) { if (vm.index === volRe.lastIndex) volRe.lastIndex++; continue; }
+        if (volZeroNow) {
+          var vBefore = s.slice(0, vm.index);
+          var vClauseStart = Math.max(vBefore.lastIndexOf(","), vBefore.lastIndexOf(";"), vBefore.lastIndexOf("."), vBefore.lastIndexOf("!"), vBefore.lastIndexOf("?"), vBefore.lastIndexOf(" y "), vBefore.lastIndexOf(" pero ")) + 1;
+          var vClause = s.slice(vClauseStart, vm.index + vm[0].length);
+          if (/\bantes\b/i.test(vClause)) { if (vm.index === volRe.lastIndex) volRe.lastIndex++; continue; }
+        }
+        var win = s.slice(Math.max(0, vm.index - 60), Math.min(s.length, vm.index + vm[0].length + 60));
+        if (/(pierd[oaes]?|perd[ií]|se pierden|no llegan|dej[eé] de|no alcanzo|se me escapan|adquirir|adquisici[oó]n|\bCAC\b)/i.test(win)) { if (vm.index === volRe.lastIndex) volRe.lastIndex++; continue; }
+        return { kind: "volume", v: vv };
+      }
+      return null;
+    }
+    function positiveSalesEvidence() {
+      var found = null;
+      MODULES.forEach(function (mm) {
+        mm.questions.forEach(function (qq, qi) {
+          if (found) return;
+          var ev = positiveSalesEvidenceInText(combinedAnswer(mm.id, qi), mm.id, qi);
+          if (ev) { ev.src = codeOf(mm.id) + " Q" + (qi + 1); found = ev; }
+        });
+      });
+      return found;
+    }
+    /* ¿Este texto afirma que sí hay ventas? Una negación explícita
+       del cero («sí tengo ventas», «no estoy en cero») o evidencia
+       de ventas (facturación mensual o volumen) en el propio texto. */
+    function textAssertsSales(text) {
+      var s = String(text || "");
+      if (/\bs[ií]\s+(tengo|hay)\s+(ventas|clientes|pedidos)\b/i.test(s)) return true;
+      if (/\b(no\s+estoy\s+en\s+cero|s[ií]\s+vendo|s[ií]\s+tengo\s+ventas|tengo\s+ventas\s+todos\s+los\s+d[ií]as)\b/i.test(s)) return true;
+      return !!positiveSalesEvidenceInText(s, null, null);
+    }
+    /* Una sonda de Retar sin contestar cuya foto afirma 0 ventas. */
+    function liveZeroProbeSnapshot() {
+      if (!state || !state.followups) return null;
+      var found = null;
+      Object.keys(state.followups).forEach(function (mid) {
+        var qs = state.followups[mid] || {};
+        Object.keys(qs).forEach(function (qi) {
+          var rec = qs[qi];
+          if (!rec || !Array.isArray(rec.steps)) return;
+          rec.steps.forEach(function (st) {
+            if (found) return;
+            if (st && st.kind === "probe" && !st.answer && st.probeSnapshot && /0 ventas/.test(st.probeSnapshot)) found = { mid: mid, qi: parseInt(qi, 10), step: st };
+          });
+        });
+      });
+      return found;
+    }
+    /* La retractación registrada del cero falso: la última aclaración
+       resuelta con la clave de cero-ventas. */
+    function zeroSalesRetractionRecord() {
+      var list = (state && state.contradictions) || [];
+      for (var i = list.length - 1; i >= 0; i--) {
+        var rec = list[i];
+        if (rec.key === ZERO_SALES_KEY && rec.status === "resolved") return rec;
+      }
+      return null;
+    }
+    function zeroSalesRetracted(raw) {
+      var rec = zeroSalesRetractionRecord();
+      if (!rec || !raw) return false;
+      if (rec.src && rec.src !== raw.src) return false;
+      return true;
+    }
+    /* Registra la retractación del cero: una respuesta que afirma
+       ventas cuando un cero estaba vivo (en las respuestas o en una
+       sonda de Retar sin contestar) deja constancia resuelta con la
+       clave de cero-ventas, para que el cero no vuelva y el Resumen
+       y el chat lo digan de frente. No duplica: actualiza el
+       registro que ya exista para el mismo origen. */
+    function maybeRecordZeroRetraction(text, zeroBefore) {
+      if (!state) return false;
+      var liveSnap = liveZeroProbeSnapshot();
+      if (!zeroBefore && !liveSnap) return false;
+      if (!textAssertsSales(text)) return false;
+      if (!state.contradictions) state.contradictions = [];
+      var src = (zeroBefore && zeroBefore.src) || null;
+      var existing = null;
+      state.contradictions.forEach(function (r) { if (r.key === ZERO_SALES_KEY && r.status === "resolved" && (!src || !r.src || r.src === src)) existing = r; });
+      var ev = positiveSalesEvidenceInText(String(text || ""), null, null);
+      var corrected = null;
+      if (ev && ev.kind === "monthly" && ev.v) corrected = { ingresoTotal: { v: ev.v, unit: "mensual" } };
+      if (existing) {
+        existing.resolution = text;
+        existing.resolvedAt = new Date().toISOString();
+        existing.sourceHash = contradictionSourceHash();
+        existing.corrected = corrected;
+        existing.needsRole = false;
+        if (src) existing.src = src;
+      } else {
+        existing = { key: ZERO_SALES_KEY, at: new Date().toISOString(), status: "resolved", resolution: text, resolvedAt: new Date().toISOString(), sourceHash: contradictionSourceHash(), corrected: corrected, needsRole: false, src: src };
+        state.contradictions.push(existing);
+      }
+      existing.figures = contradictionFiguresSnapshot();
+      return true;
+    }
+    /* Una foto de Retar que afirma 0 ventas no sobrevive a que el
+       cero deje de ser verdad: si al reconstruir el reto con las
+       respuestas de hoy el cero ya no aparece (la respuesta que lo
+       decía se editó, o una aclaración lo corrigió), la foto se
+       reemplaza por el reto nuevo. Solo se toca la foto del cero; el
+       resto de las fotos sigue congelado en el momento del toque. */
+    function invalidateStaleZeroSnapshots() {
+      if (!state || !state.followups) return false;
+      var changed = false;
+      Object.keys(state.followups).forEach(function (mid) {
+        var qs = state.followups[mid] || {};
+        Object.keys(qs).forEach(function (qi) {
+          var rec = qs[qi];
+          if (!rec || !Array.isArray(rec.steps)) return;
+          rec.steps.forEach(function (st) {
+            if (!st || st.kind !== "probe" || st.answer || !st.probeSnapshot || /0 ventas/.test(st.probeSnapshot) === false) return;
+            /* v17.33 (WS1b) · La foto guarda el encabezado del reto («Reto sobre tu respuesta a la Pregunta 1 de C2. …»): al reconstruirla se conserva, o el reto perdería su referencia. */
+            var oldSnap = st.probeSnapshot;
+            var prefix = "";
+            var pm = oldSnap.match(/^Reto sobre tu respuesta a la [^.]+\.\s*/);
+            if (pm) prefix = pm[0];
+            var fresh = prefix + buildRetarProbe(mod(mid), parseInt(qi, 10));
+            if (fresh.indexOf("0 ventas") === -1) {
+              st.probeSnapshot = fresh; st.probe = fresh;
+              rec.probeSnapshot = fresh;
+              /* v17.33 (WS1b) · La foto también vive en el aviso del modo armado (renderChat pinta ui.activeModeScope.probeText tal cual): si el modo sigue armado sobre esta misma sonda, su texto se actualiza igual — si no, el aviso seguiría mostrando el cero viejo aunque la sonda ya se reconstruyó. */
+              if (typeof ui !== "undefined" && ui.activeMode === "retar" && ui.activeModeScope && ui.activeModeScope.probeText && /0 ventas/.test(ui.activeModeScope.probeText) && (ui.activeModeScope.probeText === oldSnap || (ui.activeModeScope.module === mid && (ui.activeModeScope.challengedQi === parseInt(qi, 10) || ui.activeModeScope.qi === parseInt(qi, 10))))) ui.activeModeScope.probeText = fresh;
+              changed = true;
+            }
+          });
+        });
+      });
+      return changed;
+    }
+    function declaresZeroSales() {
+      var raw = declaresZeroSalesRaw();
+      if (!raw) return null;
+      if (positiveSalesEvidence()) return null;
+      if (zeroSalesRetracted(raw)) return null;
+      return raw;
     }
     /* ¿Esta pregunta pide ingresos del mes (lo que entra, lo que se
        factura)? Solo desempata entre candidatas mensuales: una cifra
@@ -13892,8 +14845,13 @@
           });
         }
         if (monthlyCands.length) {
+          /* v17.33 (WS1) · H1: el total mensual que el dueño declaró manda sobre una sola fuente: «facturo $9.000.000 al mes» (C0) pesa más que el mostrador de $6.000.000 (C6) — la fuente es una parte, no la facturación. */
+          var declaredTotal = null;
+          try { declaredTotal = extractDeclaredMonthlyTotal(); } catch (e) { declaredTotal = null; }
           var chosen = monthlyCands[0];
           monthlyCands.forEach(function (c) {
+            if (declaredTotal != null && c.v === declaredTotal && chosen.v !== declaredTotal) { chosen = c; return; }
+            if (chosen.v === declaredTotal) return;
             if (c.label === "propio" && chosen.label !== "propio") { chosen = c; return; }
             if (chosen.label === "propio") return;
             if (c.incomeQ && !chosen.incomeQ) chosen = c;
@@ -14112,6 +15070,18 @@
     function gradeStepQueued(rec) {
       return degreeClassQueued(rec, "grade");
     }
+    /* v17.33 (WS2) · H2e: saltar el cierre de grado de una pregunta:
+       se retiran sus dos sondas sin contestar (grado y evidencia),
+       para que la siguiente respuesta principal no se trague como
+       respuesta al grado. Solo se retiran las sin contestar: un grado
+       ya declarado no se toca. */
+    function skipGradeSteps(mid, qi) {
+      var rec = fuRec(mid, qi);
+      if (!rec || !Array.isArray(rec.steps)) return 0;
+      var before = rec.steps.length;
+      rec.steps = rec.steps.filter(function (s) { return !(isGradeStep(s) && !s.answer); });
+      return before - rec.steps.length;
+    }
     function ensureGradeSteps(mid, qi) {
       if (mid !== "M1" || qi < 2 || qi > 10) return;
       if (gradeWordOf(combinedAnswer(mid, qi))) return; /* v17.26 (WS4) · Solo un grado DECLARADO evita la pregunta de cierre: una prosa como «demanda alta» ya no la evita. */
@@ -14329,6 +15299,8 @@
          antes solo contaba la contradicción dura y el «sin unidad
          clara» no tenía clave ni registro, así que volvía siempre. */
       var openContra = openContradiction() || openUnitClarification();
+      /* v17.33 (WS1) · H1: foto del cero ANTES de guardar esta respuesta: si el texto que llega lo corrige («sí tengo ventas…»), la retractación se registra abajo. */
+      var zeroBefore = declaresZeroSalesRaw();
       var pendFirst = pendingStep(m.id);
       /* v17.29 (WS4) · Con una pregunta nueva esperando, solo una
          corrección EXPLÍCITA desvía la respuesta: una respuesta
@@ -14368,6 +15340,8 @@
            supresión por clave + valores sobrevive a respuestas
            posteriores mientras las cifras no cambien. */
         existing.figures = contradictionFiguresSnapshot();
+        /* v17.33 (WS1) · H1: si esta aclaración también corrige un cero de ventas que estaba vivo, queda registrada como retractación del cero. */
+        maybeRecordZeroRetraction(text, zeroBefore);
         if (!hasFreshQuestion) {
           persist();
           notePriceChangeForResearch(priceBeforeCommit);
@@ -14382,9 +15356,30 @@
         toast("Gracias por aclararlo: lo dejé registrado y ya no te lo vuelvo a preguntar igual.");
       }
       var pend = pendingStep(m.id);
+      /* v17.33 (WS2) · H2e: una sonda de grado nunca se come la
+         siguiente respuesta principal. Si el paso pendiente es la
+         sonda del grado declarado y el texto que llega NO es una
+         palabra de grado (Supuesto/Media/Alta), el dueño siguió
+         adelante: se retira el cierre de grado entero de esa
+         pregunta (grado y evidencia: la evidencia solo tiene sentido
+         tras un grado declarado) y el texto sigue su camino como
+         respuesta principal. Un grado declarado sí se contesta por
+         aquí; su sonda de evidencia también. */
+      while (pend) {
+        var pendRec = fuRec(m.id, pend.qi);
+        var pendStep = pendRec.steps[pend.idx];
+        if (pendStep && isGradeStep(pendStep) && degreeClassOf(pendStep.probe) === "grade" && !gradeWordOf(text)) {
+          skipGradeSteps(m.id, pend.qi);
+          pend = pendingStep(m.id);
+          continue;
+        }
+        break;
+      }
       if (pend) {
         var rec = fuRec(m.id, pend.qi);
         rec.steps[pend.idx].answer = text;
+        /* v17.33 (WS1) · H1: una respuesta a la sonda de Retar que afirma ventas corrige el cero que la sonda decía: queda registrada la retractación. */
+        maybeRecordZeroRetraction(text, zeroBefore);
         recordPriceCorrection(text); /* v17.32 (WS2) · Una corrección de precio en una repregunta también se registra. */
         rec.steps[pend.idx].at = new Date().toISOString(); /* v17.14: la repregunta también lleva fecha, para fusionar por pregunta */
         /* v17.30 (WS1) · La repregunta también congela el veredicto: lo
@@ -14439,6 +15434,8 @@
          literalmente lo que se preguntó. */
       var dpSnap = displayPrompt(m, step);
       state.answers[m.id][step] = text;
+      /* v17.33 (WS1) · H1: si esta respuesta corrige un cero de ventas que estaba vivo, queda registrada la retractación. */
+      maybeRecordZeroRetraction(text, zeroBefore);
       recordPriceCorrection(text); /* v17.32 (WS2) · Una corrección de precio en una respuesta principal también se registra. */
       if (!state.answerMeta) state.answerMeta = {};
       /* v17.30 (WS1) · Se congela el veredicto al responder, con la
@@ -14669,7 +15666,10 @@
            también presupone pasado. Antes, el texto fijo preguntaba
            «cuánto ha demostrado estar dispuesto a pagarte» a quien
            todavía no ha vendido nada. */
-        if (STAGE_FAMILY[currentStage()] === "sinventas" || hasZeroDataBusiness()) inc = reframeHypothesisText(inc);
+        /* v17.33 (WS7) · H15: igual que en questionFor, el
+           incremental no se reescribe en hipótesis para un negocio
+           maduro que opera. */
+        if ((STAGE_FAMILY[currentStage()] === "sinventas" || hasZeroDataBusiness()) && !isMatureOperatingBusiness()) inc = reframeHypothesisText(inc);
         else if (isYoungBusiness()) inc = reframePastYearText(inc);
         return { q: q, text: "Ya me contaste que «" + dup.excerpt + "». " + inc };
       }
@@ -14908,6 +15908,8 @@
         if (!val) { toast("La respuesta no puede quedar vacía."); return; }
         if (tabStale) { toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return; }
         state.answers[mid][qi] = val;
+        /* v17.33 (WS1) · H1: editar una respuesta puede dejar sin base una foto de Retar que afirmaba 0 ventas: se reconstruye antes de guardar. */
+        invalidateStaleZeroSnapshots();
         /* v17.32 (WS4b) · G5: editar una respuesta desarma el modo: el
            aviso «Modo Retar activado» no puede sobrevivir a la
            edición de la respuesta que retaba. */
@@ -14950,6 +15952,21 @@
       ui.activeMode = null;
       ui.activeModeScope = null;
       document.querySelectorAll("[data-mode]").forEach(function (c) { c.classList.remove("on"); });
+      /* v17.33 (WS5) · H10: al desarmarse el modo se retira
+         TAMBIÉN su aviso «Modo Retar/Investigar activado».
+         El toast solo quitaba la clase «show» a los 3,2 s pero
+         dejaba el texto en el DOM, y el aviso sobrevivía en
+         pantalla pregunta tras pregunta hasta que otro aviso lo
+         reemplazaba. Solo se retira el aviso de activación del
+         modo (empieza por «Modo … activado»): un aviso mostrado
+         justo antes de desarmar —«Gracias por aclararlo», «El
+         modo Retar estaba armado para otra pregunta…»— no es
+         el de activación y sigue vivo. clearActiveMode corre
+         en cada avance de pregunta tras un intercambio de Retar
+         (consumeModeInto en la repregunta, el camino principal
+         al responder), así que el aviso no sobrevive al avance. */
+      var _tt = $("toast");
+      if (_tt && /^Modo \S+ activado/.test(_tt.textContent || "")) hideToast();
       if (had && !clearingMode && typeof renderChat === "function" && state) {
         clearingMode = true;
         try { renderChat(); } catch (e) {}
@@ -15085,6 +16102,12 @@
       }
       var contra0 = openContradiction();
       if (contra0) html += '<div class="na-note"><strong>Algo que yo quiero aclarar contigo:</strong> ' + esc(contra0.text) + "</div>";
+      /* v17.33 (WS1) · H1: si un reto afirmó 0 ventas y tu aclaración lo corrigió, el Resumen lo dice de frente: el cero queda retractado, no solo en silencio. */
+      var zeroRet = zeroSalesRetractionRecord();
+      if (zeroRet) {
+        var zeroRetMonthly = (zeroRet.corrected && zeroRet.corrected.ingresoTotal) ? ", facturas $" + zeroRet.corrected.ingresoTotal.v.toLocaleString("es-CO") + " al mes" : "";
+        html += '<div class="na-note"><strong>Corrección registrada:</strong> antes te reté diciendo que todavía no tenías ventas (0 ventas y 0 clientes); con tu aclaración quedó corregido: sí tienes ventas' + zeroRetMonthly + ".</div>";
+      }
       var unitNote0 = unitClarificationNote();
       if (unitNote0) html += '<div class="na-note">' + esc(unitNote0) + "</div>";
       /* v17.26 (WS4) · «Dónde mirar primero» es EL MISMO diagnóstico
@@ -15109,7 +16132,13 @@
       var weak = rankedAll.filter(function (x) { return (!moduleFullyComplete(x.id) || moduleScore(x.id) < 75) && canExecuteModule(x.id); }).slice(0, 3);
       if (weak.length && completedModules() > 0) {
         html += '<h2 class="section-title">Dónde mirar primero</h2><p style="color:var(--muted);margin-top:-6px">Los componentes con menor solidez estimada, en el mismo orden que el diagnóstico del lienzo y de cada componente. El siguiente paso recomendado es trabajar el primero de esta lista.</p>';
-        if (ranking.flat && weak[0].canvas) html += '<p style="color:var(--muted);margin-top:-6px">Sin bloque fuerte todavía — empate: todos los bloques van parejos y el más débil es el primero de la lista.</p>';
+        /* v17.33 (WS4) · H4: en empate plano ya hay bloque fuerte
+           cuando alguno trae evidencia en todas sus preguntas:
+           la nota dice el empate y el fuerte, no que no hay. */
+        if (ranking.flat && weak[0].canvas) {
+          var flatStrong = ranking.strongest ? ranking.strongest.b.title : null;
+          html += '<p style="color:var(--muted);margin-top:-6px">Todos los bloques van parejos: ' + ranking.tieScore + '/100' + (flatStrong ? ' y el más fuerte es ' + esc(flatStrong) + '.' : ' y todavía no hay un bloque fuerte.') + '</p>';
+        }
         weak.forEach(function (x) {
           var wm = mod(x.id);
           var wTitle = x.canvas ? canvasTitleOf[x.id] : wm.name;
@@ -15355,7 +16384,11 @@
       costos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M16.8 5.6c-.8-1.3-2.6-2.1-4.8-2.1-2.9 0-5 1.6-5 3.8 0 5 10 2.6 10 7.2 0 2.2-2.1 3.9-5 3.9-2.2 0-4-.8-4.8-2.1"/></svg>',
       ingresos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 9.5h.01M18 14.5h.01"/></svg>'
     };
-    var CANVAS_STATE_LABEL = { validado: "Validado", hipotesis: "Hipótesis", problema: "Problema", oportunidad: "Oportunidad", vacio: "Sin datos" };
+    /* v17.33 (WS4) · H4: el borrador también es un estado del
+   diagnóstico (Borrador), no solo de la pastilla: sin esta
+   etiqueta el diagnóstico no podía nombrar un bloque borrador
+   con la misma palabra que el lienzo. */
+    var CANVAS_STATE_LABEL = { validado: "Validado", hipotesis: "Hipótesis", problema: "Problema", oportunidad: "Oportunidad", vacio: "Sin datos", draft: "Borrador" };
     /* v17.32 (WS7) · G13(a) — UNA sola función de conteo del lienzo.
        El panel lateral y el lienzo DESACORDABAN: el panel contaba el
        estado subyacente de blockCanvasState() (un borrador de C1 con
@@ -15663,7 +16696,12 @@
       var blocks = {}, states = {};
       CANVAS_MAP.forEach(function (b) {
         blocks[b.key] = blockText(b);
-        states[b.key] = blockCanvasState(b).key;
+        /* v17.33 (WS4) · H4: la foto guarda el estado VISIBLE
+           (canvasBlockDisplay: Borrador para borradores), no el
+           estado subyacente: la foto es lo que el lienzo, el
+           Maestro, el PNG y el PDF leen, y los cuatro tienen que
+           decir lo mismo del mismo bloque. */
+        states[b.key] = canvasBlockDisplay(b).key;
       });
       return { blocks: blocks, states: states, thesis: canvasThesisKey(), pitch: canvasPitchKey() };
     }
@@ -16098,6 +17136,13 @@
        visible sigue usándolo. */
     function blockEvidenceState(b, verdicts, txt) {
       if (!txt) return { key: "vacio", label: CANVAS_STATE_LABEL.vacio, score: 0 };
+      /* v17.33 (WS4) · H4: un borrador nunca es Validado ni
+         Oportunidad en el diagnóstico: el texto que se ve es el
+         borrador de C1 (o del Brief) y el bloque todavía no tiene
+         respuesta propia — su estado de diagnóstico ES su estado
+         visible (Borrador), con el mismo predicado que pinta la
+         pastilla (canvasBlockDisplay/blockIsDraft). */
+      if (blockIsDraft(b)) return { key: "draft", label: CANVAS_STATE_LABEL.draft, score: 0 };
       var grade = canvasGrade(b.key);
       function rank(sol) {
         if (isDone(sol.label, sol.miss)) return 4;
@@ -16190,7 +17235,10 @@
            no suma puntos de solidez - solo la evidencia suma. El grado
            se sigue guardando en la entrada para mostrarlo, no para
            puntuar. */
-        return { b: b, idx: idx, modScore: moduleScore(b.mod), grade: grade, score: ev.strength, coverage: ev.coverage, modCoverage: ev.modCoverage, draft: ev.draft, state: ev.state, txt: ev.txt, miss: ev.missAvg, missAvg: ev.missAvg, missCount: ev.missTexts.length, missTexts: ev.missTexts };
+        /* v17.33 (WS4) · H4: el borrador es el de la pastilla
+           (blockIsDraft), no solo el de C1 (ev.draft): un bloque
+           cuyo texto viene del Brief también es borrador. */
+        return { b: b, idx: idx, modScore: moduleScore(b.mod), grade: grade, score: ev.strength, coverage: ev.coverage, modCoverage: ev.modCoverage, draft: blockIsDraft(b), state: ev.state, txt: ev.txt, miss: ev.missAvg, missAvg: ev.missAvg, missCount: ev.missTexts.length, missTexts: ev.missTexts };
       });
       function byWeak(a, c) { return rankCompare(a, c); }
       function byStrong(a, c) {
@@ -16199,9 +17247,17 @@
         if (a.missAvg !== c.missAvg) return a.missAvg - c.missAvg;
         return a.idx - c.idx;
       }
-      var asc = entries.slice().sort(byWeak);
+      /* v17.33 (WS4) · H4: el ranking solo ordena bloques con
+         evidencia propia (no borradores): un borrador nunca es
+         el más débil ni el más fuerte. Si todos fueran borradores
+         (lienzo recién esbozado) se ordenan todos, para que el
+         más débil nunca quede sin definir. */
+      var eligible = entries.filter(function (e) { return !e.draft; });
+      var ranked = eligible.length ? eligible : entries;
+      var asc = ranked.slice().sort(byWeak);
       var weakest = asc[0];
-      var flat = entries.every(function (e) { return e.score === entries[0].score; });
+      var flat = ranked.every(function (e) { return e.score === ranked[0].score; });
+      var tieScore = flat ? ranked[0].score : null;
       var tiedWeak = asc.filter(function (e) { return sameDiagnosisRank(e, weakest); });
       /* v17.32 (WS3b) · G14: el más fuerte nunca es el más débil ni un
          bloque en Problema/Sin datos — y nunca un bloque con evidencia
@@ -16212,14 +17268,22 @@
          tocó. Si ningún bloque cumple, no hay bloque fuerte todavía.
          Empate en lo más fuerte: se nombran todos, nunca se elige
          uno en silencio. */
+      /* v17.33 (WS4) · H4: el más fuerte existe también en empate
+         plano. Antes, flat forzaba strongest=null («sin bloque
+         fuerte») aunque 8 bloques fueran Validado. En empate
+         plano la exclusión de los más débiles se levanta (si no,
+         ningún candidato podría calificar: todos van empatados);
+         el resto del portero no cambia: evidencia en TODAS las
+         preguntas del componente y estado distinto de
+         Problema/Sin datos/Borrador. Empate en lo más fuerte: se
+         nombran todos, nunca se elige uno en silencio. */
       var strongest = null, tiedStrong = [];
-      if (!flat) {
-        var cands = entries.filter(function (e) { return tiedWeak.indexOf(e) < 0 && e.modCoverage === 1 && e.state.key !== "problema" && e.state.key !== "vacio"; });
-        var desc = cands.slice().sort(byStrong);
-        strongest = desc[0] || null;
-        if (strongest) tiedStrong = desc.filter(function (e) { return e.score === strongest.score && e.modCoverage === strongest.modCoverage && Math.abs(e.missAvg - strongest.missAvg) < 1e-9; });
-      }
-      return { entries: entries, weakOrder: asc, weakest: weakest, strongest: strongest, flat: flat, tiedWeakest: tiedWeak, tiedStrongest: tiedStrong };
+      var cands = ranked.filter(function (e) { return e.modCoverage === 1 && e.state.key !== "problema" && e.state.key !== "vacio" && e.state.key !== "draft"; });
+      if (!flat) cands = cands.filter(function (e) { return tiedWeak.indexOf(e) < 0; });
+      var desc = cands.slice().sort(byStrong);
+      strongest = desc[0] || null;
+      if (strongest) tiedStrong = desc.filter(function (e) { return e.score === strongest.score && e.modCoverage === strongest.modCoverage && Math.abs(e.missAvg - strongest.missAvg) < 1e-9; });
+      return { entries: entries, weakOrder: asc, weakest: weakest, strongest: strongest, flat: flat, tieScore: tieScore, tiedWeakest: tiedWeak, tiedStrongest: tiedStrong };
     }
     /* v17.30 (WS5) · El lienzo solo se puede evaluar cuando C1 ya se
        evaluó: C1 completa, o algún bloque con respuesta propia de su
@@ -16293,11 +17357,16 @@
            apuntara a otro frente. */
         if (hyp && hyp.trim() && hypothesisMentionsBlock(hyp, weakest.b.key)) risk += " Tu propia hipótesis más riesgosa (C1) apunta al mismo punto débil: si resulta falsa, el modelo completo se tambalea, así que es la primera que hay que poner a prueba.";
       }
-      var strong = (r.flat || !r.strongest) ? null : (r.tiedStrongest && r.tiedStrongest.length ? r.tiedStrongest : [r.strongest]).map(function (e) { return { title: e.b.title, state: e.state.key }; });
+      /* v17.33 (WS4) · H4: el fuerte existe también en empate
+         plano (ver canvasRanking). Los ítems llevan su clave de
+         bloque para que canvasDiagnosisHtml pueda cruzarlos con
+         los estados del lienzo que se ve encima. */
+      var strong = !r.strongest ? null : (r.tiedStrongest && r.tiedStrongest.length ? r.tiedStrongest : [r.strongest]).map(function (e) { return { key: e.b.key, title: e.b.title, state: e.state.key }; });
       return {
-        weak: tied.map(function (e) { return { title: e.b.title, state: e.state.key }; }),
+        weak: tied.map(function (e) { return { key: e.b.key, title: e.b.title, state: e.state.key }; }),
         strong: strong,
         flat: r.flat,
+        tieScore: r.tieScore != null ? r.tieScore : null,
         risk: risk,
         emptyWeak: emptyWeak
       };
@@ -16326,7 +17395,11 @@
       });
       var s = parts.join("|"), h = 0;
       for (var i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-      return "dg" + h;
+      /* v17.33 (WS4) · H4: el prefijo cambia (dg -> dg33|) para
+         que los veredictos congelados de antes de este arreglo
+         (borrador como Validado, ítems sin clave, sin tieScore)
+         se recalculen en vivo una vez en vez de servirse rancios. */
+      return "dg33|" + h;
     }
     /* Congela el diagnóstico con la evidencia actual: se llama al
        cerrar un componente (commitAnswer y la revisión de cierre).
@@ -16339,7 +17412,7 @@
     function freezeDiagnosis() {
       if (!state) return null;
       var v = rankingVerdict(canvasRanking());
-      state.diagnosis = { hash: diagnosisEvidenceHash(), at: new Date().toISOString(), weak: v.weak, strong: v.strong, flat: v.flat, risk: v.risk, emptyWeak: v.emptyWeak };
+      state.diagnosis = { hash: diagnosisEvidenceHash(), at: new Date().toISOString(), weak: v.weak, strong: v.strong, flat: v.flat, tieScore: v.tieScore, risk: v.risk, emptyWeak: v.emptyWeak };
       return state.diagnosis;
     }
     function frozenDiagnosisSnapshot() {
@@ -16352,19 +17425,29 @@
        congeló, como en proyectos viejos). */
     function diagnosisVerdict() {
       var snap = frozenDiagnosisSnapshot();
-      if (snap) return { weak: snap.weak, strong: snap.strong, flat: snap.flat, risk: snap.risk, emptyWeak: snap.emptyWeak };
+      if (snap) return { weak: snap.weak, strong: snap.strong, flat: snap.flat, tieScore: snap.tieScore != null ? snap.tieScore : null, risk: snap.risk, emptyWeak: snap.emptyWeak };
       return rankingVerdict(canvasRanking());
     }
     function closeAuditDiagnosisLine() {
       if (!canvasEvaluated()) return null;
       var v = diagnosisVerdict();
+      var strongWord = (v.strong && v.strong.length > 1) ? "los más fuertes son " : "el más fuerte es ";
+      var strongTxt = v.strong ? joinTitled(v.strong) : null;
+      /* v17.33 (WS4) · H4: en empate plano no se nombran los 9
+         como más débiles: todos van parejos a la misma solidez.
+         El más fuerte sí se nombra cuando alguno trae evidencia
+         en todas sus preguntas; solo sin candidato se dice que
+         todavía no hay. Sin bloque fuerte (todos los demás en
+         Problema) se sigue diciendo, nunca se nombra un Problema. */
+      if (v.flat) {
+        var tie = "todos los bloques van parejos" + (v.tieScore != null ? " a " + v.tieScore + "/100" : "");
+        if (strongTxt) return "En tu lienzo, " + tie + " y " + strongWord + strongTxt + ".";
+        return "En tu lienzo, " + tie + " y todavía no hay un bloque fuerte.";
+      }
       var weakTxt = joinTitled(v.weak);
       var weakWord = v.weak.length > 1 ? "los bloques más débiles ahora son " : "el bloque más débil ahora es ";
-      /* v17.30 (WS4) · Sin bloque fuerte (empate plano, o todos los
-         demas en Problema): se dice, nunca se nombra un Problema. */
-      if (v.flat || !v.strong) return "En tu lienzo, " + weakWord + weakTxt + " y todavía no hay un bloque fuerte: todos van parejos.";
-      var strongWord = v.strong.length > 1 ? "los más fuertes son " : "el más fuerte es ";
-      return "En tu lienzo, " + weakWord + weakTxt + " y " + strongWord + joinTitled(v.strong) + ".";
+      if (!v.strong) return "En tu lienzo, " + weakWord + weakTxt + " y todavía no hay un bloque fuerte.";
+      return "En tu lienzo, " + weakWord + weakTxt + " y " + strongWord + strongTxt + ".";
     }
     /* Palabras que delatan de que bloque habla una hipotesis: la
        alineacion con el bloque mas debil solo se afirma cuando la
@@ -16388,11 +17471,40 @@
     }
     function canvasDiagnosisHtml(displayStates) {
       var v = diagnosisVerdict();
-      var weakLabel = v.weak.length > 1 ? "Bloques más débiles (empate)" : "Bloque más débil";
-      var strongLabel = (!v.flat && v.strong && v.strong.length > 1) ? "Bloques más fuertes (empate)" : "Bloque más fuerte";
-      var strongLine = (v.flat || !v.strong) ? "sin bloque fuerte todavía — empate" : joinTitled(v.strong);
+      /* v17.33 (WS4) · H4: el diagnóstico usa los estados del
+         lienzo que se ve encima (displayStates, la foto que
+         renderCanvas le pasa): la pastilla de cada bloque y su
+         estado en el diagnóstico son el mismo, y un borrador es
+         Borrador también aquí. Sin foto (Resumen, documento)
+         vale el veredicto tal cual. Los veredictos congelados
+         viejos, sin clave, se cruzan por título. */
+      function shownState(item) {
+        if (displayStates) {
+          var k = item.key || null;
+          if (!k) { for (var i = 0; i < CANVAS_MAP.length; i++) if (CANVAS_MAP[i].title === item.title) { k = CANVAS_MAP[i].key; break; } }
+          if (k && displayStates[k]) return displayStates[k];
+        }
+        return item.state;
+      }
+      function shown(items) { return (items || []).map(function (it) { return { title: it.title, state: shownState(it) }; }); }
+      var weakShown = shown(v.weak), strongShown = v.strong ? shown(v.strong) : null;
+      /* v17.33 (WS4) · H4: en empate plano la línea del más débil
+         no nombra los 9 bloques: todos van parejos a la misma
+         solidez. El fuerte se nombra cuando existe (también en
+         empate plano); solo sin candidato queda el «sin bloque
+         fuerte todavía». */
+      var weakLabel, weakLine;
+      if (v.flat) {
+        weakLabel = "Bloques";
+        weakLine = "Todos los bloques van parejos" + (v.tieScore != null ? ": " + v.tieScore + "/100" : "");
+      } else {
+        weakLabel = v.weak.length > 1 ? "Bloques más débiles (empate)" : "Bloque más débil";
+        weakLine = joinTitled(weakShown);
+      }
+      var strongLabel = (strongShown && strongShown.length > 1) ? "Bloques más fuertes (empate)" : "Bloque más fuerte";
+      var strongLine = strongShown ? joinTitled(strongShown) : "sin bloque fuerte todavía — empate";
       return "<h3>Diagnóstico de un vistazo</h3>" +
-        "<p><strong>" + weakLabel + ":</strong> " + esc(joinTitled(v.weak)) + ".</p>" +
+        "<p><strong>" + weakLabel + ":</strong> " + esc(weakLine) + ".</p>" +
         "<p><strong>" + strongLabel + ":</strong> " + esc(strongLine) + ".</p>" +
         "<p><strong>Riesgo principal:</strong> " + esc(v.risk) + "</p>";
     }
@@ -16410,7 +17522,11 @@
         var nextStart = k + 1 < spans.length ? spans[k + 1].i : t.length;
         var after = t.slice(end, Math.min(nextStart, end + 40));
         var m = after.match(/^\s*(por\s+[a-záéíóúñ]+|al\s+mes|cada\s+[a-záéíóúñ]+)/i);
-        if (m) return m[1].toLowerCase().replace(/\s+/g, " ");
+        /* v17.33 (WS7) · H8: «por esa / este / esta» es un demostrativo,
+           nunca una unidad: «$40.000 por esa venta» no dice «por esa»;
+           sin esta guarda, el precio rescatado de C0 Q5 («que me pagó
+           a mí por esa venta») salía con unidad «por esa». */
+        if (m && !/^por\s+(esa|ese|esta|este|aquel|aquella)$/i.test(m[1])) return m[1].toLowerCase().replace(/\s+/g, " ");
         /* v17.29 (WS3) - La unidad puede venir despues de «netos/netas»:
            «me quedan $13.000 netos por vela» - «por vela» no va pegado
            a la cifra sino a «netos». Se busca la primera unidad en la
@@ -16419,7 +17535,7 @@
         var unitRe = /\b(por\s+[a-záéíóúñ]+|al\s+mes|cada\s+[a-záéíóúñ]+)/gi, um;
         while ((um = unitRe.exec(after)) !== null) {
           var u = um[1].toLowerCase().replace(/\s+/g, " ");
-          if (u === "por ejemplo" || u === "por favor" || u === "por eso" || u === "por fin") continue;
+          if (u === "por ejemplo" || u === "por favor" || u === "por eso" || u === "por fin" || u === "por esa" || u === "por este" || u === "por esta" || u === "por ese" || u === "por aquel" || u === "por aquella") continue;
           return u;
         }
         var prevEnd = k > 0 ? spans[k - 1].i + (spans[k - 1].len || 0) : 0;
@@ -16435,6 +17551,14 @@
       var price = ownPrice();
       if (price == null) return null;
       var srcs = [mainAnswerText("M0", 5), mainAnswerText("M6", 1)];
+      /* v17.33 (WS7) · H8: el precio puede venir del escaneo de C0/C1
+         (ownPriceFromBrief), no solo de C0 Q5 o C6 Q1: la unidad se
+         busca donde está la cifra, para no perder la unidad canónica
+         cuando el precio se dijo en otra respuesta. */
+      ["M0", "M1"].forEach(function (mid) {
+        var arr = (state && state.answers && state.answers[mid]) || [];
+        for (var ai = 0; ai < arr.length; ai++) srcs.push(mainAnswerText(mid, ai));
+      });
       for (var s = 0; s < srcs.length; s++) {
         var figs = moneyFigures(srcs[s]);
         for (var i = 0; i < figs.length; i++) if (figs[i].v === price) return figs[i];
@@ -16450,7 +17574,20 @@
     function priceUnitText() {
       var price = ownPrice();
       if (price == null) return "por venta";
-      var lit = literalUnitNear(mainAnswerText("M0", 5), price) || literalUnitNear(mainAnswerText("M6", 1), price);
+      /* v17.33 (WS7) · H8: la unidad se busca primero donde se
+         encontró el precio (el escaneo de C0/C1), luego en C0 Q5 y C6
+         Q1 como antes, y por último en cualquier respuesta principal
+         de C0/C1 que traiga la cifra. */
+      var scanSrc = ownPriceScan();
+      var lit = (scanSrc && scanSrc.v === price && scanSrc.text) ? literalUnitNear(scanSrc.text, price) : null;
+      if (!lit) lit = literalUnitNear(mainAnswerText("M0", 5), price) || literalUnitNear(mainAnswerText("M6", 1), price);
+      if (!lit) {
+        var unitMids = ["M0", "M1"];
+        for (var umi = 0; umi < unitMids.length && !lit; umi++) {
+          var uarr = (state && state.answers && state.answers[unitMids[umi]]) || [];
+          for (var uai = 0; uai < uarr.length && !lit; uai++) lit = literalUnitNear(mainAnswerText(unitMids[umi], uai), price);
+        }
+      }
       if (lit) return lit;
       var prod = productPhrase() || productFallback();
       if (prod) {
@@ -16541,6 +17678,15 @@
       var name = state.project.name || "Tu negocio";
       var h = "<h3>Tesis del modelo</h3>";
       var chosen = mainAnswerText("M12", 4);
+      /* v17.33 (WS6) · H11: una respuesta con las tres tesis juntas
+         NO es una tesis elegida: el lienzo nunca la muestra como
+         «Tesis elegida (C12)», sino como tesis en comparación, sin
+         elegir todavía. */
+      if (chosen && chosen.trim() && ws6IsThreeTheses(chosen)) {
+        h += "<p><strong>Tesis en comparación, sin elegir todavía:</strong></p><ul><li>" + esc(chosen.trim()) + "</li></ul>";
+        h += "<p>Esta respuesta repite tus tres tesis juntas: todavía no elegiste una. Cuando elijas una sola en C12, esa será la tesis de tu modelo.</p>";
+        return h;
+      }
       if (chosen && chosen.trim()) {
         var signal = "";
         fuSteps("M12", 4).forEach(function (s) { if (s.answer) signal = s.answer; });
@@ -16661,6 +17807,12 @@
       h += "<p><strong>Presentación principal:</strong> " + (main ? esc(main) : "Aún no escrita en C11.") + "</p>";
       h += "<p><strong>Versión de 30 segundos:</strong> " + (s30 ? esc(s30) : "Aún no escrita en C11.") + "</p>";
       h += "<p><strong>Versión de 2 minutos:</strong> " + (m2 ? esc(m2) : "Aún no escrita en C11.") + "</p>";
+      /* v17.33 (WS6) · H11: una versión fuera de tema se señala en
+         el propio lienzo, no se exhibe como versión sin más. */
+      var ws6PitchFlags30 = ws6QualityFlags("M11", 6);
+      if (ws6PitchFlags30.length) h += "<p><strong>Ojo con la versión de 30 segundos:</strong> " + esc(ws6FlagsText(ws6PitchFlags30)) + ".</p>";
+      var ws6PitchFlags2m = ws6QualityFlags("M11", 7);
+      if (ws6PitchFlags2m.length) h += "<p><strong>Ojo con la versión de 2 minutos:</strong> " + esc(ws6FlagsText(ws6PitchFlags2m)) + ".</p>";
       return h;
     }
     function canvasCompassHtml() {
@@ -16913,28 +18065,108 @@
     function canalesBlockText() {
       var parts = [];
       var primary = blockSourceText("M4", 4);
+      var lead = "";
+      var brokenQ4 = [];
       if (primary) {
-        parts.push("Canal principal: " + primary);
-        if (!/cac|adquirir un cliente|por cliente/i.test(primary)) {
+        /* v17.33 (WS4) · H6: la Q4 se lee por oraciones. La que
+           nombra el canal principal (o trae la cifra) abre la
+           línea; una oración de canal roto nunca lidera: se mueve
+           a la historia etiquetada, esté donde esté en la
+           respuesta (al principio, como en el caso en vivo, o
+           pegada al final de la oración principal). */
+        var sents = splitChannelSentences(primary);
+        var leadSents = [], primaryIdx = -1;
+        sents.forEach(function (s) {
+          if (isBrokenChannelSentence(s)) { brokenQ4.push(s); return; }
+          leadSents.push(s);
+          if (primaryIdx < 0 && /canal\s+(principal|primario)/i.test(s)) primaryIdx = leadSents.length - 1;
+        });
+        if (leadSents.length) {
+          var ordered = leadSents.slice();
+          if (primaryIdx > 0) { var p0 = ordered.splice(primaryIdx, 1)[0]; ordered.unshift(p0); }
+          lead = ordered.join(" ");
+        }
+      }
+      if (lead) {
+        parts.push("Canal principal: " + lead);
+        if (!/cac|adquirir un cliente|por cliente/i.test(lead)) {
           var cacs = [];
           try { cacs = extractCacFigures() || []; } catch (e) { cacs = []; }
           if (cacs.length) parts.push("CAC: " + fmtMoney(cacs[0].v) + " por cliente" + (cacs[0].channel ? " (vía " + cacs[0].channel + ")" : "") + ".");
         }
       } else {
+        /* Toda la Q4 habla del canal roto (o no hay Q4): no hay
+           canal principal que liderar; el Brief dice cómo llega
+           hoy el cliente. */
         var brief = (mainAnswerText("M0", 2) || "").trim();
         if (brief) parts.push("Cómo llega hoy (Brief): " + brief);
       }
+      /* La historia del canal roto es UNA sola línea: lo roto de
+         Q1 y lo roto de Q4 juntos. En dos líneas, el dedup de
+         evidencia las veía como la misma evidencia (comparten
+         «página de Facebook hace 2 años») y se comía la segunda:
+         la frase rota desaparecía del bloque en vez de quedar
+         etiquetada. La apuesta de Q1 va en su propia línea. */
+      var brokenAll = [], q1Rest = [];
       var q1 = blockSourceText("M4", 1);
-      if (q1) parts.push(labelBrokenChannel(q1));
+      if (q1) {
+        labelBrokenChannel(q1).split("\n").forEach(function (ln) {
+          if (!ln.trim()) return;
+          var m = ln.match(/^Antes \(canal que dejó de funcionar\):\s*(.*)$/);
+          if (m) {
+            splitChannelSentences(m[1]).forEach(function (s) {
+              if (!brokenAll.some(function (prev) { return sameEvidence(prev, s); })) brokenAll.push(s);
+            });
+          } else q1Rest.push(ln);
+        });
+      }
+      brokenQ4.forEach(function (s) {
+        if (!brokenAll.some(function (prev) { return sameEvidence(prev, s); })) brokenAll.push(s);
+      });
+      if (brokenAll.length) parts.push("Antes (canal que dejó de funcionar): " + brokenAll.join(" "));
+      q1Rest.forEach(function (ln) { parts.push(ln); });
       if (!parts.length) return "";
       return dedupEvidenceLines(parts.join("\n"));
+    }
+    /* v17.33 (WS4) · H6: qué frase delata un canal roto — la
+       misma prueba para Q1 y para Q4. Marcan historia: dejó/dejaron
+       de traer o funcionar, ya no trae/funciona, abandonado,
+       cerrado, canal roto, sin publicar, sin publicaciones, no trae
+       a nadie/nada, no publico, ningún cliente llegó, no funciona.
+       «hace N años/meses» solo marca historia colgado de un canal
+       nombrado (página, Facebook…): a secas es antigüedad
+       («tengo este local hace 6 años»), no un canal roto. */
+    var BROKEN_CHANNEL_RE = /dej[oó]\s+de\s+(traer|funcionar|vender|dar)|dejaron\s+de|ya\s+no\s+(trae|funciona|vende)|abandonad[oa]\b|cerrad[oa]\b|canal\s+roto|sin\s+publicar|sin\s+publicaciones?|no\s+trae\s+(a\s+)?(nadie|nada)|no\s+publico\b|ning[uú]n\s+cliente\s+lleg|no\s+lleg[oó]\s+ning[uú]n|no\s+funciona\b/i;
+    var BROKEN_CHANNEL_WORDS = /facebook|instagram|p[aá]gina|redes|tiktok|sitio\s+web|canal|perfil/i;
+    function isBrokenChannelSentence(s) {
+      var t = String(s || "");
+      if (BROKEN_CHANNEL_RE.test(t)) return true;
+      if (/hace\s+\d+\s+(años|meses)\b/i.test(t) && BROKEN_CHANNEL_WORDS.test(t) && !/me\s+trae|llegan|trae\s+clientes|lleg[oó]\s+por/i.test(t)) return true;
+      return false;
+    }
+    /* Oraciones por línea: cada línea de blockSourceText (la
+       principal o una «Evidencia: ...») se parte por fin de
+       oración, sin perder el punto. */
+    function splitChannelSentences(text) {
+      var out = [];
+      String(text || "").split("\n").forEach(function (ln) {
+        var line = ln.trim();
+        if (!line) return;
+        /* Los miles («$6.000.000», «4.8») llevan puntos que NO son
+           fin de oración: se protegen antes de partir y se devuelven
+           después, para no cortar una cifra en «$6. 000. 000». */
+        var safe = line.replace(/(\d)\.(\d)/g, "$1\u0001$2");
+        var parts = safe.match(/[^.!?;]+[.!?;]+|[^.!?;]+$/g) || [safe];
+        parts.forEach(function (p) { var s = p.replace(/\u0001/g, ".").trim(); if (s) out.push(s); });
+      });
+      return out;
     }
     function labelBrokenChannel(text) {
       var lines = String(text || "").split("\n");
       var main = lines[0] || "";
       var rest = lines.slice(1);
       var out = [];
-      if (/dej[oó]\s+de\s+(traer|funcionar)|dejaron\s+de|ya\s+no\s+(trae|funciona)/i.test(main)) {
+      if (isBrokenChannelSentence(main)) {
         var idx = main.search(/el\s+canal\s+que\s+(apostar|podr[ií]a)/i);
         if (idx > 0) {
           out.push("Antes (canal que dejó de funcionar): " + main.slice(0, idx).trim());
@@ -16945,7 +18177,15 @@
       } else {
         out.push(main);
       }
-      return out.concat(rest).join("\n");
+      /* v17.33 (WS4) · H6: la frase rota también se etiqueta
+         cuando viene en una repregunta, no solo en la primera
+         línea: una evidencia que habla del canal roto es
+         historia, no contenido principal. */
+      rest.forEach(function (ln) {
+        if (!ln.trim()) return;
+        out.push(isBrokenChannelSentence(ln) && ln.indexOf("Antes (canal que dejó de funcionar)") !== 0 ? "Antes (canal que dejó de funcionar): " + ln : ln);
+      });
+      return out.join("\n");
     }
     /* v17.32 (WS7) · G13(c) — ninguna tarjeta gris sin motivo: un
        bloque vacío dice POR QUÉ está vacío — sin respuestas todavía
@@ -17002,6 +18242,13 @@
             if (t2) parts.push(t2);
           });
         });
+      }
+      /* v17.33 (WS6) · H7: el punto de equilibrio calculado vive en
+         el bloque de costos del lienzo, junto a los costos que lo
+         sostienen. */
+      if (b && b.key === "costos") {
+        var ws6BeBlock = breakEvenLine();
+        if (ws6BeBlock) parts.push(ws6BeBlock);
       }
       /* v17.32 (WS7) · G13(b): la misma evidencia que llega por dos
          preguntas del bloque (o por el borrador y el respaldo) se
@@ -17368,6 +18615,13 @@
         }
         var solB = verdictFor(m.id, qi, combined) || { label: "Pendiente — sin evidencia todavía", miss: [] };
         if (!isDone(solB.label, solB.miss)) gaps.push("<li><strong>Pregunta " + (qi + 1) + " (" + esc(q.entrega || "") + "):</strong> todavía falta " + esc(solB.miss.length ? cleanMissJoin(solB.miss) : "evidencia concreta que respalde lo que me contaste") + ".</li>");
+        /* v17.33 (WS6) · H14: el informe del Brief usa las mismas
+           señales de calidad: una respuesta repetida o fuera de tema
+           es una señal abierta y el informe nunca dice que no hay
+           alertas mientras exista una. */
+        ws6QualityFlags(m.id, qi).forEach(function (fl) {
+          gaps.push("<li><strong>Pregunta " + (qi + 1) + " (" + esc(q.entrega || "") + "):</strong> " + esc(ws6FlagText(fl)) + ".</li>");
+        });
       });
       var pend = pendingStep(m.id);
       if (pend) gaps.push("<li><strong>Pregunta de seguimiento pendiente:</strong> hay un dato pedido en la repregunta de la pregunta " + (pend.qi + 1) + " que todavía no me has dado.</li>");
@@ -19078,12 +20332,16 @@
         cloudWriteInFlight = true;
         var myGen = ++cloudWriteGen; /* esta escritura es la más reciente: solo su resultado vale */
         var dirtyIds = Object.keys(cloudDirtyProjects);
-        if (!dirtyIds.length) {
-          /* Sin marca de cambio (llamadas sin persist previo): sube
-             el proyecto activo, que es el que acaba de cambiar. */
-          if (state && state.id) dirtyIds = [state.id];
-          else if (localShape.activeProjectId) dirtyIds = [localShape.activeProjectId];
-        }
+        /* v17.33 (WS8) · H12: sin proyecto marcado sucio no se sube
+           ningún proyecto: el camino por defecto («sube el activo»)
+           reescribía el proyecto entero aunque nada hubiera cambiado
+           — por ejemplo, cuando solo el meta cambió o cuando solo
+           quedaba la marca de «cambio pendiente» — y el indicador
+           parpadeaba «Guardando…» por una escritura sin contenido
+           nuevo. Cada llamada real a subir marca antes su proyecto
+           (persist, persistLocalOnly, archivar, borrar, fusionar):
+           sin marca no hay nada que subir. El meta, si está sucio,
+           sigue subiendo abajo (metaNeeded). */
         var metaNeeded = cloudMetaDirty || dirtyIds.length > 0;
         var refusals = [];
         var refusalCodes = {}; /* v17.28 (WS3) · código por proyecto negado: el aviso final solo habla de «conflicto» cuando de verdad hubo uno; un «payload-too-large» no es un conflicto */
@@ -19295,7 +20553,15 @@
            cambio —proyectos sucios, meta sucio o cambio pendiente— no se
            toca el estado de la nube. Un reintento sí pasa: el proyecto que
            falló sigue marcado sucio hasta que suba. */
-        if (!cloudDirty && !cloudMetaDirty && !Object.keys(cloudDirtyProjects).length) return;
+        /* v17.33 (WS8) · H12: el «cambio pendiente» (cloudDirty) solo
+           no basta: esa marca la pone cualquier guardado que llegó
+           mientras una escritura volaba, y todo guardado real marca
+           además su proyecto (persist/persistLocalOnly) o el meta
+           antes de pedir la subida. Sin marca de proyecto ni de meta
+           no hay nada que escribir: arrancar igual reescribía el
+           proyecto activo por el camino por defecto de doCloudWrite
+           y el indicador parpadeaba «Guardando…» sin ningún cambio. */
+        if (!cloudMetaDirty && !Object.keys(cloudDirtyProjects).length) return;
         clearTimeout(saveTimer);
         saveTimer = null;
         /* v17.26 (WS5) · El temporizador de reintento ya disparó (o se
@@ -19551,13 +20817,36 @@
               state = store.projects[store.activeProjectId] || null;
               ensureAnswers();
               persistLocalOnly(true, true);
-              /* v17.28 (WS2) · La fusión puede haber adoptado respuestas
-                 de la nube en CUALQUIER proyecto, no solo en el activo:
-                 todos quedan marcados sucios para que la subida lleve la
-                 tienda fusionada entera, y el meta con las lápidas. */
-              markStoreDirty(store);
               markCloudMergeDone();
-              window.__cloudSaveNow();
+              /* v17.33 (WS8) · H12: al entrar, la subida solo se hace si
+                 la fusión trae algo que la nube no tiene: en cada
+                 recarga con las copias ya iguales, marcar todo sucio y
+                 subir de inmediato reescribía cada proyecto y el
+                 indicador parpadeaba «Guardando…» sin ningún cambio.
+                 La comprobación es la fusión en sentido contrario
+                 (nube contra local): si nada local falta en la nube
+                 y el proyecto activo es el mismo, la nube ya trae
+                 todo lo fusionado y el indicador queda en «ok» sin
+                 subir nada — las marcas que dejó persistLocalOnly se
+                 limpian, porque ya no describen nada pendiente. */
+              var bringsNew = false;
+              try {
+                var revCheck = mergeStores(cloudShape, localStoreShape);
+                bringsNew = !!(revCheck && revCheck.changed);
+              } catch (e) { bringsNew = true; }
+              if (!bringsNew && (merged.store.activeProjectId || null) !== (cloudShape.activeProjectId || null)) bringsNew = true;
+              if (bringsNew) {
+                /* v17.28 (WS2) · La fusión puede haber adoptado respuestas
+                   de la nube en CUALQUIER proyecto, no solo en el activo:
+                   todos quedan marcados sucios para que la subida lleve la
+                   tienda fusionada entera, y el meta con las lápidas. */
+                markStoreDirty(store);
+                window.__cloudSaveNow();
+              } else {
+                if (state && state.id) delete cloudDirtyProjects[state.id];
+                cloudMetaDirty = false;
+                setCloudStatus("ok");
+              }
               if (state) {
                 /* v17.26 (WS5) · «Se fusionaron» solo cuando la fusión
                  adoptó RESPUESTAS de la nube: un recorte del historial de
