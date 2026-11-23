@@ -931,7 +931,9 @@
         .admin-grid { grid-template-columns: 1fr; }
         /* La barra lateral ya NO cambia sola con el tamaño: un solo estado
            (expandida/compacta) con su botón y persistido en
-           localStorage. En pantallas angostas se colapsa con ese botón. */
+           localStorage. En pantallas angostas se colapsa con ese botón,
+           y al arrancar sin preferencia guardada ya viene colapsada
+           (ver el script de la barra lateral, WS7 móvil). */
         .view { padding: 22px 16px 50px; }
         #view-chat { height: auto; min-height: 100dvh; }
         .chat-top { padding: 16px 16px 0; }
@@ -944,6 +946,25 @@
         .deliv { flex-wrap: wrap; }
         .deliv .acts { margin-left: 0; }
         .mini-track { display: none; }
+        /* WS7 móvil: las filas de módulos (.mod-row) no caben en la
+           columna angosta y sus elementos flex:none se desbordaban
+           hasta 678px de ancho, sacando la barra lateral de la pantalla
+           al desplazar. Con wrap la fila se parte en dos líneas. */
+        .mod-row { flex-wrap: wrap; }
+        .mod-row > div:not(.right) { min-width: 0; overflow-wrap: anywhere; }
+        .mod-row .right { margin-left: 0; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
+        /* WS7 móvil: la ruta (minmax 180px) y el avatar (260px) también
+           desbordaban la columna angosta en la bienvenida. */
+        .route { grid-template-columns: 1fr; }
+        .avatar-stage video, .avatar-stage img.avatar-still { width: min(260px, 100%); }
+        /* WS7 móvil: la fila de estadísticas (minmax 160px) también
+           desbordaba la columna angosta con el menú expandido. */
+        .stat-row { grid-template-columns: 1fr; }
+        .stat { min-width: 0; }
+        /* WS7 móvil: palabras largas sin corte ("Segmentación",
+           "Presentación", "diagnóstico") ensanchaban el documento. */
+        .view-head h1 { overflow-wrap: anywhere; }
+        .stat .big { overflow-wrap: anywhere; }
       }
       @media (prefers-reduced-motion: reduce) {
         * { transition: none !important; }
@@ -1115,7 +1136,7 @@
             <div class="avatar">A</div>
             <div>
               <p><strong>Cómo trabajo:</strong> te hago preguntas paso a paso —nada de formularios eternos—, marco tu progreso y te devuelvo documentos listos para usar: diagnóstico, canvas, ficha de validación y plan.</p>
-              <p>Tu cuenta es personal: tu proyecto se guarda en este navegador y se sincroniza con tu cuenta, para que lo retomes desde cualquier computador. Además puedes exportar tu proyecto en un archivo como respaldo o para compartirlo.</p>
+              <p id="welcomeSaveCopy">Tu cuenta es personal: tu proyecto se guarda en este navegador. Además puedes exportar tu proyecto en un archivo como respaldo o para compartirlo.</p>
             </div>
           </div>
 
@@ -6441,6 +6462,7 @@
       awaitingProbe: null,    // índice de pregunta cuya sonda está abierta
       activeMode: null,
       activeModeScope: null,  // v17.25 · dónde se armó el modo: {module, qi}; fuera de ahí no vale
+      redoConfirmFor: null,   // v17.36 (WS6) · (h): módulo con la confirmación de «Rehacer componente» armada (vive en el estado, no en el DOM)
       modalDoc: null,          // {title, filename, html}
       payPlan: "fundador"      // v17.1: plan elegido en la pantalla de pago
     };
@@ -7279,9 +7301,45 @@
       figs.forEach(function (f, k) {
         var part = cacSegment(t, f, k, figs);
         var seg = part.seg;
-        var hasAcquire = /(adquirir|adquisici[oó]n|\bCAC\b|costo de adquirir|conseguir (un )?cliente|traer (un )?cliente)/i.test(seg);
-        var hasPerCustomer = /(por (cada )?cliente|cada cliente)/i.test(seg);
-        if (!hasAcquire || !hasPerCustomer) return;
+        /* v17.36 (WS4) · F12: la marca de adquisición tiene que ser
+           de ESTA cifra, no de la siguiente. El tramo llegaba hasta
+           la cifra siguiente, así que un "Adquirirlo me cuesta
+           $12.000" de la oración siguiente marcaba como CAC el
+           margen ($30.000) que lo precedía — y ese valor mal
+           marcado envenenaba después la extracción del margen.
+           La marca vale antes de la cifra, o después solo dentro
+           de su misma oración (hasta el primer . ! ? ;). */
+        var figOff = f.i - part.start;
+        var beforePart = seg.slice(0, figOff);
+        var afterPart = seg.slice(figOff + (f.len || 0)).split(/[.!?;]/)[0];
+        /* v17.36 (WS5) · La marca de adquisición sigue teniendo que
+           estar pegada a ESTA cifra (antes, o después dentro de su
+           misma oración): eso es lo que protege al margen vecino
+           (propiedad de WS4, intacta). Lo que se relaja es la unidad:
+           «por cliente» vale en el mismo segmento, en la misma
+           respuesta (frases adyacentes), o sobra cuando el marcador es
+           fuerte («Adquirirla me cuesta $25.000» ya dice que es por
+           cliente). «Conseguí» vale con sustantivo de persona en el
+           segmento («conseguí 3 alumnas»). Un total mensual o un
+           «en total» nunca es un CAC por cliente. */
+        var ACQ_STRONG_RE = /(adquirir|adquisici[oó]n|\bCAC\b|costo de adquirir)/i;
+        var ACQ_PERSON_RE = /(consegu[ií]|traer (un )?(cliente|clienta|alumna|alumno|vecina|vecino|persona))/i;
+        var PER_PERSON_RE = /(por (cada )?(cliente|clienta|alumna|alumno|vecina|vecino|persona)|cada (cliente|clienta|alumna|alumno|vecina|vecino|persona))/i;
+        var strongBound = ACQ_STRONG_RE.test(beforePart) || ACQ_STRONG_RE.test(afterPart);
+        /* v17.36 (WS5) · «conseguí/traer» vale solo ANTES de la cifra:
+           «invertí $0 … y conseguí 3 alumnas … me cuesta $25.000» y
+           «invertí $30.000 … para conseguir clientes … me cuesta
+           $10.000» marcaban el $0 y el $30.000 como CAC: el «conseguí»
+           de después pertenece a la cifra siguiente, no a esta. La
+           marca fuerte (adquirir/adquisición/CAC) sigue valiendo a
+           ambos lados («me cuesta $10.000 adquirir un cliente»). */
+        var personBound = ACQ_PERSON_RE.test(beforePart) && /(cliente|clienta|alumna|alumno|vecina|vecino|persona)/i.test(seg);
+        var hasAcquire = strongBound || personBound;
+        var hasPerCustomer = PER_PERSON_RE.test(seg) || PER_PERSON_RE.test(t);
+        if (!hasAcquire) return;
+        if (!hasPerCustomer && !strongBound) return;
+        if (!hasPerCustomer && f.unit === "mensual") return;
+        if (!hasPerCustomer && /en total/i.test(afterPart)) return;
         var fs = f.i - part.start, fe = fs + (f.len || 0);
         out.push({ v: f.v, i: f.i, len: f.len || 0, unit: "por cliente", kind: f.kind || "desconocida", label: "cac", channel: channelOf(seg) || channelNearFigure(t, f), denom: denomOf(seg, fs, fe), src: src });
       });
@@ -7317,6 +7375,24 @@
         if (comp) out.push(comp);
       }
       scanCacFigures(combinedAnswer("M6", 5), "M6:5", out);
+      /* v17.36 (WS5) · El CAC puede declararse en cualquier componente
+         (C0, C10, C12…), no solo en C4/C6: se barren todas las
+         respuestas no escaneadas arriba, en orden de módulo. La marca
+         de adquisición sigue teniendo que estar pegada a la cifra
+         (scanCacFigures), así que el barrido no relabela el margen ni
+         el precio. */
+      var cacDone = { "M4:4": true, "M4:7": true, "M6:5": true };
+      ["M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12", "M13", "M14"].forEach(function (mid) {
+        var mm = null;
+        try { mm = mod(mid); } catch (e) { mm = null; }
+        if (!mm) return;
+        mm.questions.forEach(function (qq, qi) {
+          var key = mid + ":" + qi;
+          if (cacDone[key]) return;
+          cacDone[key] = true;
+          scanCacFigures(combinedAnswer(mid, qi), key, out);
+        });
+      });
       return out;
     }
     /* Valor de vida del cliente (C6 Q5): la cifra de su tramo que habla
@@ -7338,35 +7414,82 @@
        inventa ninguna: el camino mensual × 12 de antes queda solo
        como suposición marcada. */
     function extractPurchasesPerMonth() {
+      var WORDNUM = { una: 1, un: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10 };
+      function wordNum(s) {
+        var r = String(s || "").toLowerCase();
+        if (/^\d/.test(r)) { var nn = parseInt(r.replace(/[.,]/g, ""), 10); return isNaN(nn) ? null : nn; }
+        return WORDNUM[r] != null ? WORDNUM[r] : null;
+      }
+      /* v17.36 (WS7) · P4: un «cada mes» suelto no es frecuencia de
+         compra. «Me trae sus uniformes de trabajo cada mes» habla de
+         una entrega, no de una compra: el atajo solo vale cuando la
+         cláusula de la frase trae un verbo de compra del cliente
+         habitual (compra, vuelve, pide, encarga, gasta, paga, repite,
+         consume, renueva; «viene» solo con sujeto cliente, y solo en
+         tercera persona: «compro tela cada mes» es el dueño comprando
+         insumos, no el cliente comprando).
+         Una cláusula con «no sé» nunca vale. */
+      function ws7BareFreq(t, phraseRe, n, directQ) {
+        var re = new RegExp(phraseRe.source, "gi");
+        var m;
+        while ((m = re.exec(t)) !== null) {
+          var start = m.index;
+          var s0 = -1;
+          [".", "!", "?", ";", ":"].forEach(function (ch) { var p = t.lastIndexOf(ch, start); if (p > s0) s0 = p; });
+          var e0 = t.length;
+          [".", "!", "?", ";", ":"].forEach(function (ch) { var p = t.indexOf(ch, start + m[0].length); if (p >= 0 && p < e0) e0 = p; });
+          var clause = t.slice(s0 + 1, e0);
+          if (/no\s+s[eé](?![a-záéíóúñ])/i.test(clause)) continue; /* \b tras «é» nunca casa en JS (ASCII): mirar adelante en su lugar */
+          if (/\b(compra|compran|vuelve|vuelven|regresa|regresan|pide|piden|encarga|encargan|gasta|gastan|paga|pagan|repite|repiten|consume|consumen|renueva|renuevan)\b/i.test(clause)) return n;
+          /* En la respuesta directa a la frecuencia (M6 Q5) la pregunta ya pone el sujeto (el cliente habitual): «vienen cada mes» ahí sí es frecuencia de compra. En la descripción libre (M0 Q1) «viene» necesita sujeto cliente («viene el proveedor cada mes» no es una compra). */
+          if (/\b(viene|vienen)\b/i.test(clause) && (directQ || /\b(clienta|cliente|clientas|clientes|vecina|vecino|comprador|compradora|usuari[oa]s?)\b/i.test(clause))) return n;
+        }
+        return null;
+      }
+      /* Si la respuesta directa a la frecuencia (M6 Q5) declara que no
+         la sabe («no sé cuántas veces al mes»), ningún atajo débil la
+         inventa: solo vale un conteo explícito. */
+      var freqUnknown = /no\s+s[eé]\s+(cu[aá]nt[oa]s?\s+veces|la\s+frecuencia|cu[aá]nto|con\s+qu[eé]\s+frecuencia)/i.test(String(combinedAnswer("M6", 5) || ""));
       var texts = [combinedAnswer("M6", 5), combinedAnswer("M0", 1)];
       for (var i = 0; i < texts.length; i++) {
         var t = String(texts[i] || "");
         if (!t.trim()) continue;
-        var m = t.match(/(\d[\d.,]*)\s*(?:almuerzos?|veces|visitas|compras|ventas|pedidos?)\s+al mes/i);
+        /* v17.36 (WS4) · Frecuencia mensual en singular: «1 vez al
+           mes» / «una vez al mes» no casaban (solo «veces» valía), así
+           que el valor de vida quedaba sin frecuencia y la fórmula no
+           se armaba. Vale «N vez/veces al mes» con número o palabra. */
+        var m = t.match(/\b(\d[\d.,]*|una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s*(?:almuerzos?|veces|vez|visitas|compras|ventas|pedidos?)\s+al mes/i);
         if (m) {
-          var n = parseInt(m[1].replace(/[.,]/g, ""), 10);
-          if (!isNaN(n) && n > 0 && n < 1000) return n;
+          var n = wordNum(m[1]);
+          if (n != null && n > 0 && n < 1000) return n;
         }
         /* v17.32.1 · Frecuencia semanal y diaria: «1 vez por semana»
            (singular «vez», no «veces») no casaba con la regex anterior
            y el margen por venta se devolvía como total de vida. Semanal
            × 4 (convención del propio dueño: 4 semanas por mes), diaria
            × 30. Números en palabra («una», «dos»…) también valen. */
-        var WORDNUM = { una: 1, un: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10 };
         var w = t.match(/\b(\d[\d.,]*|una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s*(?:veces|vez)\s+(?:por|a la)\s+semana/i);
         if (w) {
           var rw = String(w[1]).toLowerCase();
           var nw = /^\d/.test(rw) ? parseInt(rw.replace(/[.,]/g, ""), 10) : WORDNUM[rw];
           if (nw != null && !isNaN(nw) && nw > 0 && nw < 100) return nw * 4;
         }
-        if (/\bcada semana\b/i.test(t)) return 4;
+        if (!freqUnknown) {
+          var bw = ws7BareFreq(t, /\bcada semana\b/i, 4, i === 0);
+          if (bw != null) return bw;
+          var bm = ws7BareFreq(t, /\bcada mes\b/i, 1, i === 0);
+          if (bm != null) return bm;
+        }
         var d = t.match(/\b(\d[\d.,]*|una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s*(?:veces|vez)\s+(?:por|al)\s+d[ií]a/i);
         if (d) {
           var rd = String(d[1]).toLowerCase();
           var nd = /^\d/.test(rd) ? parseInt(rd.replace(/[.,]/g, ""), 10) : WORDNUM[rd];
           if (nd != null && !isNaN(nd) && nd > 0 && nd < 100) return nd * 30;
         }
-        if (/\bcada d[ií]a\b|\ba diario\b/i.test(t)) return 30;
+        if (!freqUnknown) {
+          var bd = ws7BareFreq(t, /\bcada d[ií]a\b|\ba diario\b/i, 30, i === 0);
+          if (bd != null) return bd;
+        }
       }
       return null;
     }
@@ -7400,17 +7523,63 @@
         while (segStart > 0 && !/[.!?;:]/.test(t[segStart - 1])) segStart--;
         return /en\s+total/i.test(t.slice(segStart, f.i));
       }
+      /* v17.36 (WS4) · F12/N1/N2: el marcador de margen tiene que
+         ser DE ESTA cifra, no de la vecina. Antes valía cualquier
+         «me deja|margen|neto» en ±40/±60 caracteres: el CAC
+         ($10.000 por recomendación) se devolvía como margen porque
+         el «me deja» del margen real caía en su ventana, y el total
+         de vida ($540.000 por alumna) también. Ahora el marcador
+         solo vale en el tramo propio de la cifra (desde la cifra
+         anterior hasta esta, o pegado después sin otra cifra en
+         medio), nunca se devuelve una cifra ya identificada como
+         CAC ni con etiqueta de costo, y un «margen» mayor que el
+         precio propio es el total de vida, no el margen: se rechaza. */
+      /* Las cifras CAC identificadas por extractCacFigures() se
+         rechazan por POSICIÓN (misma respuesta, misma cifra), no por
+         valor: un margen que vale lo mismo que el CAC ($25.000 de
+         margen con un CAC de $25.000) es margen, no CAC. Un chequeo
+         por valor rechazaba ese margen y la función caía en otra
+         respuesta (M6 Q1) y devolvía un margen ajeno. */
+      var cacSpots = [];
+      try { cacSpots = (extractCacFigures() || []).map(function (c) { return { src: c.src, i: c.i }; }); } catch (e) { cacSpots = []; }
+      var TEXT_SRCS = ["M6:5", "M6:1", "M0:7"];
+      var ownP = null;
+      try { ownP = ownPrice(); } catch (e) { ownP = null; }
+      function ltvIsCacFigure(f, src) {
+        if (!f) return false;
+        if (f.label === "cac" || f.label === "costo") return true;
+        for (var ci = 0; ci < cacSpots.length; ci++) {
+          if (cacSpots[ci].src === src && Math.abs(cacSpots[ci].i - f.i) <= 2) return true;
+        }
+        return false;
+      }
       for (var ti = 0; ti < texts.length; ti++) {
         var t = texts[ti];
         if (!String(t || "").trim()) continue;
         var figs = moneyFigures(t);
-        var k, f, around;
+        var k, f;
         for (k = 0; k < figs.length; k++) {
           f = figs[k];
           if (f.unit !== "por venta") continue;
           if (ltvIsTotalFigure(t, f)) continue;
-          around = t.slice(Math.max(0, f.i - 40), Math.min(t.length, f.i + (f.len || 0) + 60));
-          if (!/(me (deja|dejan|queda|quedan)|margen|neto)/i.test(around)) continue;
+          if (ltvIsCacFigure(f, TEXT_SRCS[ti])) continue;
+          if (ownP != null && f.v > ownP) continue;
+          var prevEnd = k > 0 ? figs[k - 1].i + (figs[k - 1].len || 0) : 0;
+          var nextStart = k + 1 < figs.length ? figs[k + 1].i : t.length;
+          var beforeSeg = t.slice(prevEnd, f.i);
+          var afterSeg = t.slice(f.i + (f.len || 0), nextStart);
+          var hasMarkerBefore = /(me\s+(deja|dejan|queda|quedan)|margen|neto)/i.test(beforeSeg);
+          /* Marcador después: solo si está pegado a esta cifra en su
+             misma cláusula (sin punto ni otra cifra en medio) y no
+             introduce la cifra siguiente («…$10.000, y me deja
+             $7.000…»: ese «me deja» es del $7.000, no del $10.000). */
+          var hasMarkerAfter = false;
+          var afterHead = afterSeg.slice(0, 30);
+          if (!/[.!?;:]/.test(afterHead)) {
+            var am = /(me\s+(deja|dejan|queda|quedan)|margen|neto)/i.exec(afterHead);
+            if (am && !/\$\s*[\d]/.test(afterSeg.slice(am.index + am[0].length))) hasMarkerAfter = true;
+          }
+          if (!hasMarkerBefore && !hasMarkerAfter) continue;
           return { v: f.v, noun: ltvNounAfter(t, f) };
         }
         /* Sin unidad por venta: la marca de margen justo antes de la
@@ -7424,6 +7593,8 @@
           f = figs[k];
           if (f.unit === "mensual") continue;
           if (ltvIsTotalFigure(t, f)) continue;
+          if (ltvIsCacFigure(f, TEXT_SRCS[ti])) continue;
+          if (ownP != null && f.v > ownP) continue;
           var before = t.slice(Math.max(0, f.i - 40), f.i);
           if (!/(me\s+(deja|dejan|queda|quedan)|margen|neto)(\s+[a-záéíóúñ]+){0,2}\s*:?\s*$/i.test(before)) continue;
           var after = t.slice(f.i + (f.len || 0), f.i + (f.len || 0) + 15);
@@ -7538,6 +7709,24 @@
        supera el margen). El total nunca se muestra sin su fórmula:
        el lienzo y el Plan llaman aquí mismo. Sin info no hay
        fórmula que decir: se devuelve null y el llamador decide. */
+    /* v17.36 (WS4) · F12: plural español del sustantivo por venta
+       («pan» → «panes», «recomendación» → «recomendaciones»): el
+       «noun + "s"» ingenuo daba «pans» y «recomendacións». En
+       singular (1 vez al mes) no se pluraliza. (El gemelo de
+       okrPluralNoun es territorio de WS5 y no se toca.) */
+    function ltvPluralNoun(noun, n) {
+      var s = String(noun || "venta").toLowerCase();
+      if (n === 1) return s;
+      if (/[aeiouáéíóú]$/.test(s)) return s + "s";
+      if (/z$/.test(s)) return s.slice(0, -1) + "ces";
+      /* "recomendación" -> "recomendaciones", no "recomendacións":
+         al añadir -es a una palabra aguda (acento en la última
+         sílaba) la tilde cae: "sesión" -> "sesiones", "camión" ->
+         "camiones". Sin esto el +es conservaba la tilde. */
+      var am = /([áéíóú])([^aeiouáéíóú])$/.exec(s);
+      if (am) return s.slice(0, -2) + ({ "á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u" })[am[1]] + am[2] + "es";
+      return s + "es";
+    }
     function ltvFormulaText(info) {
       if (!info || typeof info.v !== "number") return null;
       var vTxt = "$" + info.v.toLocaleString("es-CO");
@@ -7555,7 +7744,7 @@
            unos miles. Un total corregido que ya no cuadra sigue
            mostrando solo el total, como antes. */
         if (Math.abs(info.marginPerSale * info.freqPerMonth * months - info.v) <= Math.max(1, Math.round(info.v * 0.01))) {
-          return "$" + info.marginPerSale.toLocaleString("es-CO") + " por " + noun + " × " + info.freqPerMonth + " " + noun + "s al mes × " + months + " meses = " + vTxt + " en total en su vida como cliente";
+          return "$" + info.marginPerSale.toLocaleString("es-CO") + " por " + noun + " × " + info.freqPerMonth + " " + ltvPluralNoun(noun, info.freqPerMonth) + " al mes × " + months + " meses = " + vTxt + " en total en su vida como cliente";
         }
       }
       return vTxt + " en total en su vida como cliente";
@@ -7653,6 +7842,33 @@
             var ws5Cut = Math.max(ws5Before.lastIndexOf("."), ws5Before.lastIndexOf(","), ws5Before.lastIndexOf(";"), ws5Before.lastIndexOf(":"));
             if (ws5Cut >= 0) ws5Before = ws5Before.slice(ws5Cut + 1);
             if (/\b(precio|cuesta(n)?|costo|adquirir|adquisici[o\u00f3]n)\b/i.test(ws5Before)) continue;
+            /* v17.36 (WS5) · El total declarado nunca es una fuente:
+               «Facturo $6.000.000 al mes» al final de la lista se sumaba
+               como tercera fuente ($11.500.000) y la brecha salía
+               $5.500.000 en vez de $500.000. Vale solo la cifra pelada:
+               marcada como total («facturo», «en total», «mis ingresos
+               son») y sin etiqueta de fuente después de ella en su
+               misma frase («en membresías», «por WhatsApp» la salvan).
+               Una fuente con verbo «facturo» y etiqueta («facturo
+               $1.500.000 al mes en membresías») se conserva. */
+            /* v17.36 (WS5) · Un precio pelado tampoco es una fuente:
+               «Cobro $60.000 al mes por la membresía» se sumaba como
+               tercera fuente de B ($2.460.000) y la brecha salía $60.000
+               donde no hay brecha. «Cobro» vale solo pelado (solo el
+               verbo en su tramo): «Cobro por WhatsApp $2.000.000» sigue
+               siendo fuente, y un precio con etiqueta después («Cobro
+               $1.500.000 al mes en membresías») también. La etiqueta
+               «por la membresía» es unidad del precio, no fuente. */
+            var ws5IsCobro = /^\s*cobr[oa]\s*$/i.test(ws5Before);
+            if (/factur|en total|mis ingresos son/i.test(ws5Before) || ws5IsCobro) {
+              var ws5NextStart = (mi + 1 < mfigs.length) ? mfigs[mi + 1].i : ch.length;
+              var ws5After = ch.slice(mf.i + (mf.len || 0), ws5NextStart);
+              var ws5Term = ws5After.search(/[.!?]/);
+              if (ws5Term >= 0) ws5After = ws5After.slice(0, ws5Term);
+              var ws5AfterClean = ws5After.replace(/\b(al mes|por mes|mensual(?:es)?|cada mes|en total)\b/gi, "").replace(/[^A-Za-z]/g, "");
+              var ws5Bare = ws5AfterClean === "" || (ws5IsCobro && /^por(la|el|una|un|cada)?[a-z]+$/i.test(ws5AfterClean));
+              if (ws5Bare) continue;
+            }
             /* v17.35 (WS5) · F11: la etiqueta sale de la cláusula de
                ESTA fuente, no del trozo entero: antes, todas las
                fuentes de un trozo heredaban la primera etiqueta
@@ -7709,6 +7925,49 @@
       var verb = chk.sourcesTotal < chk.declaredTotal ? "faltan" : "sobran";
       return "tus fuentes suman $" + chk.sourcesTotal.toLocaleString("es-CO") + " al mes frente a $" + chk.declaredTotal.toLocaleString("es-CO") + " declarados: " + verb + " $" + chk.gap.toLocaleString("es-CO") + " por aclarar";
     }
+    /* v17.36 (WS5) · Total mensual declarado en UN texto: la cifra con
+       la mensualidad pegada a ella (misma cláusula), que no sea meta ni
+       total de periodo. Entre varias, manda la última cuya cláusula
+       lleve verbo de total («facturo», «ventas», «ingresos», «entran»,
+       «en total»): así un «$70.000 al mes en la alternativa» que venga
+       después del total no lo reemplaza, y una fuente («mostrador
+       $3.500.000 al mes») nunca se lee como total. Sin ninguna con
+       verbo, vale la última mensual (la regla que ya usaba C0 Q1). Con
+       verbOnly, solo valen las cifras con verbo de total: un «costos
+       fijos son $2.100.000 al mes» nunca es el total de ventas. */
+    function monthlyTotalFromText(t, verbOnly) {
+      var s = String(t || "");
+      if (!s.trim()) return null;
+      var figs = moneyFigures(s);
+      /* v17.36 (WS7) · P3: una enumeración de fuentes («Mis fuentes de
+         ingresos son: recomendación $5.000.000 al mes, clientes fijos
+         $2.500.000 al mes y ventas en el local $1.000.000 al mes»)
+         nunca declara un total: la cifra de un ítem de la lista no es
+         el total de ventas aunque su cláusula lleve la palabra
+         «ventas». La región de la lista va del «son»/«:» que la abre
+         hasta el fin de la oración; solo una cifra de esa región cuya
+         propia cláusula diga «en total»/«facturo»/«suman» vale. */
+      var enumStart = -1, enumEnd = -1;
+      var em = /(mis\s+)?fuentes(\s+de\s+ingresos)?\s+(son\s*:?|:)/i.exec(s);
+      if (em) {
+        enumStart = em.index;
+        var rest = s.slice(em.index + em[0].length);
+        /* El fin de la oración no puede ser un punto de miles («$5.000.000»): el terminador no va seguido de dígito. */
+        var term = rest.search(/[.!?;](?!\d)/);
+        enumEnd = em.index + em[0].length + (term >= 0 ? term : rest.length);
+      }
+      var monthly = null, withVerb = null;
+      figs.forEach(function (f, k) {
+        if (!monthlyAttachedToFigure(s, f, figs, k)) return;
+        var clause = figureClause(s, f.i, f.len || 0);
+        if (isGoalFramedFigure(clause) || figureIsPeriodTotal(clause)) return;
+        if (enumStart >= 0 && f.i >= enumStart && f.i < enumEnd && !/en\s+total|factur|suman/i.test(clause)) return;
+        monthly = f;
+        if (/factur|vendo|vendes|ventas|ingresos?|ingreso|entran|entra|gano|ganas|total/i.test(clause) && !/fuentes de ingresos/i.test(clause)) withVerb = f;
+      });
+      if (verbOnly) return withVerb ? withVerb.v : null;
+      return (withVerb || monthly) ? (withVerb || monthly).v : null;
+    }
     /* Total mensual declarado hoy (M0 Q0): la última cifra mensual de
        la cláusula de hoy («cayeron de $30.000.000 a $18.000.000 al
        mes»). Una aclaración resuelta del total manda sobre lo extraído.
@@ -7725,22 +7984,20 @@
         if (rec.key !== "ingresos-fuentes-vs-total") continue;
         if (rec.status === "resolved" && rec.corrected && rec.corrected.ingresoTotal && typeof rec.corrected.ingresoTotal.v === "number") return rec.corrected.ingresoTotal.v;
       }
-      var t = combinedAnswer("M0", 0);
-      if (!String(t || "").trim()) return null;
-      var figs = moneyFigures(t);
-      var monthly = null;
-      figs.forEach(function (f, k) {
-        /* v17.34 (WS1) · F1: el total de C0 Q0 es la última cifra con la
-           mensualidad pegada a ella (misma cláusula), que no sea meta ni
-           total de periodo: «cayeron de $30.000.000 a $18.000.000 al mes»
-           sigue dando $18.000.000, y un precio con el «al mes» del
-           volumen vecino ya no se lee como total. */
-        if (!monthlyAttachedToFigure(t, f, figs, k)) return;
-        var clause = figureClause(t, f.i, f.len || 0);
-        if (isGoalFramedFigure(clause) || figureIsPeriodTotal(clause)) return;
-        monthly = f;
-      });
-      return monthly ? monthly.v : null;
+      /* v17.36 (WS5) · El total mensual puede declararse en cualquier
+         pregunta que lo enuncie (C0 P7, C0 P5, C1 P7, C6 P1, C3 P6,
+         C10 P2, C12 P1, C14 P2, C5 P2/P4), no solo en C0 Q1: se
+         recorren esas preguntas en orden de prioridad, con C0 Q1 como
+         primera fuente. Las preguntas que también enuncian otras cifras
+         mensuales (costos fijos en C10 P2, la alternativa en C0 P5, las
+         fuentes en C1 P7/C6 P1) solo valen con verbo de total, para que
+         una cifra vecina nunca se lea como el total de ventas. */
+      var cands = [["M0", 0, false], ["M0", 6, true], ["M0", 4, true], ["M1", 6, true], ["M6", 0, true], ["M3", 5, true], ["M10", 1, true], ["M12", 0, true], ["M14", 1, true], ["M5", 1, true], ["M5", 3, true]];
+      for (var c = 0; c < cands.length; c++) {
+        var v = monthlyTotalFromText(combinedAnswer(cands[c][0], cands[c][1]), cands[c][2]);
+        if (v != null) return v;
+      }
+      return null;
     }
     /* Diferencia entre fuentes y total, con tolerancia: más de
        $50.000 o del 1% del declarado. */
@@ -7784,6 +8041,39 @@
       if (key === "costo-mayor-precio") return ["M0", "M6", "M10"];
       if (key === "neto-mayor-precio") return ["M0", "M6"];
       return ["M0", "M6"];
+    }
+    /* v17.36 (WS1) · F1: ancla de una aclaración resuelta. Un registro
+       de contradicción es global por clave, pero la aclaración se dio
+       en UN chat: la burbuja se dibuja solo ahí, nunca en todos los
+       módulos de contradictionMods ni en cada visita posterior. Los
+       registros de antes de este arreglo no tienen ancla: se muestran
+       solo en el primer módulo de su clave, no en todos. */
+    function clarificationAnchorModule(rec) {
+      if (rec && rec.resolvedModule) return rec.resolvedModule;
+      var mods = contradictionMods(rec ? rec.key : null);
+      return (mods && mods.length) ? mods[0] : "M0";
+    }
+    function stampClarificationRecord(rec, mid) {
+      if (!rec) return;
+      var m = mid || null;
+      if (!m) { try { m = (typeof ui !== "undefined" && ui.module) || null; } catch (e) { m = null; } }
+      if (m) rec.resolvedModule = m;
+      else if (!rec.resolvedModule) rec.resolvedModule = clarificationAnchorModule(rec);
+    }
+    /* Etiqueta corta de la clave, para citar una aclaración por
+       referencia en el Plan sin repetir su texto entero. */
+    function clarificationKeyLabel(key) {
+      if (!key) return "Aclaración";
+      if (key === "ingresos-fuentes-vs-total") return "Ingresos";
+      if (key === "cero-ventas-corregido") return "Ventas";
+      if (key === RETO_CORRECTION_KEY || key === RETO_USE_KEY) return "Retar";
+      if (key === "precio-aclarado") return "Precio";
+      if (key === "costo-mayor-precio") return "Precio y costo";
+      if (key === "neto-mayor-precio") return "Precio y neto";
+      if (key === "precio-5x-alternativa") return "Precio frente a la alternativa";
+      if (key.indexOf("unidad-") === 0) return "Unidades de las cifras";
+      if (key.indexOf("cac-") === 0) return "Costo de adquirir un cliente";
+      return "Aclaración";
     }
     /* Las cuatro cifras que se comparan, cada una con su unidad. El
        precio cobrado sale de C6 Q1 (precio primero, costo después) o
@@ -7905,6 +8195,62 @@
       return picked;
     }
 
+    /* v17.36 (WS1) · F1-B: la unidad del precio propio, tal como el
+       dueño la declaró en sus respuestas (C0 Q5, luego C6 Q2). Sin
+       cifra etiquetada como propia con unidad, el valor por defecto
+       sigue siendo «por venta». */
+    function ownPriceDeclaredUnit() {
+      var own = null;
+      try { own = ownPrice(); } catch (e) { own = null; }
+      if (own == null) return "por venta";
+      var texts = [combinedAnswer("M0", 5), combinedAnswer("M6", 1)];
+      for (var ti = 0; ti < texts.length; ti++) {
+        var figs = moneyFigures(texts[ti] || "");
+        for (var k = 0; k < figs.length; k++) {
+          if (figs[k].v === own && figs[k].label === "propio" && figs[k].unit && figs[k].unit !== "desconocida") return figs[k].unit;
+        }
+      }
+      return "por venta";
+    }
+    /* ¿Esta cifra es el precio de una sola unidad suelta (una clase,
+       una sesión, un pan) y no una tarifa? Se mira solo su propio
+       tramo (entre las cifras vecinas): el «al mes» de la cifra vecina
+       no convierte una clase suelta en mensualidad, y la marca de la
+       cifra vecina no contamina a esta. */
+    function isSingleUnitFigure(text, f, figs, k) {
+      var s = String(text || "");
+      var prevEnd = (k > 0 && figs) ? figs[k - 1].i + (figs[k - 1].len || 0) : 0;
+      var nextStart = (figs && k + 1 < figs.length) ? figs[k + 1].i : s.length;
+      var seg = s.slice(prevEnd, nextStart);
+      return /\b((una?|la)\s+(sola\s+)?(clase|sesi[oó]n|pan|arepa|vela|prenda|unidad|pieza|entrada|consulta|visita)|(clase|sesi[oó]n)\s+suelta|por\s+(clase|sesi[oó]n|unidad|venta|servicio|plato|taza|noche|visita|consulta|prenda|pieza|pan|arepa|vela))\b/i.test(seg);
+    }
+    /* v17.36 (WS1) · F1-B: la alternativa se compara POR UNIDAD con el
+       precio propio — alternativa mensual contra precio mensual,
+       alternativa por venta contra precio por venta. Un precio de una
+       sola clase nunca se toma como alternativa mensual: si el precio
+       propio es mensual y la única alternativa con esa unidad es una
+       clase suelta (o no hay alternativa mensual), no hay alternativa
+       que comparar, en vez de comparar contra la clase suelta. Una
+       alternativa sin unidad clara sí se devuelve, para que la
+       aclaración de unidad pregunte por ella. */
+    function pickAlternativeFigure(text) {
+      var figs = moneyFigures(text || "");
+      var ownUnit = ownPriceDeclaredUnit();
+      var i, f;
+      for (i = 0; i < figs.length; i++) {
+        f = figs[i];
+        if (f.label !== "alternativa" || f.unit !== ownUnit) continue;
+        if (ownUnit === "mensual" && isSingleUnitFigure(text, f, figs, i)) continue;
+        return f;
+      }
+      for (i = 0; i < figs.length; i++) {
+        f = figs[i];
+        if (f.label !== "alternativa" || f.unit !== "desconocida") continue;
+        if (ownUnit === "mensual" && isSingleUnitFigure(text, f, figs, i)) continue;
+        return f;
+      }
+      return null;
+    }
     function contradictionFigures() {
       var figs = {};
       /* v17.32 (WS2) · El precio propio etiquetado (ownPrice) manda
@@ -7921,7 +8267,12 @@
       figs.costo = totalUnitCostFromText(combinedAnswer("M10", 0));
       var m0q7 = combinedAnswer("M0", 7);
       figs.neto = pickNetFigure(moneyFigures(m0q7), "por venta", m0q7);
-      figs.alternativa = pickFigure(moneyFigures(m05t), "alternativa", "por venta", m05t);
+      figs.alternativa = pickAlternativeFigure(m05t); /* v17.36 (WS1) · F1-B: la alternativa se elige por unidad (ver pickAlternativeFigure): un precio de una sola clase nunca es la alternativa mensual. */
+      /* La alternativa mensual también puede vivir en C0 Q5 (la
+         respuesta de frecuencia: «gasta $70.000 al mes en la
+         alternativa»), cuando C0 Q6 solo trae la clase suelta: mismo
+         criterio por unidad, nunca la clase suelta como mensual. */
+      if (!figs.alternativa) figs.alternativa = pickAlternativeFigure(combinedAnswer("M0", 4));
       figs.cac = extractCacFigures();
       var list = (state && state.contradictions) || [];
       list.forEach(function (rec) {
@@ -8568,6 +8919,7 @@
         state.contradictions.push(existing);
       }
       existing.figures = contradictionFiguresSnapshot();
+      stampClarificationRecord(existing);
     }
     /* La sección de mercado ya no usa referencias genéricas por sector:
        solo cifras del usuario con su fuente declarada (ver marketLines).
@@ -9211,6 +9563,59 @@
       if (contentAt && contentAt >= tAt) return false;
       return true;
     }
+    /* v17.36 (WS6) · (h): lápidas de «Rehacer componente», una por módulo.
+       Una lápida dice «este módulo se borró a propósito en esta fecha, con
+       este número de respuestas»: la fusión la honra — las respuestas del
+       otro lado con fecha igual o anterior a la lápida (o sin fecha: una
+       respuesta real siempre lleva fecha desde v17.14) no resucitan, y las
+       re-escritas después de la lápida sí sobreviven. Las ediciones
+       ordinarias no tienen lápida y la fusión sin pérdida no cambia. */
+    function redoTombstonesOf(proj) { return (proj && proj.redoTombstones && typeof proj.redoTombstones === "object") ? proj.redoTombstones : {}; }
+    function newestRedoTombstone(a, b, mid) {
+      var ta = redoTombstonesOf(a)[mid] || null, tb = redoTombstonesOf(b)[mid] || null;
+      if (!ta) return tb; if (!tb) return ta;
+      return (String(tb.at || "") > String(ta.at || "")) ? tb : ta;
+    }
+    function mergeRedoTombstones(a, b) {
+      var out = {};
+      [a, b].forEach(function (p) {
+        var ts = redoTombstonesOf(p);
+        Object.keys(ts).forEach(function (mid) {
+          var cur = out[mid];
+          if (!cur || String(ts[mid].at || "") > String(cur.at || "")) out[mid] = JSON.parse(JSON.stringify(ts[mid]));
+        });
+      });
+      return out;
+    }
+    function answerAtOf(proj, mid, qi) { var mm = proj && proj.answerMeta && proj.answerMeta[mid + ":" + qi]; return (mm && typeof mm.at === "string") ? mm.at : ""; }
+    /* Respuestas que una lápida de rehacer borra de verdad, contadas para
+       eximir a la guarda de no-pérdida: las de la otra copia que la fusión
+       dejó vacías en un módulo con lápida. */
+    function redoDroppedCounts(mergedProj, otherProj) {
+      var answers = 0, completed = 0;
+      if (!mergedProj || !otherProj) return { answers: 0, completed: 0 };
+      var tombs = redoTombstonesOf(mergedProj);
+      Object.keys(tombs).forEach(function (mid) {
+        var T = tombs[mid]; if (!T || !T.at) return;
+        var m = mod(mid); if (!m) return;
+        var dropped = 0;
+        for (var qi = 0; qi < m.questions.length; qi++) {
+          var ot = String((otherProj.answers && otherProj.answers[mid] && otherProj.answers[mid][qi]) || "").trim();
+          var mt = String((mergedProj.answers && mergedProj.answers[mid] && mergedProj.answers[mid][qi]) || "").trim();
+          if (ot && !mt) {
+            var at = answerAtOf(otherProj, mid, qi);
+            if (!at || at <= T.at) { dropped++; answers++; }
+          }
+        }
+        if (dropped > 0) {
+          var cloudDone = false, mergedDone = false;
+          try { cloudDone = isModuleComplete(otherProj, mid); } catch (e) {}
+          try { mergedDone = isModuleComplete(mergedProj, mid); } catch (e) {}
+          if (cloudDone && !mergedDone) completed++;
+        }
+      });
+      return { answers: answers, completed: completed };
+    }
     function projectHasContent(p) {
       if (!p) return false;
       if (projectContentScore(p).answered > 0) return true;
@@ -9339,20 +9744,30 @@
       MODULES.forEach(function (m) {
         if (!Array.isArray(out.answers[m.id])) out.answers[m.id] = [];
         var arrA = a.answers[m.id] || [], arrB = b.answers[m.id] || [];
+        var redoT = newestRedoTombstone(a, b, m.id);
         for (var qi = 0; qi < m.questions.length; qi++) {
           var aT = (arrA[qi] || "").trim(), bT = (arrB[qi] || "").trim();
           var mgStage = (a.project && a.project.stage) || (b.project && b.project.stage) || "";
           var mgSize = (a.project && a.project.size) || (b.project && b.project.size) || "";
-          var r = mergeAnswer(arrA[qi] || "", arrB[qi] || "",
-            (a.answerMeta && a.answerMeta[m.id + ":" + qi] && a.answerMeta[m.id + ":" + qi].at) || null,
-            (b.answerMeta && b.answerMeta[m.id + ":" + qi] && b.answerMeta[m.id + ":" + qi].at) || null,
+          var aAns = arrA[qi] || "", bAns = arrB[qi] || "";
+          var aAtM = (a.answerMeta && a.answerMeta[m.id + ":" + qi] && a.answerMeta[m.id + ":" + qi].at) || null;
+          var bAtM = (b.answerMeta && b.answerMeta[m.id + ":" + qi] && b.answerMeta[m.id + ":" + qi].at) || null;
+          /* v17.36 (WS6) · (h): con lápida de rehacer en este módulo, las
+             respuestas anteriores a la lápida no entran en la fusión: el
+             borrado a propósito vence a la copia de la nube. Una respuesta
+             escrita DESPUÉS de la lápida (re-respuesta) sí entra. */
+          if (redoT) {
+            if (aAns && String(aAns).trim() && (!aAtM || aAtM <= redoT.at)) aAns = "";
+            if (bAns && String(bAns).trim() && (!bAtM || bAtM <= redoT.at)) bAns = "";
+          }
+          var r = mergeAnswer(aAns, bAns, aAtM, bAtM,
             questionFor(m, qi, mgStage, mgSize), mgStage, m.id + ":" + qi);
           var key = m.id + ":" + qi;
           if (r.text) {
             if (aT && r.text.trim() === aT) fromA++;
             else if (bT && r.text.trim() === bT) fromB++;
           }
-          if (r.text.trim() !== aT) { changed = true; if (r.side === "b") { adoptedFromB = true; adoptedAnsB = true; } }
+          if (r.text.trim() !== aT) { changed = true; if (r.side === "b" && r.text.trim()) { adoptedFromB = true; adoptedAnsB = true; } }
           out.answers[m.id][qi] = r.text;
           /* v17.25 · savedAt NUNCA decide un empate: es la fecha de
              escritura de la copia, no de la respuesta, y cambia en cada
@@ -9373,12 +9788,39 @@
           } else delete out.answerMeta[key];
         }
       });
+      /* v17.36 (WS6) · (h): las lápidas de rehacer se fusionan (gana la más reciente por módulo) y viajan con el proyecto. */
+      var rtMerged = mergeRedoTombstones(a, b);
+      if (Object.keys(rtMerged).length) {
+        if (stableStringify(rtMerged) !== stableStringify(a.redoTombstones || {})) { changed = true; adoptedFromB = true; }
+        out.redoTombstones = rtMerged;
+      }
       var fuMerged = mergeFollowups(a.followups, b.followups, out.answers);
       if (stableStringify(fuMerged) !== stableStringify(a.followups || {})) {
         changed = true; adoptedFromB = true;
         if (followupsAdoptedFromB(a.followups, b.followups, fuMerged)) adoptedAnsB = true;
       }
       out.followups = fuMerged;
+      /* v17.36 (WS6) · (h): los pasos de seguimiento contestados antes de
+         la lápida del módulo no resucitan; los pendientes sin contestar se
+         regeneran al responder de nuevo. */
+      (function () {
+        var before = stableStringify(out.followups || {});
+        Object.keys(rtMerged).forEach(function (mid2) {
+          var T2 = rtMerged[mid2]; if (!T2 || !T2.at || !out.followups) return;
+          var fu2 = out.followups[mid2]; if (!fu2) return;
+          Object.keys(fu2).forEach(function (qi2) {
+            var rec2 = fu2[qi2]; if (!rec2) return;
+            if (Array.isArray(rec2.steps)) {
+              rec2.steps = rec2.steps.filter(function (st) { return st && st.at && st.at > T2.at; });
+              if (!rec2.steps.length) delete fu2[qi2];
+            } else if (rec2.answer) {
+              if (!rec2.at || rec2.at <= T2.at) delete fu2[qi2];
+            }
+          });
+          if (!Object.keys(fu2).length) delete out.followups[mid2];
+        });
+        if (stableStringify(out.followups || {}) !== before) changed = true;
+      })();
       /* v17.32 (WS6) · El registro de confirmaciones sobrevive a la
          fusión: unión por clave (módulo, objetivo); en conflicto
          gana el lado A. Sin esto, fusionar con una copia sin registro
@@ -9426,6 +9868,15 @@
       });
       var contraArr = Object.keys(contraMerged).map(function (k) { return contraMerged[k]; });
       if (stableStringify(contraArr) !== stableStringify(a.contradictions || [])) { changed = true; adoptedFromB = true; }
+      /* v17.36 (WS6) · (h): una aclaración resuelta EN el módulo rehecho
+         (ancla resolvedModule) y anterior a su lápida no resucita: su
+         evidencia se borró con el módulo. */
+      contraArr = contraArr.filter(function (rec) {
+        if (!rec || !rec.resolvedModule) return true;
+        var T3 = rtMerged[rec.resolvedModule]; if (!T3 || !T3.at) return true;
+        var rat = rec.resolvedAt || rec.at || "";
+        return rat ? rat > T3.at : false;
+      });
       out.contradictions = contraArr;
       var notesMerged = mergeCanvasNotes(a.canvasNotes, b.canvasNotes);
       if (stableStringify(notesMerged) !== stableStringify(a.canvasNotes || {})) { changed = true; adoptedFromB = true; }
@@ -9523,6 +9974,15 @@
         changed = true;
         if (attMerged.some(function (s) { return attB.some(function (x) { return x.q === s.q && x.at === s.at; }); })) adoptedFromB = true;
       }
+      /* v17.36 (WS6) · (h): la investigación nace de C0: al rehacer C0,
+         las búsquedas anteriores a su lápida no resucitan. */
+      (function () {
+        var rtM0 = rtMerged["M0"];
+        if (rtM0 && rtM0.at && out.research) {
+          out.research.searches = (out.research.searches || []).filter(function (ss) { return ss && ss.at && ss.at > rtM0.at; });
+          out.research.attempts = (out.research.attempts || []).filter(function (ss) { return ss && ss.at && ss.at > rtM0.at; });
+        }
+      })();
       var ta = a.task13 || null, tb = b.task13 || null;
       if (tb && tb.report && (!ta || !ta.report || (tb.reportedAt || "") > (ta.reportedAt || ""))) { out.task13 = JSON.parse(JSON.stringify(tb)); changed = true; adoptedFromB = true; }
       else if (tb && tb.text && (!ta || !ta.text)) { out.task13 = JSON.parse(JSON.stringify(tb)); changed = true; adoptedFromB = true; }
@@ -9551,6 +10011,16 @@
       });
       if (stableStringify(cn) !== stableStringify(a.coachNotes || {})) { changed = true; adoptedFromB = true; }
       out.coachNotes = cn;
+      /* v17.36 (WS6) · (h): las notas del Coach del módulo rehecho
+         anteriores a su lápida no resucitan. */
+      Object.keys(rtMerged).forEach(function (mid3) {
+        var T4 = rtMerged[mid3]; if (!T4 || !T4.at) return;
+        Object.keys(out.coachNotes || {}).forEach(function (k) {
+          if (k.indexOf(mid3 + ":") !== 0) return;
+          var kept = (out.coachNotes[k] || []).filter(function (nn) { return nn && nn.at && nn.at > T4.at; });
+          if (kept.length) out.coachNotes[k] = kept; else delete out.coachNotes[k];
+        });
+      });
       var il = [];
       [a.indicatorLog, b.indicatorLog].forEach(function (arr) {
         (arr || []).forEach(function (it) {
@@ -9901,7 +10371,28 @@
       n.style.display = "";
       n.textContent = mode === "cloud" ? SAVE_NOTE_CLOUD : SAVE_NOTE_LOCAL;
     }
+    /* v17.36 (WS4) · F12 avisos: la tarjeta de bienvenida prometía
+       guardado + sincronización SIEMPRE, mientras #saveStatus decía
+       que el navegador no permite el guardado automático. Una sola
+       fuente de verdad: la copia de bienvenida sigue el mismo estado
+       que #saveStatus — sin guardado, el aviso de exportar; con
+       guardado local, solo el navegador; con nube al día, la
+       sincronización. El texto estático por defecto es el local (sin
+       promesa de nube); la nube solo se promete cuando se confirma. */
+    var WELCOME_SAVE_NO_STORAGE = "Este navegador no permite el guardado automático: exporta tu proyecto para no perderlo.";
+    var WELCOME_SAVE_LOCAL = "Tu cuenta es personal: tu proyecto se guarda en este navegador. Además puedes exportar tu proyecto en un archivo como respaldo o para compartirlo.";
+    var WELCOME_SAVE_CLOUD = "Tu cuenta es personal: tu proyecto se guarda en este navegador y se sincroniza con tu cuenta, para que lo retomes desde cualquier computador. Además puedes exportar tu proyecto en un archivo como respaldo o para compartirlo.";
+    function syncWelcomeSaveCopy() {
+      var el = $("welcomeSaveCopy");
+      if (!el) return;
+      if (!storageOK) { el.textContent = WELCOME_SAVE_NO_STORAGE; return; }
+      var enNube = currentUid && currentUid !== "demo";
+      var cs = (typeof window.__cloudStatus === "function") ? window.__cloudStatus() : "unknown";
+      if (enNube && cs === "ok") el.textContent = WELCOME_SAVE_CLOUD;
+      else el.textContent = WELCOME_SAVE_LOCAL;
+    }
     function renderSaveStatusInner() {
+      syncWelcomeSaveCopy();
       var el = $("saveStatus");
       if (!el) return;
       if (!state) { el.textContent = ""; setSaveNote("local"); return; }
@@ -10396,6 +10887,18 @@
       persist();
       return t;
     }
+    /* v17.36 (WS6) · (g): la tarea es un texto vivo mientras no se haya
+       reportado el resultado: una edición de C13 (brújula, acción, hito)
+       la reconstruye con las respuestas de hoy, con la misma fecha
+       límite. Después de reportado el resultado, nunca se reescribe. */
+    function refreshTask13Text() {
+      var t = state && state.task13;
+      if (!t || !t.text || taskReported()) return false;
+      var nt = buildTask13Text(fmtTask13Due(t.due));
+      if (nt === t.text) return false;
+      t.text = nt;
+      return true;
+    }
     /* v17.26 (WS5) · UN solo predicado de «cerrado», parametrizado por
        proyecto: la cabecera, el Resumen, la lista de proyectos y los
        Informes cuentan lo mismo. moduleComplete sigue siendo solo
@@ -10499,6 +11002,7 @@
     }
     function paymentStatusHtml() {
       if (!state) return "";
+      if (window.__isAdmin) return ""; /* v17.36 (WS6) · (i): el administrador nunca ve el aviso de pago, como tampoco le aplica el gate (paymentGateApplies). */
       if (demoMode) return '<div class="na-note"><strong>Modo demo:</strong> estás probando sin cuenta y sin pago; tu trabajo queda solo en este navegador. Para guardar tu diagnóstico en la nube y activarlo por un año, crea tu cuenta.</div>';
       var p = ensurePayment();
       var dl = paymentDaysLeft();
@@ -11435,7 +11939,9 @@
          alcaldía», «María Fernanda, 34 años, enfermera del hospital». */
       if (/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?\s*,[^.!?;]{0,45}?\b(vecin[oa]|emplead[oa]|client[ea]|dueñ[oa]|enfermer[oa]|comerciante|tender[oa]|profesor[a]?|m[eé]dic[oa]|abogad[oa]|cocinero|cociner[oa]|mesero|mesera|pescador[a]?|conductor[a]?)\b/.test(t)) return true;
       /* Nombre + «me dijo/pidió/confirmó/contó»: «Rosa me dijo». */
-      if (/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+me\s+(dijo|pidió|confirmó|contó|preguntó|escribió)\b/.test(t)) return true;
+      /* v17.36 (WS6) · D1(b): el cierre no es «\b» (ASCII: tras «contó»
+         nunca hay límite de palabra) sino «no sigue letra». */
+      if (/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+me\s+(dijo|pidió|confirmó|contó|preguntó|escribió)(?![a-záéíóúñ])/.test(t)) return true;
       /* Cliente con nombre: «un cliente con nombre: Carlos». */
       if (/\bclient[ea]\s+con\s+nombre\s*:\s*[A-ZÁÉÍÓÚÑ]/.test(t)) return true;
       return false;
@@ -11452,10 +11958,38 @@
       }
       return false;
     }
+    /* v17.36 (WS6) · D1(b): un caso contado con discurso citado y sujeto
+       de persona («una vecina me dijo…», «un cliente de siempre me contó…»,
+       «una alumna me contó que su mamá…») ES un caso real aunque no lleve
+       nombre propio ni «por ejemplo» ni cifra de dinero: lo que lo hace
+       caso es la persona concreta que dice algo concreto, no el nombre.
+       La negación no es un caso: «ninguna alumna me dijo nada» o «no me
+       dijo nada» se borra antes de buscar el verbo de habla. La negación
+       va pegada al verbo (12 caracteres como mucho: «ninguna alumna me
+       dijo»): un «no» lejano («no había cupo para su clase: me dijo»)
+       niega otra cosa, no el habla, y no borra el caso.
+       El cierre del verbo NO es «\b»: «\b» en JavaScript es ASCII, así
+       que tras «contó/pidió/confirmó/preguntó/escribió/avisó» (terminan
+       en ó, que no es carácter de palabra) nunca hay límite — solo
+       «dijo» llegaba a contar. El cierre es «no sigue letra». */
+    function hasQuotedPersonCase(text) {
+      var t = String(text || "").replace(/\b(no|nunca|jam[aá]s|nadie|ning[uú]n(?:a|o|os|as)?)\b[^.!?;,]{0,12}?\b(dijo|contó|pidió|confirmó|preguntó|escribió|comentó|avisó)(?![a-záéíóúñ])/gi, "");
+      var persons = "(vecin[oa]s?|alumn[oa]s?|client[ea]s?|señor[a]?s?|señora|mam[áa]|madre|pap[áa]|padre|herman[oa]s?|tender[oa]s?|dueñ[oa]s?|emplead[oa]s?|profesor[a]?s?|comprador[a]?s?|usuari[oa]s?|familia|espos[oa])";
+      var speech = "(dijo|contó|pidió|confirmó|preguntó|escribió|comentó|avisó)";
+      if (new RegExp("\\b(un[oa]?|el|la|los|las|mi|su)\\s+" + persons + "\\b[^.!?;]{0,40}?\\b" + speech + "(?![a-záéíóúñ])", "i").test(t)) return true;
+      if (new RegExp("\\b" + persons + "\\b[^.!?;]{0,40}?\\bme\\s+" + speech + "(?![a-záéíóúñ])", "i").test(t)) return true;
+      if (new RegExp("\\b" + persons + "\\b[^.!?;]{0,40}?\\ble\\s+" + speech + "(?![a-záéíóúñ])", "i").test(t)) return true;
+      /* Nombre propio + verbo de habla en la misma frase, aunque no vayan
+         pegados («Ana, hace 2 semanas, llegó y no había cupo: me dijo que
+         volvería»): la persona es concreta y lo que dice también. */
+      if (/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\b[^.!?;]{0,80}?\bme\s+(dijo|contó|pidió|confirmó|preguntó|escribió)(?![a-záéíóúñ])/.test(t)) return true;
+      return false;
+    }
     function hasExample(text) {
       var t = stripNegatedCase(String(text || ""));
       if (/(por ejemplo|ejemplo|un caso|el caso)/i.test(t)) return true;
       if (hasNamedCase(t)) return true;
+      if (hasQuotedPersonCase(t)) return true;
       /* v17.32 (WS4b) · G8: las palabras sueltas («cliente», «cuando»,
          «la semana»…) solo cuentan como ejemplo si la respuesta trae
          además una cifra concreta: «Mi cliente viene cada semana cuando
@@ -11708,11 +12242,13 @@
          dinero al lado — «mi cliente cada semana» sin más no es un
          ejemplo. */
       var affT = stripNegatedCase(t);
-      var hasExample = /(por ejemplo|ejemplo|un caso|el caso)/i.test(affT) || hasNamedCase(affT) ||
-        (/(cliente|cuando|vez que|la vez|pasada|pasado|ayer|la semana|el mes)/i.test(affT) && (hasNamedCase(affT) || moneySpans(t).some(function (sp) { return sp.v > 0; })));
+      /* v17.36 (WS6) · D1(b): la misma regla que hasExample (incluido el
+         conteo positivo de clientes): antes esta copia en línea no tenía
+         ese disyunto y el mismo caso valía en exigeGap y no aquí. */
+      var hasExEv = hasExample(affT);
       var len = t.trim().length;
-      var evidencePresent = hasNum || hasDate || hasSource || hasExample;
-      var askedMet = (!needs.number || hasNum) && (!needs.date || hasDate) && (!needs.example || hasExample);
+      var evidencePresent = hasNum || hasDate || hasSource || hasExEv;
+      var askedMet = (!needs.number || hasNum) && (!needs.date || hasDate) && (!needs.example || hasExEv);
       var uncertain = isUncertain(t);
       var label;
       /* Un «no sé» solo deja la respuesta como pendiente cuando no hay
@@ -11805,7 +12341,7 @@
       var m = mod(mid); if (!m) return null;
       var q = questionFor(m, qi);
       var a = assessEvidence(text, q, currentStage());
-      if (a.label === "Fuerte" && !evidenceFoundText(text, q)) a = { label: "Por validar", miss: a.miss };
+      if (a.label === "Fuerte" && !hasFoundEvidence(text, q)) a = { label: "Por validar", miss: a.miss };
       return { label: a.label, miss: a.miss };
     }
     function solidityFor(mid, qi, textOverride) {
@@ -11843,26 +12379,54 @@
       t.forEach(function (w) { if (w.length >= 3 && !WS6_STOP[w] && !seen[w]) { seen[w] = 1; list.push(w); } });
       return list;
     }
-    /* Solape de vocabulario entre dos textos: palabras comunes
-       sobre el vocabulario mayor. 1 es el mismo texto. */
+    /* Solape de vocabulario entre dos textos: palabras comunes sobre el
+       vocabulario MENOR (contención). 1 es el mismo texto, y una frase
+       corta repetida tal cual dentro de una respuesta larga también es 1:
+       antes se dividía por el vocabulario mayor y la repetición corta se
+       diluía. */
     function ws6Overlap(a, b) {
       var A = ws6Tokens(a), B = ws6Tokens(b);
       if (!A.length || !B.length) return 0;
       var inB = {}; B.forEach(function (w) { inB[w] = 1; });
       var inter = 0; A.forEach(function (w) { if (inB[w]) inter++; });
-      return inter / Math.max(A.length, B.length);
+      return inter / Math.min(A.length, B.length);
+    }
+    /* El solape entre dos respuestas solo significa algo cuando AMBOS
+       lados tienen vocabulario suficiente: una respuesta de 2 palabras
+       («Tengo 12 alumnas») está «contenida» en cualquier texto que las
+       mencione, y eso marcaba como «tu mercado» una versión de 2 minutos
+       con datos concretos. Mínimo 4 tokens por lado, como el piso de
+       repetición. La repetición literal (ws6RepeatedSource) tiene sus
+       propios pisos y sigue usando ws6Overlap sin puerta. */
+    function ws6OverlapGated(a, b) {
+      if (ws6Tokens(a).length < 4 || ws6Tokens(b).length < 4) return 0;
+      return ws6Overlap(a, b);
+    }
+    /* ¿Los tokens del texto corto aparecen, en orden, dentro del largo?
+       Una repetición literal con una coletilla («…y eso es todo») sigue
+       siendo repetición aunque el solape por vocabulario baje. */
+    function ws6TokenSubsequence(a, b) {
+      var A = ws6Tokens(a), B = ws6Tokens(b);
+      if (!A.length || !B.length) return false;
+      var short = A.length <= B.length ? A : B, long = A.length <= B.length ? B : A;
+      if (short.length < 4) return false;
+      var j = 0;
+      for (var i = 0; i < long.length && j < short.length; i++) if (long[i] === short[j]) j++;
+      return j === short.length;
     }
     /* ¿Esta respuesta repite una respuesta ANTERIOR (otro
        componente o la misma, pregunta anterior)? Umbral alto
-       (0,8) y mínimo de 8 palabras de contenido y 60 caracteres:
-       las respuestas cortas o las que solo comparten el tema no
-       son repetición. La primera aparición es el original y no se
-       marca; la repetición cita la pregunta original. */
+       (0,8 de contención) y mínimo de 4 palabras de contenido y 20
+       caracteres: una repetición literal de una frase corta sigue
+       siendo repetición — antes los pisos de 60 caracteres / 8
+       tokens dejaban fuera «Vendo pan artesanal grande en Santa
+       Marta» (~41 caracteres). La primera aparición es el original
+       y no se marca; la repetición cita la pregunta original. */
     function ws6RepeatedSource(mid, qi) {
       if (!state) return null;
       var mine = mainAnswerText(mid, qi);
-      if (!mine || mine.trim().length < 60) return null;
-      if (ws6Tokens(mine).length < 8) return null;
+      if (!mine || mine.trim().length < 20) return null;
+      if (ws6Tokens(mine).length < 4) return null;
       var order = {}; MODULES.forEach(function (m, i) { order[m.id] = i; });
       var best = null;
       MODULES.forEach(function (m) {
@@ -11871,10 +12435,11 @@
           if (!other || !other.trim()) return;
           if (m.id === mid && oj === qi) return;
           if (order[m.id] > order[mid] || (m.id === mid && oj > qi)) return;
-          if (other.trim().length < 60) return;
-          if (ws6Tokens(other).length < 8) return;
+          if (other.trim().length < 20) return;
+          if (ws6Tokens(other).length < 4) return;
           var ov = ws6Overlap(mine, other);
-          if (ov >= 0.8 && (!best || ov > best.overlap)) best = { mid: m.id, qi: oj, overlap: ov };
+          var sub = ws6TokenSubsequence(mine, other);
+          if ((ov >= 0.8 || sub) && (!best || ov > best.overlap)) best = { mid: m.id, qi: oj, overlap: ov };
         });
       });
       return best;
@@ -11931,9 +12496,83 @@
     function ws6HasThreeDecisions(text) {
       return ws6DecisionLabels(text) >= 2 && ws6SentenceCount(text) >= 3;
     }
+    /* v17.36 (WS6) · D1(e): ¿la respuesta trae datos concretos (cifras
+       de dinero, conteos de personas/ventas, fecha)? Una versión con
+       cifras no es un texto general vacío aunque no use las palabras
+       clave del pitch. */
+    function ws6HasConcreteData(text) {
+      var t = String(text || "");
+      var figs = [];
+      try { figs = moneySpans(t); } catch (e) { figs = []; }
+      var counts = (t.match(/\b\d[\d.,]*\s*(alumnas?|alumnos?|clientes?|ventas|membresías|membresias|personas?|familias?|unidades|pedidos|meses)\b/gi) || []).length;
+      if (figs.length >= 2) return true;
+      if (figs.length >= 1 && counts >= 1) return true;
+      if (figs.length >= 1 && /\b\d{1,2}\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\s+de\s+\d{4}/i.test(t)) return true;
+      return false;
+    }
+    /* v17.36 (WS6) · D1(d): el pedido de una respuesta («4 panes grandes,
+       $48.000, Doña Marta»): solo se lee la frase del pedido («pedido»,
+       «repite», «sin cambios»); las cifras de tracción de otras frases no
+       son el pedido. */
+    function ws6OrderClause(text) {
+      var parts = String(text || "").split(/[.!?\n]+/).filter(function (s) { return s.trim().length > 0; });
+      var hit = parts.filter(function (s) { return /(pedido|repite|sin cambios)/i.test(s); });
+      return hit.length ? hit.join(" ") : String(text || "");
+    }
+    function ws6OrderParts(text) {
+      var t = ws6OrderClause(text);
+      var names = [], m;
+      var re = /\b([Dd]oña|[Dd]on)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+/g;
+      while ((m = re.exec(t)) !== null) names.push(m[0]);
+      var money = [];
+      try { money = moneySpans(t).map(function (sp) { return sp.v; }); } catch (e) { money = []; }
+      var qty = [], rq = /(\d[\d.,]*)\s*(panes|membresías|membresias|alumnas|alumnos|clientes|unidades|clases|sesiones|pedidos)\b/gi;
+      while ((m = rq.exec(t)) !== null) qty.push({ n: parseInt(m[1].replace(/[.,]/g, ""), 10), noun: m[2].toLowerCase() });
+      var prod = null, pm = t.match(/panes?\s+(grandes?|medianos?|integrales?)/i);
+      if (pm) prod = pm[0].toLowerCase();
+      else if (/membres[ií]a/i.test(t)) prod = "membresía";
+      return { names: names, money: money, qty: qty, prod: prod, hasPedidoWord: /pedido/i.test(t) };
+    }
+    function ws6SameSet(a, b) {
+      if (a.length !== b.length) return false;
+      var sa = a.slice().sort(), sb = b.slice().sort();
+      for (var i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return false;
+      return true;
+    }
+    /* v17.36 (WS6) · D1(d): el pedido repetido de C11 P6 (M11 qi5) se
+       compara con el pedido que el dueño ya dio (M11 qi2, el pedido que
+       se pide al final de la presentación; si ahí no hay pedido, M11
+       qi1): mismo producto, misma cantidad, mismo precio y misma
+       persona. Un pedido es tal cuando trae cantidad, o persona +
+       precio, o precio con la palabra «pedido»: una cifra suelta de
+       otra pregunta (p. ej. el precio de una decisión) no es el pedido. */
+    function ws6OrderMismatch() {
+      var main = mainAnswerText("M11", 5);
+      if (!main || !main.trim()) return null;
+      var mp = ws6OrderParts(main);
+      if (!mp.money.length && !mp.qty.length && !mp.names.length) return null;
+      var refs = [2, 1], refQi = -1, refParts = null;
+      for (var i = 0; i < refs.length; i++) {
+        var cand = mainAnswerText("M11", refs[i]) || "";
+        var cp = ws6OrderParts(cand);
+        var isOrder = cp.qty.length > 0 || (cp.names.length > 0 && cp.money.length > 0) || (cp.money.length > 0 && cp.hasPedidoWord);
+        if (isOrder) { refQi = refs[i]; refParts = cp; break; }
+      }
+      if (!refParts) return null;
+      var diffs = [];
+      if (refParts.names.length && mp.names.length && !ws6SameSet(refParts.names, mp.names)) diffs.push("la persona");
+      if (refParts.money.length && mp.money.length && !ws6SameSet(refParts.money, mp.money)) diffs.push("el precio");
+      if (refParts.qty.length && mp.qty.length) {
+        var rq2 = refParts.qty.map(function (q) { return q.n + " " + q.noun; }), mq = mp.qty.map(function (q) { return q.n + " " + q.noun; });
+        if (!ws6SameSet(rq2, mq)) diffs.push("la cantidad");
+      }
+      if (refParts.prod && mp.prod && refParts.prod !== mp.prod) diffs.push("el producto");
+      if (!diffs.length) return null;
+      return { kind: "orderMismatch", refMid: "M11", refQi: refQi, diffs: diffs };
+    }
     /* Señales de calidad de la respuesta PRINCIPAL de una
        pregunta. Devuelve [] cuando no hay nada que señalar.
-       kind: "repeated" | "offtopic" | "unchosen". La evidencia de
+       kind: "repeated" | "offtopic" | "unchosen" | "orderMismatch". La evidencia de
        una repregunta no se juzga aquí: el defecto vivo es la
        respuesta principal repetida o fuera de tema. */
     function ws6QualityFlags(mid, qi) {
@@ -11965,22 +12604,26 @@
          solape por sí solo nunca la marca — solo se marca cuando
          falta la partición en tres (ver ws6HasThreeDecisions). */
       if (mid === "M11") {
+        if (qi === 5) {
+          var ws6Ord = ws6OrderMismatch();
+          if (ws6Ord) out.push(ws6Ord);
+        }
         var pitch = mainAnswerText("M11", 0) || "";
-        if (qi === 1 && pitch && ws6Overlap(main, pitch) >= 0.6) {
+        if (qi === 1 && pitch && ws6OverlapGated(main, pitch) >= 0.6) {
           out.push({ kind: "offtopic", looksLike: "tu presentación", wants: "la evidencia que respalda tu presentación" });
-        } else if (qi === 2 && pitch && ws6Overlap(main, pitch) >= 0.6) {
+        } else if (qi === 2 && pitch && ws6OverlapGated(main, pitch) >= 0.6) {
           out.push({ kind: "offtopic", looksLike: "tu presentación", wants: "tu pedido concreto" });
-        } else if (qi === 3 && pitch && ws6Overlap(main, pitch) >= 0.6 && !ws6HasThreeDecisions(main)) {
+        } else if (qi === 3 && pitch && ws6OverlapGated(main, pitch) >= 0.6 && !ws6HasThreeDecisions(main)) {
           out.push({ kind: "offtopic", looksLike: "tu presentación", wants: "tus tres primeras decisiones" });
         } else if (qi === 6 || qi === 7) {
           var trac = mainAnswerText("M11", 5) || "";
           var market = mainAnswerText("M11", 4) || "";
           var profile = mainAnswerText("M0", 0) || "";
           var want = qi === 6 ? "tu versión de 30 segundos" : "tu versión de 2 minutos";
-          if (trac && ws6Overlap(main, trac) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu tracción", wants: want });
-          else if (market && ws6Overlap(main, market) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu mercado", wants: want });
-          else if (profile && ws6Overlap(main, profile) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu perfil", wants: want });
-          else if (main.trim().length >= 60 && ws6PitchElements(main) === 0) out.push({ kind: "offtopic", looksLike: "un texto general", wants: want });
+          if (trac && ws6OverlapGated(main, trac) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu tracción", wants: want });
+          else if (market && ws6OverlapGated(main, market) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu mercado", wants: want });
+          else if (profile && ws6OverlapGated(main, profile) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu perfil", wants: want });
+          else if (main.trim().length >= 60 && ws6PitchElements(main) === 0 && !ws6HasConcreteData(main)) out.push({ kind: "offtopic", looksLike: "un texto general", wants: want });
         }
       }
       return out;
@@ -11999,6 +12642,7 @@
     function ws6FlagText(f) {
       if (!f) return "";
       if (f.kind === "repeated") return "esta respuesta repite lo que ya me dijiste en " + codeOf(f.refMid) + " Pregunta " + (f.refQi + 1) + ", así que no la cuento como evidencia nueva para esta pregunta";
+      if (f.kind === "orderMismatch") return "el pedido que repites aquí no es el mismo que me diste en " + codeOf(f.refMid) + " Pregunta " + (f.refQi + 1) + ": cambió " + ((f.diffs || ["el pedido"]).join(", ")) + ". Repítelo igual o dime qué cambió";
       if (f.kind === "unchosen") return "esto todavía son tus tres tesis juntas: aún no elegiste una. Elige una sola tesis y defiéndela con tu evidencia";
       if (f.kind === "offtopic") return "esto parece " + f.looksLike + ", no " + f.wants + ": cuéntame " + f.wants + " con tus datos y lo revisamos";
       return "";
@@ -12120,14 +12764,16 @@
     /* Un extracto sin el punto final ni la elipsis del corte: el punto lo
        pone la frase que lo cita, para no dejar «….» ni «..». */
     function okrCleanExcerpt(t, n) { var e = excerptOf(t, n); return String(e || "").replace(/[.…]+$/, "").trim(); }
+    /* v17.36 (WS5) · Plural español correcto, con las mismas reglas
+       que ltvPluralNoun (WS4): «pan» -> «panes» (no «pans»),
+       «recomendación» -> «recomendaciones» (no «recomendacións»),
+       «membresía» -> «membresías», «sesión» -> «sesiones»,
+       «lápiz» -> «lápices». Un sustantivo que ya viene en plural
+       («panes» del volumen) se deja como está. */
     function okrPluralNoun(sg) {
       var s = String(sg || "venta").toLowerCase();
-      if (s === "prenda") return "prendas";
-      if (s === "baño") return "baños";
-      if (s === "servicio") return "servicios";
-      if (s === "venta") return "ventas";
-      if (s === "cliente" || s === "clienta") return "clientes";
-      return s + "s";
+      if (/s$/.test(s)) return s;
+      return ltvPluralNoun(s, 2);
     }
     /* La clientela en femenino o masculino sale de lo que el dueño escribió
        en C6 Q6 («una clienta habitual» / «un cliente habitual»). */
@@ -12156,8 +12802,13 @@
        del equilibrio queda con su meta y su punto de partida
        «pendiente de confirmación». */
     function okrVolumeNow() {
-      var NOUNS = "prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas|alumnos|consultas|noches";
-      var VERBS = "vendo|atiendo|hago|entrego|sirvo|realizo|completo|muevo";
+      /* v17.36 (WS5) · Los sustantivos de unidad del negocio: «panes» y
+         «membresías» (además de «clases», «sesiones», «tazas»…) no
+         estaban en la lista, así que el volumen caía al Retar y un
+         negocio de panes se medía en «clientes». «Tengo» también vale
+         como verbo de volumen («Hoy tengo unas 40 membresías al mes»). */
+      var NOUNS = "prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas|alumnos|consultas|noches|panes|membresías|membresias|clases|sesiones|tazas|platos|piezas";
+      var VERBS = "vendo|atiendo|hago|entrego|sirvo|realizo|completo|muevo|tengo";
       function scanVol(t) {
         if (!t) return null;
         var re = new RegExp("(hoy\\s+)?(" + VERBS + ")\\s+(?:unas?|unos?)?\\s*(\\d[\\d.,]*)\\s*(" + NOUNS + ")\\s*(?:al|por)\\s*mes", "i");
@@ -12170,17 +12821,23 @@
       var a = scanVol(mainAnswerText("M10", 1));
       if (a) { a.src = "C10 Q2"; return a; }
       var q7 = mainAnswerText("M6", 6) || "";
-      var bm = q7.match(/base[^:]{0,60}?:\s*(\d[\d.,]*)\s*(prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas)/i);
+      var bm = q7.match(/base[^:]{0,60}?:\s*(\d[\d.,]*)\s*(prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas|panes|membresías|membresias|clases|sesiones|tazas|platos|piezas)/i);
       if (bm) { var bv = ws6ParseMoneyNum(bm[1]); if (bv != null && bv > 0) return { v: bv, noun: bm[2].toLowerCase(), verb: null, raw: bm[0], src: "C6 Q7" }; }
       var q7b = mainAnswerText("M10", 6) || "";
-      var bm2 = q7b.match(/(?:mes normal|normal)[^:]{0,60}?:\s*(\d[\d.,]*)\s*(prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas)/i);
+      var bm2 = q7b.match(/(?:mes normal|normal)[^:]{0,60}?:\s*(\d[\d.,]*)\s*(prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas|panes|membresías|membresias|clases|sesiones|tazas|platos|piezas)/i);
       if (bm2) { var bv2 = ws6ParseMoneyNum(bm2[1]); if (bv2 != null && bv2 > 0) return { v: bv2, noun: bm2[2].toLowerCase(), verb: null, raw: bm2[0], src: "C10 Q7" }; }
       try {
         var rf = retarFigures();
         var rv = rf && rf.volume;
         if (rv) {
           var rvn = (typeof rv === "number") ? rv : rv.v;
-          if (rvn != null && rvn > 0) return { v: rvn, noun: ((typeof rv === "object" && rv.noun) || "ventas").toLowerCase(), verb: null, raw: "", src: (typeof rv === "object" && rf.volumeSrc) || "" };
+          var rvNoun = ((typeof rv === "object" && rv.noun) || "ventas").toLowerCase();
+          /* v17.36 (WS5) · El Retar cuenta cabezas, no ventas: un
+             volumen de «clientes/alumnas» no es el volumen de ventas
+             del equilibrio — si solo hay cabezas, el punto de partida
+             queda pendiente en vez de afirmar «300 clientes». */
+          if (/^(clientes|clientas|alumnos|alumnas|personas)$/.test(rvNoun)) return null;
+          if (rvn != null && rvn > 0) return { v: rvn, noun: rvNoun, verb: null, raw: "", src: (typeof rv === "object" && rf.volumeSrc) || "" };
         }
       } catch (e) {}
       return null;
@@ -12253,6 +12910,11 @@
       if (ltv && typeof ltv.marginPerSale === "number") margin = ltv.marginPerSale;
       if (margin == null) { try { margin = marginPerSale(contradictionFigures()); } catch (e) { margin = null; } }
       try { goal = okrGoalPace(); } catch (e) { goal = null; }
+      /* v17.36 (WS5) · El precio canónico por venta, para medir el
+         margen realizado de un reporte de C13 (ingreso por unidad
+         menos costo por unidad). */
+      var price = null;
+      try { price = ownPrice(); } catch (e) { price = null; }
       var ambition = (mainAnswerText("M0", 8) || "").trim();
       var thesis = okrThesisInfo();
       var noun = (ltv && ltv.perSaleNoun) || "venta";
@@ -12312,7 +12974,7 @@
           text: "Tu ritmo de meta: tu meta de 12 meses es " + okrFmt(goal.total) + ", o sea " + okrFmt(goal.monthly) + " al mes.",
           baseline: "todavía no me dijiste cuánto facturas hoy al mes.",
           source: "C12 Q1",
-          pendingText: "Dime cuánto facturas al mes en C0 y yo te pongo el punto de partida.",
+          pendingText: "Dime cuánto facturas al mes y yo te pongo el punto de partida.",
           target: null
         });
       } else {
@@ -12322,7 +12984,7 @@
           text: "Tus cuentas cuadran: todavía no tengo tus fuentes y tu total juntos para armar este resultado clave.",
           baseline: "todavía no tengo tus fuentes ni tu total mensual.",
           source: "C6 Q1 contra C0 Q1",
-          pendingText: "Dime tus fuentes en C6 y tu total en C0 y yo lo armo.",
+          pendingText: "Dime tus fuentes y tu total mensual y yo lo armo.",
           target: null
         });
       }
@@ -12391,7 +13053,7 @@
           baseline: kr3base,
           source: "C6 Q6 y C4 Q5",
           note: kr3note,
-          target: { ltv: ltv.v, cacMax: cac, margin: margin, noun: noun }
+          target: { ltv: ltv.v, cacMax: cac, margin: margin, noun: noun, price: price }
         });
       } else {
         var pend3why = "";
@@ -12489,6 +13151,60 @@
       }
       return null;
     }
+    /* v17.36 (WS5) · Resultado real de 7 días (reporte de C13): dinero
+       y conteos sin «al mes». El dinero del periodo es la mayor cifra de
+       una cláusula de ventas («$36.000 en ventas»); las unidades son
+       «N compraron» o «N <sustantivo del KR>»; el costo de la acción es
+       «invertí/gasté $X» (nunca un costo por unidad: «me cuesta $10.000
+       por cliente» no es el costo de la acción). Sin números no hay
+       resultado: nunca se inventa. */
+    var OKR_WORDNUM = { uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12, quince: 15, veinte: 20 };
+    function okrWordNum(s) {
+      var r = String(s || "").toLowerCase();
+      if (/^\d/.test(r)) return ws6ParseMoneyNum(r);
+      return OKR_WORDNUM[r] != null ? OKR_WORDNUM[r] : null;
+    }
+    function okrWeeklyResult(text, kr) {
+      var t = String(text || "");
+      if (!t.trim()) return null;
+      var figs = [];
+      try { figs = moneyFigures(t); } catch (e) { figs = []; }
+      var money = null, cost = null;
+      figs.forEach(function (f) {
+        var cl = "";
+        try { cl = figureClause(t, f.i, f.len || 0); } catch (e) { cl = ""; }
+        /* v17.36 (WS5) · «en total» también marca el dinero del
+           periodo: «Vendí 4 panes a $10.000 cada uno, $40.000 en
+           total» dejaba el dinero en $10.000 (el precio unitario) y
+           el margen realizado salía −$2.500; el total es $40.000 y
+           el margen real es $5.000. */
+        if (/ventas|vend[ií]|factur|ingreso|compraron|compr[oó]|vendiste|en total/i.test(cl)) { if (money == null || f.v > money) money = f.v; }
+        if (cost == null && /invert[ií]|gast[eé]|inversi[oó]n|me cost[oó]|pagu[eé]/i.test(cl) && !/por (cada )?(cliente|clienta|alumna|alumno|vecina|vecino|persona|venta|pan|membres[ií]a)/i.test(cl)) cost = f.v;
+      });
+      if (money == null) figs.forEach(function (f) { if (money == null || f.v > money) money = f.v; });
+      var nouns = (kr && kr.target && kr.target.nouns) || (kr && kr.target && kr.target.noun ? [kr.target.noun] : ["ventas"]);
+      var nounForms = [];
+  nouns.forEach(function (n) {
+    var s = String(n || "").toLowerCase();
+    if (!s) return;
+    nounForms.push(s);
+    var pl = "";
+    try { pl = okrPluralNoun(s); } catch (e) { pl = ""; }
+    if (pl && String(pl).toLowerCase() !== s) nounForms.push(String(pl).toLowerCase());
+  });
+  var nounRe = nounForms.length ? nounForms.join("|") : "ventas";
+      var numAlt = "(\\d[\\d.,]*|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|quince|veinte)";
+      var units = null;
+      var wm1 = t.match(new RegExp(numAlt + "\\s+compraron\\b", "i"));
+      if (wm1) units = okrWordNum(wm1[1]);
+      if (units == null) {
+        var wm2 = t.match(new RegExp(numAlt + "\\s*(" + nounRe + ")\\b", "i"));
+        if (wm2) units = okrWordNum(wm2[1]);
+      }
+      if (units == null || units <= 0) units = null;
+      if (money == null && units == null && cost == null) return null;
+      return { money: money, units: units, cost: cost };
+    }
     /* Medir UN resultado clave contra UN texto (reporte de C13, respuestas
        de C14 o valor semanal). Devuelve {measured, label, detail,
        provenance}. Sin número del KR en el texto: no medido, nunca
@@ -12508,18 +13224,49 @@
           if (g === 0) return { measured: true, label: "Cumplido", detail: "tus fuentes suman " + okrFmt(srcs[0].v) + " al mes, lo mismo que declaras", provenance: provenance };
           return { measured: true, label: "Por debajo", detail: "la brecha sigue en " + okrFmt(g) + " al mes", provenance: provenance };
         }
+        /* v17.36 (WS5) · El total declarado, restablecido en C14 sin
+           fuentes nuevas, también mide: la brecha sigue abierta en su
+           cifra conocida, no «sin medir». Un total distinto del
+           declarado no mide: es una cifra nueva que pide aclaración. */
+        var decOnly = okrPickCurrentMonthly(decs);
+        if (decOnly && kr.target && kr.target.declaredTotal != null && decOnly.v === kr.target.declaredTotal) {
+          var gapLeft = Math.abs((kr.target.sourcesTotal || 0) - kr.target.declaredTotal);
+          return { measured: true, label: "Por debajo", detail: "la brecha sigue en " + okrFmt(gapLeft) + " al mes: tus fuentes suman " + okrFmt(kr.target.sourcesTotal || 0) + " frente a " + okrFmt(kr.target.declaredTotal) + " declarados, sin cifras nuevas que la cierren", provenance: provenance };
+        }
         return unm;
       }
       if (kr.kind === "goalpace") {
         var cands = okrMonthlyMoney(t, /factur|ventas|ingresos|ingreso/i);
         var cur = okrPickCurrentMonthly(cands);
-        if (!cur) return unm;
+        if (!cur) {
+          /* v17.36 (WS5) · Un resultado real de 7 días también mide el
+             ritmo: $36.000 en una semana son unos $154.286 al mes, sin
+             exigir que el reporte reformule «al mes». */
+          var wkG = (/C13/.test(String(provenance || ""))) ? okrWeeklyResult(t, kr) : null;
+          if (wkG && wkG.money != null) {
+            var monthlyG = Math.round(wkG.money * 30 / 7);
+            if (monthlyG >= kr.target.monthly) return { measured: true, label: "Cumplido", detail: "en 7 días vendiste " + okrFmt(wkG.money) + ", o sea unos " + okrFmt(monthlyG) + " al mes, en el ritmo de tu meta de " + okrFmt(kr.target.monthly) + " al mes", provenance: provenance };
+            return { measured: true, label: "Por debajo", detail: "en 7 días vendiste " + okrFmt(wkG.money) + ", o sea unos " + okrFmt(monthlyG) + " al mes, por debajo del ritmo de tu meta de " + okrFmt(kr.target.monthly) + " al mes", provenance: provenance };
+          }
+          return unm;
+        }
         if (cur.v >= kr.target.monthly) return { measured: true, label: "Cumplido", detail: "facturas " + okrFmt(cur.v) + " al mes, en el ritmo de tu meta de " + okrFmt(kr.target.monthly) + " al mes", provenance: provenance };
         return { measured: true, label: "Por debajo", detail: "facturas " + okrFmt(cur.v) + " al mes, por debajo del ritmo de tu meta de " + okrFmt(kr.target.monthly) + " al mes", provenance: provenance };
       }
       if (kr.kind === "breakeven") {
         var volNow = okrParseVolume(t, (kr.target && kr.target.nouns) || [kr.target.noun], t.length < 60);
-        if (volNow == null) return unm;
+        if (volNow == null) {
+          /* v17.36 (WS5) · Un conteo pelado de 7 días también mide el
+             equilibrio: 3 panes en una semana son unos 13 al mes, sin
+             exigir «3 panes al mes» en el reporte. */
+          var wkB = (/C13/.test(String(provenance || ""))) ? okrWeeklyResult(t, kr) : null;
+          if (wkB && wkB.units != null) {
+            var monthlyUnits = Math.round(wkB.units * 30 / 7);
+            if (monthlyUnits >= kr.target.units) return { measured: true, label: "Cumplido", detail: "en 7 días vendiste " + wkB.units + " " + kr.target.noun + ", o sea unos " + monthlyUnits + " " + kr.target.noun + " al mes, por encima de tu equilibrio de " + kr.target.units, provenance: provenance };
+            return { measured: true, label: "Por debajo", detail: "en 7 días vendiste " + wkB.units + " " + kr.target.noun + ", o sea unos " + monthlyUnits + " " + kr.target.noun + " al mes, por debajo de tu equilibrio de " + kr.target.units, provenance: provenance };
+          }
+          return unm;
+        }
         if (volNow >= kr.target.units) return { measured: true, label: "Cumplido", detail: "vendes " + volNow + " " + kr.target.noun + " al mes, por encima de tu equilibrio de " + kr.target.units, provenance: provenance };
         return { measured: true, label: "Por debajo", detail: "vendes " + volNow + " " + kr.target.noun + " al mes, por debajo de tu equilibrio de " + kr.target.units, provenance: provenance };
       }
@@ -12540,7 +13287,31 @@
         if (ltvNow != null && kr.target.ltv != null) halves.push({ ok: ltvNow >= kr.target.ltv, txt: "tu valor de vida es " + okrFmt(ltvNow) + " (meta " + okrFmt(kr.target.ltv) + ")" });
         if (cacNow != null && kr.target.cacMax != null) halves.push({ ok: cacNow <= kr.target.cacMax, txt: "adquirir cada " + cl2.sg + " te cuesta " + okrFmt(cacNow) + " (tope " + okrFmt(kr.target.cacMax) + ")" });
         if (marginNow != null && kr.target.margin != null) halves.push({ ok: marginNow >= kr.target.margin, txt: "tu margen es " + okrFmt(marginNow) + " por " + (kr.target.noun || "venta") + " (meta " + okrFmt(kr.target.margin) + ")" });
-        if (!halves.length) return unm;
+        if (!halves.length) {
+          /* v17.36 (WS5) · Un resultado real de 7 días también mide el
+             valor de vida: el ingreso por unidad vendida dice si el
+             margen se sostuvo (precio menos costo por unidad), y el
+             costo de la acción entre los clientes nuevos dice el CAC
+             realizado. Sin unidades ni dinero, no hay medida. */
+          var wkL = (/C13/.test(String(provenance || ""))) ? okrWeeklyResult(t, kr) : null;
+          if (wkL) {
+            var halvesW = [];
+            if (wkL.units != null && wkL.units > 0 && wkL.money != null && kr.target.margin != null && kr.target.price != null) {
+              var revPerUnit = wkL.money / wkL.units;
+              var realizedMargin = Math.round(revPerUnit - (kr.target.price - kr.target.margin));
+              halvesW.push({ ok: realizedMargin >= kr.target.margin, txt: "vendiste " + wkL.units + " " + okrPluralNoun(kr.target.noun || "venta") + " por " + okrFmt(wkL.money) + " en 7 días, o sea " + okrFmt(Math.round(revPerUnit)) + " por " + (kr.target.noun || "venta") + ": tu margen se mantiene en " + okrFmt(realizedMargin) + " por " + (kr.target.noun || "venta") + " (meta " + okrFmt(kr.target.margin) + ")" });
+            }
+            if (wkL.units != null && wkL.units > 0 && wkL.cost != null && kr.target.cacMax != null) {
+              var realizedCac = Math.round(wkL.cost / wkL.units);
+              halvesW.push({ ok: realizedCac <= kr.target.cacMax, txt: "adquirir cada " + cl2.sg + " te costó " + okrFmt(realizedCac) + " (tope " + okrFmt(kr.target.cacMax) + ")" });
+            }
+            if (halvesW.length) {
+              var allOkW = halvesW.every(function (h) { return h.ok; });
+              return { measured: true, label: allOkW ? "Cumplido" : "Por debajo", detail: halvesW.map(function (h) { return h.txt; }).join("; "), provenance: provenance };
+            }
+          }
+          return unm;
+        }
         var allOk = halves.every(function (h) { return h.ok; });
         return { measured: true, label: allOk ? "Cumplido" : "Por debajo", detail: halves.map(function (h) { return h.txt; }).join("; "), provenance: provenance };
       }
@@ -12702,13 +13473,20 @@
       var prevVerdict = meta.verdict;
       var a = assessEvidence(text, meta.verdictQ, currentStage());
       var found = evidenceFoundText(text, meta.verdictQ);
-      if (a.label === "Fuerte" && !found) a = { label: "Por validar", miss: a.miss };
+      if (a.label === "Fuerte" && !hasFoundEvidence(text, meta.verdictQ)) a = { label: "Por validar", miss: a.miss };
       /* v17.32 (WS4) · Una repregunta nunca degrada el veredicto: solo
          suma evidencia. Sin este guarda, una repregunta con «Supuesto»
          o «no hay evidencia» podía bajar un «Fuerte» o un «Por
          validar». Editar sí revalora desde cero: es una corrección
          deliberada de la respuesta principal. */
-      if (!isEdit && prevVerdict && verdictRank(a.label, a.miss) < verdictRank(prevVerdict.label, prevVerdict.miss)) {
+      /* v17.36 (WS6) · D1(b): la falta del caso se re-deriva con la
+         evidencia nueva: si el veredicto anterior pedía el caso y el texto
+         acumulado ya trae un caso real, la nueva valoración manda aunque su
+         rango sea menor — la guarda de «nunca degrada» no puede mantener
+         una falta que la evidencia nueva ya cubrió. */
+      var ws6CaseMissBefore = !!(prevVerdict && (prevVerdict.miss || []).some(function (mm) { return /el caso o ejemplo real/.test(mm); }));
+      var ws6CaseNow = hasExample(text);
+      if (!isEdit && prevVerdict && verdictRank(a.label, a.miss) < verdictRank(prevVerdict.label, prevVerdict.miss) && !(ws6CaseMissBefore && ws6CaseNow)) {
         a = { label: prevVerdict.label, miss: (prevVerdict.miss || []).slice() };
       }
       meta.verdict = { label: a.label, miss: a.miss, found: found };
@@ -12840,12 +13618,19 @@
        pesos, COP) nunca se cita. «extraCount» cuenta TODAS las demás
        cifras DISTINTAS (por valor) del texto citado (total − 1): el
        «y N cifras más» nunca esconde cifras que la respuesta sí trae.
-       Devuelve null si no hay cifra. */
+       Devuelve null si no hay cifra.
+       v17.36 (WS2) · F10: las cifras de valor $0 no se citan nunca
+       (ni como citada ni como «cifra más»): un $0 es un cero que se
+       lee como tal, no un importe. */
     function citedFigure(text, q) {
       var t = String(text || "");
       /* v17.32 (WS1b) · Una cifra que el dueño descarta («no $96.000»)
          nunca es «la cifra» de la burbuja: se cita solo lo afirmado. */
       var figs = moneyFigures(t).filter(function (f, k, arr) { return !figureNegation(t, f, arr, k); });
+      /* v17.36 (WS2) · F10: una cifra de valor $0 nunca es «la cifra»:
+         un presupuesto o gasto cero se lee como cero, no como importe
+         citado. Tampoco cuenta como «cifra más». */
+      figs = figs.filter(function (f) { return f.v !== 0; });
       if (!figs.length) return null;
       function lastWithUnit(list) {
         var wu = list.filter(function (f) { return f.unit && f.unit !== "desconocida"; });
@@ -12923,6 +13708,18 @@
       else if (/\bcliente\b/i.test(aff) && (hasNamedCase(aff) || (cf && cf.value > 0))) parts.push("lo de tu cliente");
       return parts.join(" y ");
     }
+    /* v17.36 (WS2) · F10: una cifra de $0 ES evidencia — el dueño
+       declaró un presupuesto o gasto cero — pero nunca se cita:
+       citedFigure la excluye, así que evidenceFoundText queda vacío
+       para un texto con solo $0. Los frenos a «Fuerte» sin evidencia
+       y la revisión de cierre usan ESTE predicado, no
+       evidenceFoundText, para que el veredicto y la clasificación no
+       cambien por el solo hecho de no poder citar el $0. */
+    function hasFoundEvidence(text, q) {
+      if (evidenceFoundText(text, q)) return true;
+      var t = String(text || "");
+      return moneyFigures(t).some(function (f, k, arr) { return f.v === 0 && !figureNegation(t, f, arr, k); });
+    }
     /* v17.32 (WS4) · Un hueco nunca lleva su propio «todavía» cuando
        el texto que lo presenta ya dice «todavía falta»: «todavía falta
        todavía es un supuesto…» se armaba al concatenar. Se quita el
@@ -12950,7 +13747,7 @@
     }
     /* v17.34 (WS4) · F10: figuras FUERA de la oración del cero, para
        nombrarlas en la burbuja en vez de presentar toda la respuesta
-       como «aunque sea cero». Una oración es «del cero» cuando
+       como un cero sin cifras. Una oración es «del cero» cuando
        honestZero la da por cero sobre lo pedido: sus cifras son parte
        del cero («0 reseñas de 20 clientes»), no cifras aparte. */
     function figurePhrasesOfSentence(s) {
@@ -12991,7 +13788,8 @@
        Cuando el cero y las cifras van en la MISMA oracion unidos por
        coma ("pedi 0 resenas..., tengo 180 seguidores, 12 disenos y
        2 clientes"), zeroOutsideFigures devuelve vacio (la oracion es
-       "del cero") y la burbuja caia en "aunque sea cero" aunque la
+       "del cero") y la burbuja presentaba la respuesta como un cero
+       sin cifras aunque la
        respuesta trajera cifras reales. Las cifras ANTES del marcador
        son la ventana del cero ("en los ultimos 3 meses"), no cifras
        que el dueno cuente: por eso se toman solo las de despues. Una
@@ -13005,17 +13803,93 @@
     }
     /* La frase corta del cero («0 reseñas», «0 clientes», «0 ventas»),
        para nombrarlo junto a las demás cifras. */
+    /* v17.36 (WS2) · F10: la frase corta del cero SIEMPRE nombra la
+       unidad («0 reseñas», «0 deudas», «0 fases»): nunca «un cero». El
+       orden va del texto a la pregunta: primero la unidad pegada al
+       marcador — de la lista o cualquier sustantivo inmediato (fases,
+       procesos, herramientas, quejas, respuestas, alumnas, deudas…) —,
+       luego el cero de dinero con su preposición («$0 en publicidad»:
+       el cero es sobre eso, no sobre lo que la pregunta pide), luego el
+       sustantivo que pide la pregunta cuando aparece en el texto o es
+       lo único que la pregunta nombra, y solo al final un «0» a secas.
+       El marcador que manda es el PRIMERO del texto: «No tengo
+       procesos y gasté $0 en publicidad» lee «0 procesos». Así el
+       mismo hecho se lee igual en cualquier pregunta o componente. */
     function zeroClaimPhrase(text, q) {
       var t = String(text || "");
-      var units = HONEST_ZERO_UNITS.source;
-      var m = new RegExp("(\\$0\\b|\\b0\\b|\\bcero\\b|\\bning[uú]n(?:a|o|os|as)?\\b)\\s*(" + units + ")?", "i").exec(t);
-      if (m && m[2]) return "0 " + m[2].toLowerCase();
-      if (m) return "un cero";
-      var m2 = new RegExp("\\bno\\s+(tengo|tenemos|hay)\\b\\s*(?:ning[uú]n(?:a|o|os|as)?\\s+)?(" + units + ")?", "i").exec(t);
-      if (m2 && m2[2]) return "0 " + m2[2].toLowerCase();
-      var m3 = new RegExp("\\bsin\\s+(" + units + ")\\b", "i").exec(t);
-      if (m3) return "0 " + m3[1].toLowerCase();
-      return "un cero";
+      /* Palabras que nunca son la unidad: van entre el marcador y el
+         sustantivo («0, porque…», «$0 en publicidad») o no nombran
+         nada contable («sin embargo», «sin duda», «no tengo tiempo»). */
+      var STOP = /^(en|de|a|al|del|por|para|con|sin|y|o|pero|que|porque|pues|si|cuando|ya|hoy|ahora|no|ni|me|se|es|son|fue|hay|este|esta|estos|estas|eso|el|la|los|las|un|una|unos|unas|su|sus|mi|mis|tu|tus|tiempo|embargo|duda)$/i;
+      var WORD = "[a-záéíóúñ]+";
+      /* «ningún caso» son cero casos: el singular tras ningún se lee en
+         plural. Solo aquí: en el resto se respeta lo escrito. */
+      function pluralNingun(w) {
+        var s = String(w || "").toLowerCase();
+        if (!s) return s;
+        if (/s$/.test(s)) return s;
+        if (/[aeiouáéíóú]$/.test(s)) return s + "s";
+        return s + "es";
+      }
+      function nounRightAfter(pos, allowNingun) {
+        /* La palabra INMEDIATA tras pos (solo espacios): una coma o una
+           preposición la bloquean — «0, porque…» no tiene unidad pegada. */
+        var after = t.slice(pos);
+        var wm = new RegExp("^\\s*(" + WORD + ")", "i").exec(after);
+        if (!wm) return null;
+        if (STOP.test(wm[1])) return null;
+        return wm[1].toLowerCase();
+      }
+      /* Marcadores de cero, en orden de aparición en el texto. */
+      var cands = [];
+      var d = /(\$0\b|\b0\b|\bcero\b|\bning[uú]n(?:a|o|os|as)?\b)/i.exec(t);
+      if (d) cands.push({ idx: d.index, kind: "digit", m: d });
+      var n = /\bno\s+(tengo|tenemos|hay)\b/i.exec(t);
+      if (n) cands.push({ idx: n.index, kind: "notengo", m: n });
+      var sg = /\bsin\s+/i.exec(t);
+      if (sg) cands.push({ idx: sg.index, kind: "sin", m: sg });
+      cands.sort(function (a, b) { return a.idx - b.idx; });
+      if (cands.length) {
+        var first = cands[0];
+        if (first.kind === "digit") {
+          var dm = first.m;
+          var isNingun = /^ning[uú]n/i.test(dm[0]);
+          var isMoney = /^\$0/.test(dm[0]);
+          /* 1. Unidad de la lista pegada al marcador («0 reseñas»). */
+          var um = new RegExp("^\\s*(" + HONEST_ZERO_UNITS.source + ")\\b", "i").exec(t.slice(dm.index + dm[0].length));
+          if (um) return "0 " + (isNingun ? pluralNingun(um[1]) : um[1].toLowerCase());
+          /* 2. Cualquier sustantivo inmediato («0 fases», «0 deudas»). */
+          var gw = nounRightAfter(dm.index + dm[0].length);
+          if (gw) return "0 " + (isNingun ? pluralNingun(gw) : gw);
+          /* 3. Cero de dinero con su preposición («$0 en publicidad»). */
+          if (isMoney) {
+            var mm = /^\s*(en|de)\s*([a-záéíóúñ]+)/i.exec(t.slice(dm.index + dm[0].length));
+            if (mm && !STOP.test(mm[2])) return "$0 " + mm[1].toLowerCase() + " " + mm[2].toLowerCase();
+          }
+        } else if (first.kind === "notengo") {
+          /* «No tengo socios», «no hay ningún caso»: el sustantivo que
+             rige el «no tengo», saltando un «ningún» si lo hay. */
+          var nm = /^\s*(?:ning[uú]n(?:a|o|os|as)?\s+)?([a-záéíóúñ]+)/i.exec(t.slice(first.m.index + first.m[0].length));
+          var hasNingun = /^\s*ning[uú]n/i.test(t.slice(first.m.index + first.m[0].length));
+          if (nm && !STOP.test(nm[1])) return "0 " + (hasNingun ? pluralNingun(nm[1]) : nm[1].toLowerCase());
+        } else {
+          var sm = /^\s*([a-záéíóúñ]+)/i.exec(t.slice(first.m.index + first.m[0].length));
+          if (sm && !STOP.test(sm[1])) return "0 " + sm[1].toLowerCase();
+        }
+      }
+      /* 4. El sustantivo que pide la pregunta, si aparece en el texto. */
+      var asked = askedNouns(q);
+      for (var ai = 0; ai < asked.length; ai++) {
+        if (new RegExp("\\b" + asked[ai] + "s?\\b", "i").test(t)) return "0 " + asked[ai].toLowerCase();
+      }
+      /* 5. Cualquier unidad de la lista presente en el texto. */
+      var mu = new RegExp(HONEST_ZERO_UNITS.source, "i").exec(t);
+      if (mu) return "0 " + mu[0].toLowerCase();
+      /* 6. Un cero desnudo («ahora me traen cero»): lo que pide la
+         pregunta es lo único que lo nombra. */
+      if (asked.length) return "0 " + asked[0].toLowerCase();
+      /* 7. Último recurso: un «0» a secas, nunca «un cero». */
+      return "0";
     }
     function joinFiguresEs(list) {
       var l = (list || []).slice(0, 4);
@@ -13054,7 +13928,7 @@
          final. */
       var evalText = text || combinedAnswer(m.id, qi) || "";
       var fv = frozenVerdict(m.id, qi);
-      var sol = fv ? { label: fv.label, miss: fv.miss || [] } : (function () { var a = assessEvidence(evalText, q, currentStage()); if (a.label === "Fuerte" && !evidenceFoundText(evalText, q)) a = { label: "Por validar", miss: a.miss }; return a; })();
+      var sol = fv ? { label: fv.label, miss: fv.miss || [] } : (function () { var a = assessEvidence(evalText, q, currentStage()); if (a.label === "Fuerte" && !hasFoundEvidence(evalText, q)) a = { label: "Por validar", miss: a.miss }; return a; })();
       /* v17.35 (WS2) · F5: en modo completo, los huecos se leen enteros.
          La etiqueta y la estructura del veredicto (congelado o fresco)
          no cambian: solo se expande el texto del hueco recortado. */
@@ -13077,7 +13951,7 @@
          etiqueta y unidad, sobre este mismo texto). El aviso de cero
          también es por paso: solo si ESTE paso trae un cero real
          (honestZero sobre su propio texto) — la principal sin cero
-         no dice «aunque sea cero» porque la repregunta traiga uno
+         no lee un cero porque la repregunta traiga uno
          (C2 Q7). */
       var stepText = quoteText || text || "";
       /* v17.33 (WS2) · H2c: la cita es SOLO del texto de ESTE paso
@@ -13088,19 +13962,17 @@
       var isZero = honestZero(stepText, q);
       /* v17.34 (WS4) · F10: un cero con cifras en OTRA oración no es el
          dato principal de la respuesta: la burbuja nombra el cero Y las
-         cifras, en vez de presentar toda la respuesta como «aunque sea
-         cero». El veredicto («Dato real») no cambia: el cero sigue
+         cifras, en vez de presentar toda la respuesta como un cero
+         sin cifras. El veredicto («Dato real») no cambia: el cero sigue
          siendo un dato. Solo las cifras de otra oración cuentan: las de
          la propia oración del cero («0 reseñas de 20 clientes», «0
          ventas, 5 empleados») son parte del cero y no lo tapan. */
       var zeroExtras = isZero ? zeroOutsideFigures(stepText, q) : [];
-      /* v17.35 (WS2) · F10a: "aunque sea cero" solo cuando la respuesta
-         no trae NINGUNA cifra en ninguna parte. Si las cifras viven en
-         la propia oracion del cero (coma, no punto), zeroOutsideFigures
-         viene vacio y antes se caia en "aunque sea cero"; ahora se
-         nombran las cifras de despues del marcador, y si solo las hay
-         antes, todas menos la duracion-ventana. El veredicto no cambia:
-         el cero sigue siendo un dato real. */
+      /* v17.35 (WS2) · F10a: cuando las cifras viven en la propia
+         oracion del cero (coma, no punto), zeroOutsideFigures viene
+         vacio; se nombran las cifras de despues del marcador, y si
+         solo las hay antes, todas menos la duracion-ventana. El
+         veredicto no cambia: el cero sigue siendo un dato real. */
       if (isZero && !zeroExtras.length) {
         var afterZero = figuresAfterZeroMarker(stepText);
         if (afterZero.length) zeroExtras = afterZero;
@@ -13143,19 +14015,29 @@
          primero: si ESTE paso trae un cero real, la burbuja lo dice
          aunque el veredicto congelado (sobre lo acumulado) sea
          Fuerte — el «Fuerte» describe lo acumulado, no este paso. */
-      var veo = isZero && !zeroExtras.length ? "esto es un dato real, aunque sea cero: «" + (full ? esc(stepText) : esc(excerptOf(stepText, 120))) + "» es la medida de hoy, y cero es un número que vale como punto de partida"
-        : isZero ? "esto es un dato real: me cuentas " + zeroClaimPhrase(stepText, q) + " y además me cuentas " + joinFiguresEs(zeroExtras)
+      /* v17.36 (WS2) · F10: un cero se lee siempre igual, con su unidad
+         y sin plantilla: «esto es un dato real: me cuentas 0 reseñas»,
+         con cifras aparte o sin ellas. El mismo hecho, la misma lectura
+         en cualquier pregunta o componente. */
+      var veo = isZero ? "esto es un dato real: me cuentas " + zeroClaimPhrase(stepText, q) + (zeroExtras.length ? " y además me cuentas " + joinFiguresEs(zeroExtras) : "")
         : sol.label === "Fuerte" ? "esto ya tiene sustento: " + (found ? "me diste " + found + kindClause : "lo que me cuentas sobre «" + esc(topic) + "» ya trae lo que pedía esta pregunta")
         : sol.label.indexOf("Dato real") === 0 ? "esto es un dato real: " + (found ? "ya me diste " + found + kindClause : "lo que me cuentas ya es la medida de hoy")
         : sol.label === "Por validar" ? "esto va por buen camino: " + (found ? "ya me diste " + found + kindClause + ", y lo que sigue es afinarlo" : "ya trae algo concreto sobre «" + esc(topic) + "», y lo que sigue es afinarlo")
         : sol.label.indexOf("Pendiente") === 0 ? "esto queda como pendiente, y está bien: un «todavía no lo sé» honesto vale más que una respuesta larga sin sustento"
         : "esto todavía está flojo: " + (found ? "me diste " + found + kindClause + ", pero " : "") + "lo seguimos trabajando con las siguientes preguntas, sin prisa";
+      /* v17.36 (WS6) · D1(e): las marcas de calidad se calculan ANTES de
+         la línea de falta, para reconciliarlas: una respuesta con marca
+         fuera de tema no puede afirmar a la vez que no falta nada crítico. */
+      var ws6FlagsBubble = [], ws6IsMainBubble = false;
+      try {
+        ws6IsMainBubble = !!(state && (quoteText || "") === (((state.answers || {})[m.id] || [])[qi] || ""));
+        if (ws6IsMainBubble) ws6FlagsBubble = ws6QualityFlags(m.id, qi);
+      } catch (e) { ws6FlagsBubble = []; }
       var falta;
       if (sol.label === "Fuerte" || isZero || isDone(sol.label, sol.miss)) {
-        /* v17.33 (WS2) · H2a: la línea de cierre también es de ESTA
-           pregunta: nombra su tema, así que nunca es la misma frase
-           fija para huecos distintos. */
-        falta = "en esta respuesta no me falta nada crítico sobre «" + topic + "»; se afinará cuando la cruce con lo que me cuentes más adelante.";
+        var ws6OffBubble = ws6FlagsBubble.filter(function (ff) { return ff.kind === "offtopic"; });
+        if (ws6OffBubble.length) falta = "todavía me falta: " + ws6FlagsText(ws6OffBubble) + ".";
+        else falta = "en esta respuesta no me falta nada crítico sobre «" + topic + "»; se afinará cuando la cruce con lo que me cuentes más adelante.";
       } else if (sol.label === "Por validar") {
         falta = "todavía me falta: " + cleanMissJoin(sol.miss) + ". Queda anotado y lo retomamos sin detenerte.";
         if (pend && pend.qi === qi) falta += " Lo pedimos en la siguiente pregunta de seguimiento, en el flujo normal.";
@@ -13181,10 +14063,8 @@
          muestra aquí, calculado, no repetido. */
       var ws6Extra = "";
       try {
-        var ws6IsMain = state && (quoteText || "") === (((state.answers || {})[m.id] || [])[qi] || "");
-        if (ws6IsMain) {
-          var ws6Flags = ws6QualityFlags(m.id, qi);
-          if (ws6Flags.length) ws6Extra += "<br><strong>Ojo con esta respuesta:</strong> " + esc(ws6FlagsText(ws6Flags)) + ".";
+        if (ws6IsMainBubble) {
+          if (ws6FlagsBubble.length) ws6Extra += "<br><strong>Ojo con esta respuesta:</strong> " + esc(ws6FlagsText(ws6FlagsBubble)) + ".";
           if (m.id === "M10" && qi === 1) {
             var ws6Be = breakEvenLine();
             if (ws6Be) ws6Extra += "<br><strong>Tu punto de equilibrio, calculado por mí:</strong> " + esc(ws6Be);
@@ -14073,7 +14953,7 @@
          pagarme $25.000» es el precio propio dicho en condicional —
          sin ella, ningún $25.000 de la lavandería se etiquetaba como
          propio y la ficha no tenía con qué contrastar la alternativa. */
-      var propioBeforePat = "(yo\\s+cobro|cobro|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|el\\s+precio\\s+es|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar)";
+      var propioBeforePat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|el\\s+precio\\s+es|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar)";
       var o = lastIdx(before, propioBeforePat);
       /* v17.30 (WS6) · El ancla «el precio es» es DEBIL: un «yo cobro /
          mi precio / me pagan» atribuye en firme, pero un «el precio
@@ -14082,7 +14962,7 @@
          si hay un ancla en primera persona; sin ella, el antes no
          decide todavia y el despues puede reclamar la cifra como
          techo o alternativa (ver weakOwn abajo). */
-      var propioStrongPat = "(yo\\s+cobro|cobro|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar)";
+      var propioStrongPat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar)";
       var oStrong = lastIdx(before, propioStrongPat);
       /* v17.32 (WS3) · «Me paga» con sujeto rival: en «la competencia
          me paga $X» quien paga es la competencia, no el cliente del
@@ -14213,7 +15093,16 @@
            la marca quede a más de 60 caracteres. Solo vale sin otra
            etiqueta: un ancla propia («me paga a mí») manda sobre la
            marca de alternativa de la frase. */
-        if (/(alternativa|competencia|convencional)/i.test(figureSentence(s, idx, spanLen))) return "alternativa";
+        /* v17.36 (WS6) · D1(d): la atribución por frase NO se dispara
+           cuando la frase mezcla dos cifras con etiquetas distintas
+           (precio propio y alternativa en la misma frase): la marca de
+           alternativa de la frase no es de ESTA cifra. Sin ancla propia
+           en la frase, la atribución por frase sigue valiendo. */
+        var ws6Sent = figureSentence(s, idx, spanLen);
+        if (/(alternativa|competencia|convencional)/i.test(ws6Sent)) {
+          if (moneySpans(ws6Sent).length >= 2 && /(yo\s+cobro|cobro|mi\s+precio|\bvendo\b|\bdoy\b|\bofrezco\b|me\s+pagan|me\s+paga\b)/i.test(ws6Sent)) return "ninguna";
+          return "alternativa";
+        }
         return "ninguna";
       }
       var best = "ninguna", bestD = 61;
@@ -15188,7 +16077,16 @@
          sobrevivía a la navegación: «Canales completado» seguía visible
          en C5). En el mismo componente no se toca: la confirmación del
          cierre debe verse. */
-      if (lastChatModule !== null && lastChatModule !== ui.module) hideToast();
+      if (lastChatModule !== null && lastChatModule !== ui.module) {
+        hideToast();
+        /* v17.36 (WS6) · D1(a): el compositor es un único textarea
+           persistente: al cambiar de componente se vacía siempre, para
+           que la respuesta anterior nunca aparezca en el componente nuevo.
+           En el mismo componente no se toca: el texto que se está
+           escribiendo sobrevive a los re-renders. */
+        var ab0 = $("answerBox"); if (ab0) ab0.value = "";
+        ui.redoConfirmFor = null; /* la confirmación de rehacer era del componente anterior */
+      }
       lastChatModule = ui.module;
       if (!state) {
         $("chatEmpty").hidden = false;
@@ -15378,7 +16276,19 @@
       if (state.contradictions) {
         state.contradictions.forEach(function (rec) {
           if (rec.status !== "resolved" || !rec.resolution) return;
-          if (contradictionMods(rec.key).indexOf(m.id) < 0) return;
+          /* v17.36 (WS1) · F1: la aclaración resuelta se ve UNA vez, en
+             el chat donde se dio (su ancla), no en todos los módulos
+             de contradictionMods ni en cada visita posterior. */
+          if (clarificationAnchorModule(rec) !== m.id) return;
+          /* v17.36 (WS1) · F2: el uso del Retar se dice como lo que es
+             — una sonda respondida —, no como una aclaración. Si la
+             misma sonda ya tiene su corrección registrada, la
+             corrección manda y el uso no se repite. */
+          if (rec.key === RETO_USE_KEY) {
+            if (retoUseCoveredByCorrection(rec)) return;
+            t += analiaBubbleCls('<span class="qtag">Retar</span>Te reté diciendo: «' + esc(rec.retarSaid || "") + '» y me respondiste: «' + esc(rec.resolution) + '».', "micro");
+            return;
+          }
           var corrTxt = "";
           if (rec.corrected) {
             var bits = [];
@@ -15401,7 +16311,11 @@
                declarado vigente, no el casillero de la retractación (que
                ya no escribe el total). La redacción es de F2. */
             var zeroDeclaredTxt = null;
-            try { zeroDeclaredTxt = extractDeclaredMonthlyTotal(); } catch (e) { zeroDeclaredTxt = null; }
+            /* v17.36 (WS3) · F4 / cruce WS1: igual que en el Resumen — si
+               esta misma aclaración corrigió una cifra del Retar, el
+               total verdadero es el del registro reto-corregido. */
+            try { zeroDeclaredTxt = retarCorrectedMonthlyTotalFor(rec.resolution); } catch (e) { zeroDeclaredTxt = null; }
+            if (zeroDeclaredTxt == null) { try { zeroDeclaredTxt = extractDeclaredMonthlyTotal(); } catch (e2) { zeroDeclaredTxt = null; } }
             /* Sin total declarado en C0 Q0, la propia evidencia mensual de
                la retractación («facturo $9.000.000 al mes») es el importe:
                es la única fuente y nunca alimenta el total declarado. */
@@ -15468,7 +16382,7 @@
              ve en el chat del componente que la origina, no solo en
              el Resumen. */
           var unitNoteChat = unitClarificationNote();
-          if (unitNoteChat && ["M0", "M4", "M6", "M10"].indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(unitNoteChat), "micro");
+          if (unitNoteChat && m.id === "M0") t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(unitNoteChat), "micro"); /* v17.36 (WS1) · F1-B: la aclaración de unidad no resuelta se muestra solo en el módulo donde se preguntó (C0) más la nota del Resumen, no en cada módulo. */
         }
       } else {
         /* v17.32 (WS3b) · G14: al mostrar la revisión de cierre se
@@ -15537,7 +16451,7 @@
           if (!comb2 || !String(comb2).trim()) return;
           var q2d = questionFor(m, qi);
           if (honestZero(comb2, q2d)) return;
-          if (evidenceFoundText(comb2, q2d)) return;
+          if (hasFoundEvidence(comb2, q2d)) return;
           noFoundQs.push(qi + 1);
         });
         /* v17.26 (WS2) · La contradicción abierta también se ve con el
@@ -15570,7 +16484,7 @@
           if (!taskReported()) {
             t += taskAssignBubble(assignTask13());
             t += systemBubble("⏳ <strong>C13 todavía no cierra.</strong> Ejecuta la tarea y escribe su resultado aquí abajo, en este mismo chat. Solo con ese reporte y con tu evidencia (mínimo 3 personas reales y los números inicial y final de tu indicador) C13 queda completado en su totalidad y se activa C14 · Medición y seguimiento." +
-              ' &nbsp;<button class="btn small" id="btnRedo">Rehacer componente</button>');
+              ' &nbsp;<button class="btn small" id="btnRedo">' + (ui.redoConfirmFor === m.id ? "¿Seguro? Se borran las respuestas de este componente — toca de nuevo para confirmar" : "Rehacer componente") + "</button>" );
           } else {
             /* v17.20 · El reporte llegó pero la ejecución no se verifica:
                se dice con claridad qué falta (personas o números) y se
@@ -15605,7 +16519,7 @@
           if (m.id === "M14") t += okrMeasurementBubble("C14");
           t += systemBubble("✓ <strong>" + esc(m.name) + " completado.</strong> Tus informes de este bloque ya están en la sección Informes." +
             (next ? ' &nbsp;<button class="btn small primary" id="btnNextMod">Seguir con ' + codeOf(next.id) + " · " + esc(next.name) + "</button>" : ' &nbsp;<button class="btn small primary" id="btnGoPlan">Ver mi plan de negocio</button>') +
-            ' &nbsp;<button class="btn small" id="btnRedo">Rehacer componente</button>');
+            ' &nbsp;<button class="btn small" id="btnRedo">' + (ui.redoConfirmFor === m.id ? "¿Seguro? Se borran las respuestas de este componente — toca de nuevo para confirmar" : "Rehacer componente") + "</button>" );
         }
         /* v17.34 (WS4) · F5b: el texto completo de «Lo que yo veo» queda
            en la revisión de cierre, como segunda superficie. */
@@ -15672,11 +16586,27 @@
         var redoBlocker = executionBlocker(m.id);
         if (redoBlocker) { toast("Este componente está en solo lectura: para rehacerlo, primero completa en su totalidad " + codeOf(redoBlocker.id) + " · " + redoBlocker.name + "."); return; }
         if (tabStale) { toast("Esta pestaña quedó en solo lectura porque otra tiene avances más recientes: recarga para verlos o fusiona lo nuevo desde el aviso de arriba."); return; }
-        if (br.getAttribute("data-confirm") === "1") {
+        if (ui.redoConfirmFor === m.id) {
           /* v17.32 (WS4b) · G5: rehacer borra las respuestas Y el modo:
              el aviso «Modo Retar activado» no puede sobrevivir a un
              componente reiniciado. */
           clearActiveMode();
+          /* v17.36 (WS6) · (h): el rehacer deja lápida (módulo + fecha +
+             respuestas que tenía) para que la fusión con la nube no
+             resucite las respuestas borradas, y limpia el estado derivado
+             que el rehacer dejaba vivo: aclaraciones resueltas en este
+             módulo, diagnóstico congelado, notas del Coach del módulo y,
+             en C0, la investigación. El historial del lienzo es un registro
+             global de versiones (sin marca por módulo) y no se borra: el
+             bloque del lienzo se rehace con canvasAfterAnswer. */
+          if (!state.redoTombstones) state.redoTombstones = {};
+          var redoPrevN = 0; (state.answers[m.id] || []).forEach(function (ra) { if (ra && String(ra).trim()) redoPrevN++; });
+          state.redoTombstones[m.id] = { at: new Date().toISOString(), answered: redoPrevN };
+          if (Array.isArray(state.contradictions)) state.contradictions = state.contradictions.filter(function (rc) { return !rc || rc.resolvedModule !== m.id; });
+          if (state.diagnosis) delete state.diagnosis;
+          if (state.coachNotes) Object.keys(state.coachNotes).forEach(function (ck) { if (ck.indexOf(m.id + ":") === 0) delete state.coachNotes[ck]; });
+          if (m.id === "M0" && state.research) state.research = { searches: [], seenAt: "", attempts: [] };
+          ui.redoConfirmFor = null;
           state.answers[m.id] = m.questions.map(function () { return ""; });
           if (state.followups[m.id]) delete state.followups[m.id];
           /* v17.32 (WS4) · Rehacer borra también los veredictos
@@ -15700,9 +16630,11 @@
           renderSidebar(); renderChat();
           toast("Componente " + codeOf(m.id) + " reiniciado. A responder de nuevo, con lo que ya sabes.");
         } else {
-          br.setAttribute("data-confirm", "1");
-          if (!br.getAttribute("data-label")) br.setAttribute("data-label", br.textContent);
-          br.textContent = "¿Seguro? Se borran las respuestas de este componente — toca de nuevo para confirmar";
+          /* v17.36 (WS6) · (h): la confirmación vive en el estado, no en
+             un atributo DOM: un re-render entre los dos toques ya no la
+             desarma en silencio. */
+          ui.redoConfirmFor = m.id;
+          renderChat();
         }
       });
       /* v17.35 (WS-OKR) · Volver a armar los objetivos con las cifras
@@ -15754,6 +16686,9 @@
       var execOff = tabStale || isLocked || isNA || (moduleComplete(m.id) && !pendingStep(m.id) && !taskWait);
       $("answerBox").disabled = execOff;
       $("btnSend").disabled = execOff;
+      /* v17.36 (WS6) · D1(a): al completar un componente, el compositor
+         queda vacío: nada de lo escrito antes sobrevive al cierre. */
+      if (moduleComplete(m.id) && !pendingStep(m.id) && !taskWait) { var abDone = $("answerBox"); if (abDone) abDone.value = ""; }
       $("answerBox").placeholder = tabStale
         ? "Solo lectura: otra pestaña tiene avances más recientes. Recarga para verlos o fusiona lo nuevo desde el aviso de arriba."
         : isLocked
@@ -15992,6 +16927,10 @@
        del Retar («pierdes 2 ventas al día» cuando fueron 2 ventas en
        octubre). */
     var RETO_CORRECTION_KEY = "reto-corregido";
+    /* v17.36 (WS1) · F2: el uso del Retar como evento de primera clase:
+       la sonda se usó y el dueño respondió, aunque no se detecte una
+       cita errónea. Se cita en el Resumen igual que la corrección. */
+    var RETO_USE_KEY = "reto-usado";
     /* v17.34 (WS2) · F4: un conteo con marco temporal propio («en octubre
        perdí 2 ventas») es un TOTAL DE PERIODO, nunca una tasa diaria o
        mensual: el «al día» de la cláusula vecina no es su tasa. Los
@@ -16344,6 +17283,28 @@
       }
       return null;
     }
+    /* v17.36 (WS3) · F4 / cruce WS1: el total mensual corregido por el
+       Retar. Cuando el mismo texto que retractó el cero es la
+       corrección de una sonda del Retar («No facturo $60.000 al mes:
+       facturo $2.400.000 al mes…»), la cifra verdadera ya quedó
+       escrita en el registro reto-corregido («facturas $2.400.000 al
+       mes, no $60.000»): la nota del cero la lee de ahí, no de la
+       evidencia mensual extraída del texto, que toma la primera cifra
+       mensual aunque esté negada («No facturo $60.000») y la nota
+       decía «facturas $60.000 al mes». */
+    function retarCorrectedMonthlyTotalFor(text) {
+      if (!text) return null;
+      var list = (state && state.contradictions) || [];
+      for (var i = 0; i < list.length; i++) {
+        var r = list[i];
+        if (r.key !== RETO_CORRECTION_KEY || r.status !== "resolved") continue;
+        if (r.resolution !== text) continue;
+        if (!r.retarCorrected) continue;
+        var m = String(r.retarCorrected).match(/facturas?\s+\$\s*([\d.,]+)\s+al mes/i);
+        if (m) { var v = parseInt(String(m[1]).replace(/[.,]/g, ""), 10); if (!isNaN(v) && v > 0) return v; }
+      }
+      return null;
+    }
     function maybeRecordZeroRetraction(text, zeroBefore, liveSnapBefore) {
       if (!state) return false;
       /* v17.34 (WS2) · F2: la sonda viva se trae de antes de guardar la
@@ -16400,6 +17361,7 @@
         state.contradictions.push(existing);
       }
       existing.figures = contradictionFiguresSnapshot();
+      stampClarificationRecord(existing);
       return true;
     }
     /* v17.34 (WS2) · F4: las afirmaciones de tasa del Retar que una sonda
@@ -16409,7 +17371,7 @@
     function retarRateClaims(snapshot) {
       var claims = [];
       var s = String(snapshot || "");
-      var re = /(pierdes|atiendes)\s+(\d[\d.,]*)\s*(ventas?|clientes?|pedidos?|reservas?|unidades?)\s+al\s+(d[ií]a|mes)/gi, m;
+      var re = /(pierdes|atiendes)\s+(\d[\d.,]*)\s*(ventas?|clientes?|clientas?|pedidos?|reservas?|unidades?|panes|membres[ií]as?|clases|sesiones|alumnas?|alumnos?)\s+al\s+(d[ií]a|mes)/gi, m;
       while ((m = re.exec(s)) !== null) {
         var v = parseInt(String(m[2] || "").replace(/[.,]/g, ""), 10);
         if (isNaN(v) || v <= 0) continue;
@@ -16463,6 +17425,102 @@
        sonda se reconstruye sin la distorsión y las demás fotos con la
        misma afirmación se invalidan. Sin negación literal no hay nada
        que registrar: una respuesta normal sigue su camino. */
+    /* v17.36 (WS1) · F2: cifras canónicas para detectar citas erróneas
+       del Retar, leídas DIRECTAMENTE de las respuestas declaradas en
+       state.answers — nunca del extractor retarFigures(), que es el
+       mismo que construyó la sonda y validaba sus propios errores
+       (la trampa de autoconsistencia: «facturas $60.000 al mes» era
+       «verdad» según su propia medida). */
+    function declaredMonthlyTotalFromAnswers() {
+      /* El total declarado se reconoce por CÓMO se declara, no por el
+         orden en que aparece: una fuente suelta en una lista («membresías
+         $1.500.000 al mes») no es el total aunque se diga primero, y el
+         total puede compartir respuesta con la alternativa (su etiqueta
+         «alternativa» se hereda de la vecina y no lo descalifica cuando
+         su propia cláusula lo declara como total). Puntaje por cifra:
+         +2 si su cláusula la presenta con un verbo de ingreso en primera
+         persona antes de la cifra («Facturo $2.400.000 al mes»,
+         «Mis ingresos son $6.000.000», «En total $…»); +1 si es la suma
+         de las demás cifras mensuales de su misma respuesta (el total es
+         la suma de sus fuentes); +1 si es la mayor cifra mensual de su
+         respuesta. Gana el mayor puntaje; el desempate es el orden de
+         aparición. */
+      var cands = [], order = 0;
+      MODULES.forEach(function (mm) {
+        mm.questions.forEach(function (qq, qi) {
+          var t = combinedAnswer(mm.id, qi);
+          if (!t) return;
+          var figs = moneyFigures(t);
+          var monthly = [];
+          figs.forEach(function (f, k) {
+            if (!monthlyAttachedToFigure(t, f, figs, k)) return;
+            var clause = figureClause(t, f.i, f.len || 0);
+            if (isGoalFramedFigure(clause) || figureIsPeriodTotal(clause)) return;
+            if (f.kind === "neto") return;
+            var own = null;
+            try { own = ownPrice(); } catch (e) { own = null; }
+            /* El precio propio no es facturación: «cobro $60.000 al
+               mes por la membresía» es la tarifa, no lo que entra. */
+            if (own != null && f.v === own) return;
+            var dollarAt = clause.indexOf("$");
+            var before = dollarAt >= 0 ? clause.slice(0, dollarAt) : clause;
+            var declaredVerb = /(factur\w*|ingres\w*|en total|total|vend[oi]|entr[oa]n?|mis (ventas|ingresos))/i.test(before);
+            /* La etiqueta «alternativa» se hereda de la vecina cuando la
+               respuesta mezcla la alternativa con el total: solo manda
+               cuando la cláusula no declara la cifra como total. */
+            if ((f.label === "alternativa" || f.label === "costo" || f.label === "cac") && !declaredVerb) return;
+            monthly.push({ f: f, declaredVerb: declaredVerb });
+          });
+          if (!monthly.length) return;
+          var maxV = 0;
+          monthly.forEach(function (m) { if (m.f.v > maxV) maxV = m.f.v; });
+          monthly.forEach(function (m) {
+            var score = 0;
+            if (m.declaredVerb) score += 2;
+            var others = 0;
+            monthly.forEach(function (g) { if (g !== m) others += g.f.v; });
+            if (monthly.length > 1 && Math.abs(others - m.f.v) <= Math.max(50000, Math.round(m.f.v * 0.01))) score += 1;
+            if (m.f.v === maxV) score += 1;
+            cands.push({ v: m.f.v, score: score, order: order++ });
+          });
+        });
+      });
+      if (!cands.length) return null;
+      cands.sort(function (a, b) { return (b.score - a.score) || (a.order - b.order); });
+      return cands[0].v;
+    }
+    function declaredPeriodAverageFromAnswers() {
+      var found = null;
+      MODULES.forEach(function (mm) {
+        if (found) return;
+        mm.questions.forEach(function (qq, qi) {
+          if (found) return;
+          var t = combinedAnswer(mm.id, qi);
+          if (!t) return;
+          var m = String(t).match(/\$\s*(\d[\d.,]*)\s*(?:en|durante)\s*(\d+)\s*meses/i) ||
+              String(t).match(/(?:en|durante)\s*(\d+)\s*meses[^$]{0,40}\$\s*(\d[\d.,]*)/i);
+          if (!m) return;
+          var near = String(t).slice(Math.max(0, m.index - 60), m.index + m[0].length + 60);
+          if (/(invert|inversi[oó]n|adquirir|adquisici[oó]n|para conseguir clientes)/i.test(near)) return;
+          if (!/(factur|ingres|entr[oa]|vend|cobr|gan)/i.test(near)) return;
+          var tot, mo;
+          if (/^\$/.test(m[0])) { tot = parseInt(String(m[1]).replace(/[.,]/g, ""), 10); mo = parseInt(m[2], 10); }
+          else { mo = parseInt(m[1], 10); tot = parseInt(String(m[2]).replace(/[.,]/g, ""), 10); }
+          if (!isNaN(tot) && mo > 0) found = Math.round(tot / mo);
+        });
+      });
+      return found;
+    }
+    function canonicalRetarFigures() {
+      var out = { monthly: null, monthlyAvg: null, price: null, cost: null, neto: null, volumeMargin: null };
+      try { out.price = ownPrice(); } catch (e) { out.price = null; }
+      try { var c = totalUnitCostFromText(combinedAnswer("M10", 0)); if (c) out.cost = c.v; } catch (e) { out.cost = null; }
+      try { var m0q7 = combinedAnswer("M0", 7); var n = pickNetFigure(moneyFigures(m0q7), "por venta", m0q7); if (n) out.neto = n.v; } catch (e) { out.neto = null; }
+      try { out.monthly = declaredMonthlyTotalFromAnswers(); } catch (e) { out.monthly = null; }
+      try { out.monthlyAvg = declaredPeriodAverageFromAnswers(); } catch (e) { out.monthlyAvg = null; }
+      try { out.volumeMargin = canonicalVolumeMarginMonthly(); } catch (e) { out.volumeMargin = null; }
+      return out;
+    }
     /* v17.35 (WS1) · F2: las cifras que el Retar citó en una sonda viva,
        leídas por su rol («facturas $5.000.000 al mes», «cobras $45.000»,
        «cada venta te cuesta $12.000», «te quedan $25.000»): la sonda no
@@ -16482,26 +17540,52 @@
       if (m && figNum(m[1]) != null) claims.push({ role: "cost", v: figNum(m[1]), text: m[0] });
       m = s.match(/(?:te quedan\s+\$\s*([\d.,]+)|cada venta te deja\s+\$\s*([\d.,]+))/i);
       if (m) { var nv = figNum(m[1] || m[2]); if (nv != null) claims.push({ role: "neto", v: nv, text: m[0] }); }
+      /* v17.36 (WS1) · F2: la cláusula volumen×margen («a 125 clientes
+         al mes eso es $875.000 al mes») afirma un total mensual: sin
+         este patrón, la afirmación era invisible para el registrador
+         y la corrección nunca quedaba registrada. Solo vale al mes:
+         un total diario no tiene total mensual canónico con el que
+         compararse. */
+      m = s.match(/a\s+(\d[\d.,]*)\s*(ventas?|clientes?|clientas?|pedidos?|reservas?|unidades?|panes|membres[ií]as|clases|sesiones|alumnas?|alumnos?)\s+al\s+mes[^$]{0,80}?(?:eso es|eso son)\s+\$\s*([\d.,]+)/i);
+      if (m) { var vmv = figNum(m[3]); if (vmv != null) claims.push({ role: "volumeMonthly", v: vmv, volume: { n: figNum(m[1]), noun: (m[2] || "ventas").toLowerCase(), unit: "mes" }, text: m[0] }); }
+      /* v17.36 (WS3) · F4: la cláusula volumen×margen nueva («a 125
+         clientes que compran 4 veces al mes, son 500 ventas al mes y te
+         quedan $3.500.000 al mes» / «a 500 panes al mes, te quedan
+         $3.500.000 al mes») afirma un total mensual DE MARGEN, no la
+         facturación bruta: su canónica es ventas al mes × margen, no el
+         total declarado. Sin este patrón, la sonda ya corregida era
+         invisible para el registrador y cualquier corrección posterior
+         no quedaba registrada. */
+      m = s.match(/a\s+(\d[\d.,]*)\s*(clientes?|clientas?|alumnas?|alumnos?|personas?)\s+que\s+\w+[^$]{0,60}?son\s+(\d[\d.,]*)\s*ventas?\s+al\s+mes[^$]{0,60}?te quedan\s+\$\s*([\d.,]+)/i);
+      if (m) { var hmv = figNum(m[4]); if (hmv != null) claims.push({ role: "volumeMargin", v: hmv, volume: { n: figNum(m[1]), noun: (m[2] || "clientes").toLowerCase(), unit: "mes" }, sales: figNum(m[3]), text: m[0] }); }
+      m = s.match(/a\s+(\d[\d.,]*)\s*(ventas?|panes|membres[ií]as|clases|sesiones|pedidos?|reservas?|unidades?)\s+al\s+mes[^$]{0,40}?te quedan\s+\$\s*([\d.,]+)/i);
+      if (m) { var smv = figNum(m[3]); if (smv != null) claims.push({ role: "volumeMargin", v: smv, volume: { n: figNum(m[1]), noun: (m[2] || "ventas").toLowerCase(), unit: "mes" }, sales: figNum(m[1]), text: m[0] }); }
       return claims;
     }
-    /* ¿La sonda cita alguna cifra distinta de la canónica (retarFigures)?
-       Solo cuenta cuando hay cifra canónica con la que comparar: sin
-       total declarado no hay «total verdadero» que citar mal. */
+    /* v17.36 (WS1) · F2: ¿la sonda cita alguna cifra distinta de la
+       canónica? La canónica se lee de las respuestas declaradas
+       (canonicalRetarFigures), nunca de retarFigures(): comparar el
+       snapshot contra el mismo extractor que construyó la sonda
+       validaba sus propios errores. Solo cuenta cuando hay cifra
+       canónica con la que comparar: sin total declarado no hay
+       «total verdadero» que citar mal. */
     function retarFigureMisquotes(snapshot) {
       var claims = retarFigureClaims(snapshot);
       if (!claims.length) return [];
-      var rf = null;
-      try { rf = retarFigures(); } catch (e) { return []; }
+      var canon = null;
+      try { canon = canonicalRetarFigures(); } catch (e) { return []; }
       var out = [];
       claims.forEach(function (c) {
         var trueV = null;
-        if (c.role === "monthly") trueV = rf.monthly;
-        else if (c.role === "monthlyAvg") trueV = rf.monthlyAvg ? rf.monthlyAvg.avg : rf.monthly;
-        else if (c.role === "price") trueV = rf.price;
-        else if (c.role === "cost") trueV = rf.cost;
-        else if (c.role === "neto") trueV = marginFrom(rf.price, rf.cost, rf.neto);
+        if (c.role === "monthly") trueV = canon.monthly;
+        else if (c.role === "monthlyAvg") trueV = canon.monthlyAvg;
+        else if (c.role === "volumeMonthly") trueV = canon.monthly;
+        else if (c.role === "volumeMargin") trueV = canon.volumeMargin;
+        else if (c.role === "price") trueV = canon.price;
+        else if (c.role === "cost") trueV = canon.cost;
+        else if (c.role === "neto") trueV = marginFrom(canon.price, canon.cost, canon.neto);
         if (trueV == null || trueV === c.v) return;
-        out.push({ role: c.role, saidV: c.v, trueV: trueV, text: c.text });
+        out.push({ role: c.role, saidV: c.v, trueV: trueV, text: c.text, sales: (c.sales != null ? c.sales : null) });
       });
       return out;
     }
@@ -16561,10 +17645,26 @@
       for (var i = 0; i < misquotes.length; i++) {
         var mq = misquotes[i];
         for (var k = 0; k < figs.length; k++) if (figs[k].v === mq.trueV) return { kind: "figure", misquote: mq, periodRest: periodRest };
+        /* v17.36 (WS3) · F4: la corrección puede reponer el total de
+           MARGEN («son 500 ventas al mes y $3.500.000 al mes») sin
+           nombrar la cifra bruta ($6.000.000) ni repetir la errónea
+           ($875.000): el total de margen canónico también es una cifra
+           verdadera de la cláusula volumen×margen, así que la
+           corrección queda registrada aunque no cite el bruto. */
+        if (mq.role === "volumeMonthly") {
+          var vmTrue = null;
+          try { vmTrue = canonicalVolumeMarginMonthly(); } catch (e) { vmTrue = null; }
+          if (vmTrue != null) { for (var k3 = 0; k3 < figs.length; k3++) if (figs[k3].v === vmTrue) return { kind: "figure", misquote: mq, periodRest: periodRest }; }
+        }
         for (var k2 = 0; k2 < figs.length; k2++) {
           if (figs[k2].v !== mq.saidV) continue;
           var before = s.slice(Math.max(0, figs[k2].i - 60), figs[k2].i);
           if (/\bno\b[^.!?;]{0,50}\b(facturo|facturas|cobro|cobras|cuesta|me cuesta|me quedan|te quedan|son|es)\b/i.test(before)) return { kind: "figure", misquote: mq, periodRest: periodRest };
+          /* v17.36 (WS1) · F2: la negación también vale DESPUÉS de la
+             cifra («Tu $875.000 está mal», «$60.000 no es así»): la
+             corrección niega el valor citado aunque no lo repita antes. */
+          var after = s.slice(figs[k2].i + (figs[k2].len || 0), Math.min(s.length, figs[k2].i + (figs[k2].len || 0) + 40));
+          if (/^\s*(está mal|está equivocado|no es así|no es verdad|no es correcto|eso no es)\b/i.test(after)) return { kind: "figure", misquote: mq, periodRest: periodRest };
         }
       }
       if (periodRest) return { kind: "period", periodRest: periodRest };
@@ -16573,7 +17673,8 @@
     function retarCorrectedPhrase(misquotes, periodRest) {
       var bits = [];
       misquotes.forEach(function (mq) {
-        var roleTxt = mq.role === "monthly" ? "facturas $" + mq.trueV.toLocaleString("es-CO") + " al mes"
+        var roleTxt = (mq.role === "monthly" || mq.role === "volumeMonthly") ? "facturas $" + mq.trueV.toLocaleString("es-CO") + " al mes"
+          : mq.role === "volumeMargin" ? "te quedan $" + mq.trueV.toLocaleString("es-CO") + " al mes" + (mq.sales ? " (" + mq.sales.toLocaleString("es-CO") + " ventas al mes)" : "")
           : mq.role === "monthlyAvg" ? "en promedio facturas $" + mq.trueV.toLocaleString("es-CO") + " al mes"
           : mq.role === "price" ? "cobras $" + mq.trueV.toLocaleString("es-CO")
           : mq.role === "cost" ? "cada venta te cuesta $" + mq.trueV.toLocaleString("es-CO")
@@ -16582,6 +17683,61 @@
       });
       if (periodRest) bits.push("perdiste " + periodRest.count + " " + periodRest.noun + " en " + periodRest.period);
       return bits.join("; ");
+    }
+    /* ¿Un uso del Retar ya está cubierto por una corrección
+       registrada de la misma sonda? Se comparan las citas: la
+       corrección cita la afirmación concreta; el uso cita todas las
+       afirmaciones de la sonda. Si una contiene a la otra, la
+       corrección manda y el uso no se vuelve a mostrar. */
+    function retoUseCoveredByCorrection(useRec) {
+      if (!useRec || !useRec.retarSaid) return false;
+      var list = (state && state.contradictions) || [];
+      for (var i = 0; i < list.length; i++) {
+        var r = list[i];
+        if (r.key !== RETO_CORRECTION_KEY || r.status !== "resolved" || !r.retarSaid) continue;
+        if (r.retarSaid.indexOf(useRec.retarSaid) >= 0 || useRec.retarSaid.indexOf(r.retarSaid) >= 0) return true;
+      }
+      return false;
+    }
+    /* La cita de una sonda del Retar: sus afirmaciones con cifra, o la
+       primera frase si no trae ninguna. */
+    function retarUseSaid(snapshot) {
+      var s = String(snapshot || "");
+      var bits = [];
+      try { retarFigureClaims(s).forEach(function (c) { bits.push(c.text); }); } catch (e) {}
+      try { retarRateClaims(s).forEach(function (c) { bits.push(c.text); }); } catch (e) {}
+      if (bits.length) return bits.join("; ");
+      var t = s.replace(/^Reto sobre tu respuesta a la [^.]+\.\s*/, "").replace(/^Te reto con tus propias cifras:\s*/i, "");
+      var cut = t.search(/[.;]\s/);
+      return (cut >= 0 ? t.slice(0, cut) : t).trim();
+    }
+    /* v17.36 (WS1) · F2: registra el uso del Retar (sonda + respuesta)
+       cuando el dueño responde a la sonda sin que se detecte una cita
+       errónea que corregir. Sin esto, un Retar usado y respondido no
+       dejaba ningún rastro en el Resumen. */
+    function recordRetarUse(text, step) {
+      if (!state || !text || !step || !step.probeSnapshot) return false;
+      var said = retarUseSaid(step.probeSnapshot);
+      if (!said) return false;
+      if (!state.contradictions) state.contradictions = [];
+      var covered = false;
+      state.contradictions.forEach(function (r) {
+        if (r.key === RETO_CORRECTION_KEY && r.status === "resolved" && r.retarSaid && (r.retarSaid.indexOf(said) >= 0 || said.indexOf(r.retarSaid) >= 0)) covered = true;
+      });
+      if (covered) return false;
+      var existing = null;
+      state.contradictions.forEach(function (r) { if (r.key === RETO_USE_KEY && r.status === "resolved" && r.retarSaid === said) existing = r; });
+      if (existing) {
+        existing.resolution = text;
+        existing.resolvedAt = new Date().toISOString();
+        existing.sourceHash = contradictionSourceHash();
+        existing.figures = contradictionFiguresSnapshot();
+      } else {
+        existing = { key: RETO_USE_KEY, at: new Date().toISOString(), status: "resolved", resolution: text, resolvedAt: new Date().toISOString(), sourceHash: contradictionSourceHash(), corrected: null, needsRole: false, retarSaid: said, retarCorrected: null, figures: contradictionFiguresSnapshot() };
+        state.contradictions.push(existing);
+      }
+      stampClarificationRecord(existing);
+      return true;
     }
     function maybeRecordRetarCorrection(text, probeStep) {
       if (!state || !text) return false;
@@ -16605,9 +17761,19 @@
            respuesta reafirma la verdadera — o repone el total de
            periodo perdido — queda registrado con la cita. */
         figureMisquotes = retarFigureMisquotes(step.probeSnapshot);
-        if (!figureMisquotes.length) return false;
+        if (!figureMisquotes.length) {
+          /* v17.36 (WS1) · F2: sin cita errónea que corregir, el uso
+             del Retar queda registrado igual — pero solo cuando el
+             dueño responde a la sonda misma, no a otra pregunta con
+             una sonda viva al fondo. */
+          if (!probeStep) return false;
+          return recordRetarUse(text, step);
+        }
         var rest = correctionRestatesRetarTruth(text, figureMisquotes);
-        if (!rest) return false;
+        if (!rest) {
+          if (!probeStep) return false;
+          return recordRetarUse(text, step);
+        }
         said = figureMisquotes.map(function (mq) { return mq.text; }).join("; ");
         correctedPhrase = retarCorrectedPhrase(figureMisquotes, rest.periodRest || null);
       }
@@ -16624,6 +17790,8 @@
         existing = { key: RETO_CORRECTION_KEY, at: new Date().toISOString(), status: "resolved", resolution: text, resolvedAt: new Date().toISOString(), sourceHash: contradictionSourceHash(), corrected: null, needsRole: false, retarSaid: said, retarCorrected: correctedPhrase, figures: contradictionFiguresSnapshot() };
         state.contradictions.push(existing);
       }
+      stampClarificationRecord(existing);
+      if (step && step.probeScope) existing.retarScope = step.probeScope;
       /* La foto de ESTA sonda se reconstruye con las respuestas de hoy:
          el historial no sigue mostrando la afirmación falsa como si
          fuera la pregunta. La sonda ya está contestada, así que la
@@ -16768,8 +17936,94 @@
       }
       return null;
     }
+    /* v17.36 (WS3) · F4: cabezas no son ventas. Un sustantivo de
+       volumen puede contar personas (clientes, alumnas) o ventas
+       (panes, membresías, clases): solo el segundo multiplica
+       directo por el margen. Con personas, las ventas al mes son
+       cabezas × frecuencia de compra (extractPurchasesPerMonth, la
+       frecuencia que el propio dueño declaró); sin frecuencia
+       conocida no hay total mensual que enunciar — nunca se
+       etiquetan cabezas como ventas. */
+    function isHeadcountNoun(noun) {
+      return /^(clientes?|clientas?|alumnas?|alumnos?|personas?)$/i.test(String(noun || "").trim());
+    }
+    function volumeSalesPerMonth(vol) {
+      if (!vol || vol.unit !== "mes") return null;
+      if (isHeadcountNoun(vol.noun)) {
+        var freq = null;
+        try { freq = extractPurchasesPerMonth(); } catch (e) { freq = null; }
+        if (freq == null || freq <= 0) return null;
+        return vol.v * freq;
+      }
+      return vol.v;
+    }
+    /* El total mensual DE MARGEN canónico: ventas al mes × margen por
+       venta, leído de las respuestas declaradas. Es la cifra verdadera
+       de la cláusula volumen×margen del Retar («te quedan $3.500.000
+       al mes»), distinta de la facturación bruta mensual. */
+    function canonicalVolumeMarginMonthly() {
+      var rf = null;
+      try { rf = retarFigures(); } catch (e) { return null; }
+      if (!rf || !rf.volume) return null;
+      var margin = marginFrom(rf.price, rf.cost, rf.neto);
+      if (margin == null) return null;
+      var sales = volumeSalesPerMonth(rf.volume);
+      if (sales == null) return null;
+      return sales * margin;
+    }
+    /* v17.36 (WS3) · F4: ¿el total declarado puede rescatarse aunque
+       sea menor que la suma de fuentes? Solo cuando esa suma está
+       inflada por doble conteo: la respuesta de fuentes repite el
+       propio total («Facturo $X al mes») y a veces la tarifa, y
+       extractIncomeSources las suma como fuentes. El rescate exige
+       tres cosas: (1) el declarado está entre las fuentes; (2) en la
+       respuesta de fuentes aparece en cláusula de ingreso propio
+       (facturo/ingreso/gano/recibo/facturación), no como una fuente
+       nombrada («recomendación $5.000.000» es una fuente genuina);
+       (3) quitados ese doble conteo y la tarifa, el declarado cubre
+       las fuentes genuinas. O bien no queda ninguna fuente genuina
+       (todas son el propio total y/o la tarifa): el doble conteo es
+       puro y el declarado es el total. Sin ese restatement, un
+       declarado menor que la suma es una parte, no el total (L3a2:
+       $5.000.000 frente a $8.500.000 de fuentes genuinas). Sin
+       fuentes, nada lo contradice y el rescate vale. */
+    function declaredTotalRescueOk(declared, price) {
+      if (declared == null) return false;
+      try {
+        var inc = extractIncomeSources();
+        if (!inc || !inc.sum) return true;
+        if (!inc.sources || !inc.sources.some(function (s) { return s.v === declared; })) return false;
+        /* Doble conteo puro: todas las fuentes son el propio total
+           (y/o la tarifa) — a veces es el eco del propio Analía
+           («$2.400.000 al mes en dos fuentes que suman $2.400.000»)
+           leído como dos fuentes. No queda ninguna fuente genuina
+           que el declarado no cubra: el declarado ES el total. */
+        var genuineOnly = 0;
+        inc.sources.forEach(function (s) {
+          if (s.v === declared) return;
+          if (price != null && s.v === price) return;
+          genuineOnly += s.v;
+        });
+        if (genuineOnly === 0) return true;
+        var restated = false;
+        [["M6", 0], ["M1", 6]].forEach(function (mq) {
+          if (restated) return;
+          var t = "";
+          try { t = combinedAnswer(mq[0], mq[1]); } catch (e) { t = ""; }
+          if (!String(t || "").trim()) return;
+          var figs = moneyFigures(t);
+          for (var k = 0; k < figs.length; k++) {
+            if (figs[k].v !== declared) continue;
+            var clause = figureClause(t, figs[k].i, figs[k].len || 0);
+            if (/(^|[^A-Za-zÀ-ÿ])(facturo|facturamos|ingreso|ingresamos|gano|ganamos|recibo|recibimos|facturaci[oó]n)([^A-Za-zÀ-ÿ]|$)/i.test(clause)) { restated = true; break; }
+          }
+        });
+        if (!restated) return false;
+        return declared >= genuineOnly;
+      } catch (e) { return false; }
+    }
     function retarFigures() {
-      var f = { price: null, cost: null, volume: null, volumeLost: null, volumePeriod: null, volumeLostPeriod: null, monthly: null, monthlyAvg: null, headcount: null, conversion: null, zeroSales: null, falling: null, priceSrc: null, costSrc: null, monthlySrc: null, monthlyAvgSrc: null, volumeSrc: null, volumeLostSrc: null, volumePeriodSrc: null, volumeLostPeriodSrc: null, neto: null };
+      var f = { price: null, cost: null, volume: null, volumeLost: null, volumePeriod: null, volumeLostPeriod: null, volumeSales: null, monthly: null, monthlyAvg: null, headcount: null, conversion: null, zeroSales: null, falling: null, priceSrc: null, costSrc: null, monthlySrc: null, monthlyAvgSrc: null, volumeSrc: null, volumeLostSrc: null, volumePeriodSrc: null, volumeLostPeriodSrc: null, neto: null };
       var cf = contradictionFigures();
       /* v17.32 (WS2) · El precio propio etiquetado manda sobre la cifra
          rescatada sin etiqueta: antes, el precio de la competencia
@@ -16824,7 +18078,7 @@
       var OTHER_VOL_RE = /(otros?\s+(gimnasios?|florer[ií]as?|negocios?|locales?|hostales?|tiendas?)|competencia|vecin[oa]s?|otra\s+florer[ií]a|otro\s+negocio|la\s+cadena)/i;
       for (i = 0; i < texts.length && (!f.volume || !f.volumeLost || !f.volumeLostPeriod || !f.volumePeriod) && !f.zeroSales; i++) {
         t = texts[i].t;
-        var volRe = /(\d[\d.,]*)\s*(ventas?|clientes?|pedidos?|reservas?|unidades?)\s*(?:al|por)\s*(d[ií]a|mes)|(?:al|por)\s*(d[ií]a|mes)[^0-9]{0,40}(\d[\d.,]*)\s*(ventas?|clientes?|pedidos?|reservas?|unidades?)/gi;
+        var volRe = /(\d[\d.,]*)\s*(ventas?|clientes?|clientas?|pedidos?|reservas?|unidades?|panes|membres[ií]as?|clases|sesiones|alumnas?|alumnos?)\s*(?:al|por)\s*(d[ií]a|mes)|(?:al|por)\s*(d[ií]a|mes)[^0-9]{0,40}(\d[\d.,]*)\s*(ventas?|clientes?|clientas?|pedidos?|reservas?|unidades?|panes|membres[ií]as?|clases|sesiones|alumnas?|alumnos?)/gi;
         var vm;
         while ((vm = volRe.exec(t)) !== null) {
           var numFirst = /^\d/.test(vm[1] || "");
@@ -16835,6 +18089,11 @@
           if (isNaN(vv) || vv <= 0 || vv >= 100000) continue;
           var win = t.slice(Math.max(0, vm.index - 60), Math.min(t.length, vm.index + vm[0].length + 60));
           if (/(adquirir|adquisici[oó]n|\bCAC\b)/i.test(win)) continue;
+          /* v17.36 (WS3) · F4: la capacidad no es volumen servido
+             («tiene capacidad de 40 panes al día»): al añadir «panes»
+             a los sustantivos, la capacidad ganaba por orden y tapaba
+             el volumen real (125 clientes al mes). */
+          if (/capacidad/i.test(win)) continue;
           /* v17.34 (WS2) · F4: el conteo manda sobre la tasa. Primero se
              mira SU vecindad: un marco temporal propio («en octubre
              perdí 2 ventas») hace del conteo un total de periodo, nunca
@@ -16843,7 +18102,7 @@
              segunda alternativa la tasa solo vale en la misma cláusula
              que el conteo. */
           var countStart = numFirst ? vm.index : vm.index + vm[0].search(/\d/);
-          var countPhrase = t.slice(countStart).match(/^\d[\d.,]*\s*(ventas?|clientes?|pedidos?|reservas?|unidades?)/i);
+          var countPhrase = t.slice(countStart).match(/^\d[\d.,]*\s*(ventas?|clientes?|clientas?|pedidos?|reservas?|unidades?|panes|membres[ií]as?|clases|sesiones|alumnas?|alumnos?)/i);
           var countEnd = countStart + (countPhrase ? countPhrase[0].length : String(numStr || "").length);
           var rateLead = numFirst ? "" : (vm[0].match(/^(?:al|por)\s*(?:d[ií]a|mes)/i) || [""])[0];
           var gapText = numFirst ? "" : vm[0].slice(rateLead.length, vm[0].search(/\d/));
@@ -16881,7 +18140,26 @@
              del hueco entre tasa y conteo («al día perdí 2 ventas»):
              antes solo se miraba fuera del match y la pérdida quedaba
              dentro, invisible. */
-          if (LOSS_RE.test(winBefore + " " + winAfter) || LOSS_RE.test(gapText) || /menos/i.test(t.slice(Math.max(0, vm.index - 25), vm.index))) {
+          /* v17.36 (WS3) · F4: «menos de N» no es una pérdida («la
+             señal sería que menos de 5 alumnas al mes pidan premium»:
+             5 es el umbral, no 5 alumnas perdidas). Solo «menos N»
+             pegado al número («menos 3 pedidos») cuenta como pérdida.
+             Sin esto, al añadir «alumnas» a los sustantivos el reto
+             afirmaba como hecho una pérdida que es una condición. */
+          var before25 = t.slice(Math.max(0, vm.index - 25), vm.index);
+          var menosLoss = /menos/i.test(before25) && !/menos\s+de\s*$/i.test(before25);
+          if (LOSS_RE.test(winBefore + " " + winAfter) || LOSS_RE.test(gapText) || menosLoss) {
+            /* v17.36 (WS3) · F4: una pérdida en condicional («Si se va,
+               pierdo unas 5 membresías al mes») no es una pérdida de
+               hoy: la «si» va antes del verbo de pérdida en su misma
+               cláusula y la cifra es la consecuencia de algo que no
+               pasó. Sin esto, al añadir «membresías» a los sustantivos
+               el reto afirmaba como hecho una pérdida hipotética. Una
+               pérdida real con la condición después («pierdo 3 clientes
+               al mes si no contesto») no se toca: la «si» va después
+               del verbo, no antes. */
+            var condBefore = winBefore + " " + gapText;
+            if (/\bsi\b[^.!?;]{0,60}?(pierd[oaes]?|perd[ií]|se pierden|no llegan|dej[eé] de|no alcanzo|se me escapan)/i.test(condBefore)) continue;
             if (!f.volumeLost) { f.volumeLost = { v: vv, noun: noun, unit: unit }; f.volumeLostSrc = texts[i].src; }
             continue;
           }
@@ -16915,7 +18193,19 @@
         for (i = 0; i < texts.length; i++) {
           var figs = moneyFigures(texts[i].t);
           for (var k = 0; k < figs.length; k++) {
-            if (figs[k].unit !== "mensual" || figs[k].label === "costo" || figs[k].label === "alternativa" || figs[k].label === "cac") continue;
+            if (figs[k].unit !== "mensual" || figs[k].label === "costo" || figs[k].label === "cac") continue;
+            if (figs[k].label === "alternativa") {
+              /* v17.36 (WS3) · F4: la etiqueta «alternativa» se hereda
+                 de la cifra vecina cuando la respuesta mezcla la
+                 alternativa con el total («gasta $70.000 al mes en la
+                 alternativa… Facturo $2.400.000 al mes»): solo manda
+                 cuando la propia cláusula no declara la cifra como
+                 facturación con verbo de ingreso en primera persona o
+                 «en total». Sin esto, el total declarado nunca era
+                 candidato y la tarifa pasaba como facturación. */
+              var clauseAlt = figureClause(texts[i].t, figs[k].i, figs[k].len || 0);
+              if (!/(facturo|facturamos|ingreso|ingresamos|vendo|vendemos|gano|ganamos|recibo|recibimos|en total)\b/i.test(clauseAlt)) continue;
+            }
             if (figs[k].kind === "neto") continue; /* lo neto nunca es facturación bruta */
             /* v17.34 (WS1) · F1: la mensualidad tiene que estar pegada a la
                cifra y la cifra no puede ser meta ni total de periodo: el
@@ -16969,7 +18259,20 @@
           var altV = (cf.alternativa && cf.alternativa.v) || null;
           monthlyCands = monthlyCands.filter(function (c) {
             if (altV != null && c.v === altV) return false;
-            if (f.price != null && c.v === f.price && f.volume && f.volume.v > 1) return false;
+            if (f.price != null && c.v === f.price) {
+              /* v17.36 (WS3) · F4: la tarifa nunca es facturación
+                 mensual cuando hay otra candidata mensual o un total
+                 declarado distinto: la guarda ya no depende de que
+                 exista volumen (antes, sin volumen —«membresías» no
+                 era sustantivo de volumen— la tarifa $60.000 pasaba
+                 como «facturas $60.000 al mes»). Solo se conserva
+                 cuando es la única cifra mensual y nada la contradice
+                 (una venta al mes a esa tarifa sí factura la tarifa). */
+              var otherCand = monthlyCands.some(function (g) { return g !== c && g.v !== c.v; });
+              var declaredDiff = false;
+              try { var decT = declaredMonthlyTotalFromAnswers(); declaredDiff = decT != null && decT !== c.v; } catch (e) { declaredDiff = false; }
+              if (otherCand || declaredDiff) return false;
+            }
             return true;
           });
         }
@@ -16989,6 +18292,11 @@
              que citar. */
           var declaredTotal = null;
           try { declaredTotal = extractDeclaredMonthlyTotal(); } catch (e) { declaredTotal = null; }
+          /* v17.36 (WS3) · F4: el total declarado puede vivir fuera de
+             C0 Q1 (C0 Q5, C6 Q1): la vía canónica lo lee de todas las
+             respuestas. La vía de C0 Q1 manda cuando existe; la
+             canónica solo rescata lo que aquella no ve. */
+          if (declaredTotal == null) { try { declaredTotal = declaredMonthlyTotalFromAnswers(); } catch (e2) { declaredTotal = null; } }
           var declaredFromCorrection = false;
           if (declaredTotal != null) {
             (state.contradictions || []).forEach(function (r) { if (r.key === "ingresos-fuentes-vs-total" && r.status === "resolved" && r.corrected && r.corrected.ingresoTotal) declaredFromCorrection = true; });
@@ -17008,8 +18316,22 @@
             var candsM = monthlyCands;
             if (incSumM != null) candsM = monthlyCands.filter(function (c) { return c.v >= incSumM; });
             if (!candsM.length) {
-              f.monthly = null;
-              f.monthlySrc = null;
+              /* v17.36 (WS3) · F4: el total declarado manda sobre una
+                 suma de fuentes inflada: extractIncomeSources cuenta
+                 como fuentes el propio total y la tarifa, así que
+                 ninguna candidata cubre la suma y el total se perdía
+                 (la sonda quedaba sin mensual). El rescate solo vale
+                 cuando el doble conteo es real
+                 (declaredTotalRescueOk): sin restatement del total en
+                 la respuesta de fuentes, un declarado menor que la
+                 suma es una parte, no el total (L3a2). */
+              if (declaredTotal != null && declaredMatch && declaredTotalRescueOk(declaredTotal, f.price)) {
+                f.monthly = declaredMatch.v;
+                f.monthlySrc = declaredMatch.src;
+              } else {
+                f.monthly = null;
+                f.monthlySrc = null;
+              }
             } else {
               var chosenM = candsM[0];
               candsM.forEach(function (c) {
@@ -17020,6 +18342,28 @@
               f.monthly = chosenM.v;
               f.monthlySrc = chosenM.src;
             }
+          }
+        } else {
+          /* v17.36 (WS3) · F4: sin candidatas (la guarda de la tarifa
+             sacó la única, que era el precio), el total declarado
+             canónico sigue valiendo: la facturación no desaparece
+             porque la tarifa se haya descartado como candidata. El
+             rescate exige lo mismo que en R12 (declaredTotalRescueOk):
+             sin restatement ni fuentes que lo contradigan, un
+             declarado menor que la suma es una parte, no el total. */
+          var declaredOnly = null;
+          try { declaredOnly = extractDeclaredMonthlyTotal(); } catch (e) { declaredOnly = null; }
+          if (declaredOnly == null) { try { declaredOnly = declaredMonthlyTotalFromAnswers(); } catch (e2) { declaredOnly = null; } }
+          if (declaredOnly != null && declaredTotalRescueOk(declaredOnly, f.price)) {
+            f.monthly = declaredOnly;
+            f.monthlySrc = null;
+            for (var rsI = 0; rsI < texts.length && !f.monthlySrc; rsI++) {
+              var rsFigs = moneyFigures(texts[rsI].t);
+              for (var rsK = 0; rsK < rsFigs.length; rsK++) {
+                if (rsFigs[rsK].v === declaredOnly && monthlyAttachedToFigure(texts[rsI].t, rsFigs[rsK], rsFigs, rsK)) { f.monthlySrc = texts[rsI].src; break; }
+              }
+            }
+            if (!f.monthlySrc) f.monthlySrc = "C0 Q1";
           }
         }
       }
@@ -17072,6 +18416,11 @@
         }
         if (paid != null && tot2 != null && !isNaN(paid) && !isNaN(tot2) && tot2 > 0 && paid <= tot2) f.conversion = { paid: paid, total: tot2 };
       }
+      /* v17.36 (WS3) · F4: las ventas al mes que el volumen representa
+         (cabezas × frecuencia, o el volumen mismo cuando ya son
+         ventas): la sonda y el detector de citas erróneas las leen de
+         aquí, no del conteo bruto de cabezas. */
+      f.volumeSales = volumeSalesPerMonth(f.volume);
       return f;
     }
     /* v17.26 (WS3) · El reto ya no es una plantilla con números
@@ -17148,12 +18497,30 @@
       else if (leadKind === "mensual") { mentioned.monthly = true; mentioned.monthlyAvg = true; markMentioned(f.monthly); if (f.monthlyAvg) { markMentioned(f.monthlyAvg.total); markMentioned(f.monthlyAvg.avg); } }
       /* El resto de las cifras, cada una con su fuente, sin repetir la
          que ya abre el reto. */
-      if (!mentioned.price && !mentioned.cost && !mentioned.margin && !mentionedVal[f.price] && !mentionedVal[f.cost] && f.price != null && f.cost != null && f.price > f.cost) parts.push("cobras $" + f.price.toLocaleString("es-CO") + srcOf(f.priceSrc) + " y cada venta te cuesta $" + f.cost.toLocaleString("es-CO") + srcOf(f.costSrc) + ", así que te quedan $" + marginFrom(f.price, f.cost, f.neto).toLocaleString("es-CO") + " por venta");
+      if (!mentioned.price && !mentioned.cost && !mentioned.margin && !mentionedVal[f.price] && !mentionedVal[f.cost] && f.price != null && f.cost != null && f.price > f.cost) { parts.push("cobras $" + f.price.toLocaleString("es-CO") + srcOf(f.priceSrc) + " y cada venta te cuesta $" + f.cost.toLocaleString("es-CO") + srcOf(f.costSrc) + ", así que te quedan $" + marginFrom(f.price, f.cost, f.neto).toLocaleString("es-CO") + " por venta"); mentioned.margin = true; markMentioned(marginFrom(f.price, f.cost, f.neto)); }
       else if (!mentioned.price && !mentionedVal[f.price] && f.price != null) parts.push("tu precio es $" + f.price.toLocaleString("es-CO") + srcOf(f.priceSrc));
       else if (!mentioned.cost && !mentionedVal[f.cost] && f.cost != null) parts.push("cada venta te cuesta $" + f.cost.toLocaleString("es-CO") + srcOf(f.costSrc));
       if (f.volume) {
         var volMargin = marginFrom(f.price, f.cost, f.neto);
-        if (f.price != null && f.cost != null && f.price > f.cost && volMargin != null) parts.push("a " + f.volume.v.toLocaleString("es-CO") + " " + f.volume.noun + " al " + f.volume.unit + " eso es $" + (volMargin * f.volume.v).toLocaleString("es-CO") + (f.volume.unit === "mes" ? " al mes" : " diarios") + srcOf(f.volumeSrc));
+        var volSales = f.volumeSales;
+        if (volMargin != null && volSales != null && f.volume.unit === "mes") {
+          /* v17.36 (WS3) · F4: cabezas no son ventas. Con personas, las
+             ventas al mes son cabezas × frecuencia («125 clientes que
+             compran 4 veces al mes, son 500 ventas al mes y te quedan
+             $3.500.000 al mes»); con unidades de venta, el volumen ya
+             son ventas («a 500 panes al mes, te quedan $3.500.000 al
+             mes»). El total que se enuncia es DE MARGEN («te quedan»),
+             nunca la facturación bruta. */
+          if (isHeadcountNoun(f.volume.noun)) {
+            var volFreq = null;
+            try { volFreq = extractPurchasesPerMonth(); } catch (e) { volFreq = null; }
+            parts.push("a " + f.volume.v.toLocaleString("es-CO") + " " + f.volume.noun + " que compran " + volFreq + (volFreq === 1 ? " vez" : " veces") + " al mes, son " + volSales.toLocaleString("es-CO") + " ventas al mes y te quedan $" + (volMargin * volSales).toLocaleString("es-CO") + " al mes" + srcOf(f.volumeSrc));
+          } else {
+            parts.push("a " + f.volume.v.toLocaleString("es-CO") + " " + f.volume.noun + " al mes, te quedan $" + (volMargin * volSales).toLocaleString("es-CO") + " al mes" + srcOf(f.volumeSrc));
+          }
+          mentioned.margin = true;
+          markMentioned(volMargin * volSales);
+        } else if (f.volume.unit === "día" && !isHeadcountNoun(f.volume.noun) && f.price != null && f.cost != null && f.price > f.cost && volMargin != null) parts.push("a " + f.volume.v.toLocaleString("es-CO") + " " + f.volume.noun + " al " + f.volume.unit + " eso es $" + (volMargin * f.volume.v).toLocaleString("es-CO") + " diarios" + srcOf(f.volumeSrc));
         else parts.push("atiendes " + f.volume.v.toLocaleString("es-CO") + " " + f.volume.noun + " al " + f.volume.unit + srcOf(f.volumeSrc));
       }
       if (f.volumePeriod) parts.push("atendiste " + f.volumePeriod.v.toLocaleString("es-CO") + " " + f.volumePeriod.noun + " " + volumePeriodText(f.volumePeriod.period) + srcOf(f.volumePeriodSrc));
@@ -17165,6 +18532,14 @@
          mensual. */
       if (f.volumeLostPeriod) parts.push("perdiste " + f.volumeLostPeriod.v.toLocaleString("es-CO") + " " + f.volumeLostPeriod.noun + " " + volumePeriodText(f.volumeLostPeriod.period) + srcOf(f.volumeLostPeriodSrc));
       if (f.volumeLost) parts.push("pierdes " + f.volumeLost.v.toLocaleString("es-CO") + " " + f.volumeLost.noun + " al " + f.volumeLost.unit + srcOf(f.volumeLostSrc));
+      /* v17.36 (WS3) · F4: el margen se enuncia siempre que se conozca,
+         no solo cuando hay volumen: sin volumen, el reto callaba lo que
+         queda por venta aunque el dueño lo hubiera declarado («el margen
+         $45.000 nunca se enuncia»). Solo cuando nadie lo dijo antes. */
+      if (!mentioned.margin) {
+        var soloMargin = marginFrom(f.price, f.cost, f.neto);
+        if (soloMargin != null && !mentionedVal[soloMargin]) { parts.push("te quedan $" + soloMargin.toLocaleString("es-CO") + " por venta"); mentioned.margin = true; markMentioned(soloMargin); }
+      }
       if (!mentioned.monthly && !mentionedVal[f.monthly] && f.monthly != null) parts.push("facturas $" + f.monthly.toLocaleString("es-CO") + " al mes" + srcOf(f.monthlySrc));
       else if (!mentioned.monthlyAvg && !(f.monthlyAvg && mentionedVal[f.monthlyAvg.total]) && f.monthlyAvg) parts.push("en " + f.monthlyAvg.months + " meses entraron $" + f.monthlyAvg.total.toLocaleString("es-CO") + ", unos $" + f.monthlyAvg.avg.toLocaleString("es-CO") + " al mes en promedio" + srcOf(f.monthlyAvgSrc));
       if (f.headcount != null) parts.push("tienes " + f.headcount + " empleado" + (f.headcount === 1 ? "" : "s"));
@@ -17482,6 +18857,23 @@
       }
       return false;
     }
+    /* v17.36 (WS7) · P2: con pregunta nueva esperando, una corrección
+       que ABRE el mensaje («Me equivoqué:…», «Aclaro:…») responde al
+       aviso abierto, no a la pregunta nueva: sí resuelve la
+       contradicción. Una corrección incrustada a mitad de una
+       respuesta normal (C14 P4: «Mi plan…; en realidad, el total
+       correcto es…») sigue siendo la respuesta: nunca se sobrescribe
+       una resolución con el texto respondido a otra pregunta (F1-A).
+       La marca debe estar en la primera cláusula del mensaje. */
+    function ws7ClarLeads(text, openContra) {
+      var t = String(text || "");
+      var cut = t.search(/[.!?;:]/);
+      var head = (cut >= 0 ? t.slice(0, cut) : t).trim();
+      if (!head) head = t;
+      if (looksLikeExplicitCorrection(head)) return true;
+      if (openContra && openContra.key && openContra.key.indexOf("cac-") === 0 && moneySpans(head).length > 0 && /por cliente/i.test(head)) return true;
+      return false;
+    }
     function commitAnswer(text) {
       /* v17.14 · Una pestaña vieja no responde: sus respuestas pisarían el
          avance más reciente. Primero recarga o fusiona lo nuevo.
@@ -17535,11 +18927,18 @@
          ninguna cifra de la familia del aviso abierto no se registra
          como aclaración — el texto sigue su camino como respuesta. */
       var clarCorr = null;
-      if (openContra && !pendFirst && clarIntent) {
+      /* v17.36 (WS1) · F1-A: una respuesta solo es resolución de
+         aclaración cuando la pregunta pendiente ES la aclaración —
+         sin pregunta nueva esperando ni repregunta pendiente. Con una
+         pregunta normal esperando, el texto es su respuesta, aunque
+         suene a corrección («en realidad…»): nunca se sobrescribe
+         una resolución con el texto respondido a otra pregunta. */
+      var clarLeads = ws7ClarLeads(text, openContra);
+      if (openContra && !pendFirst && (!hasFreshQuestion || clarLeads) && clarIntent) {
         clarCorr = parseCorrectedFigures(text, openContra.key);
         if (!correctionBelongsToFamily(clarCorr, openContra.key)) clarIntent = false;
       }
-      if (openContra && !pendFirst && clarIntent) {
+      if (openContra && !pendFirst && (!hasFreshQuestion || clarLeads) && clarIntent) {
         if (!state.contradictions) state.contradictions = [];
         var corr = clarCorr;
         var existing = null;
@@ -17563,9 +18962,18 @@
            supresión por clave + valores sobrevive a respuestas
            posteriores mientras las cifras no cambien. */
         existing.figures = contradictionFiguresSnapshot();
+        stampClarificationRecord(existing, m.id);
         /* v17.33 (WS1) · H1: si esta aclaración también corrige un cero de ventas que estaba vivo, queda registrada como retractación del cero. */
         maybeRecordZeroRetraction(text, zeroBefore, zeroLiveSnapBefore);
         maybeRecordRetarCorrection(text); /* v17.34 (WS2) · F4: una aclaración que niega literalmente una tasa del Retar también queda retractada. */
+        /* v17.36 (WS7) · P2 (corregido): la rama solo se alcanza con
+           clarLeads — la corrección ABRE el mensaje — así que la F1-A
+           queda protegida: una respuesta normal con «en realidad…»
+           incrustado no entra aquí. Y se restaura el doble uso de la
+           v17.35 (WS4): el texto resuelve la aclaración Y es la
+           respuesta a la pregunta nueva que esperaba, que es la
+           pregunta del propio aviso (aquí, la del hueco entre fuentes
+           y total). Nunca se pierde. */
         if (!hasFreshQuestion) {
           persist();
           notePriceChangeForResearch(priceBeforeCommit);
@@ -17856,7 +19264,7 @@
       "M3:3": { from: [["M3", 0]], incremental: "Ya me contaste tus tres dolores: ahora solo dime los tres resultados que el cliente más valora cuando ya volvió a casa — no lo que disfruta durante la compra, sino lo que se lleva y le dura — cada uno con algo que un cliente hizo o dijo." },
       "M8:3": { from: [["M4", 2], ["M4", 3]], incremental: "Ya me contaste el recorrido de tu cliente por fases: ahora descríbeme el flujo operativo como si se lo explicaras a quien lo ejecutará por primera vez — desde que el cliente confirma hasta la posventa — con cada paso numerado, su responsable y su tiempo estimado." },
       "M6:0": { from: [["M1", 6]], incremental: "Ya me contaste tus fuentes de ingreso con sus precios y ventas: ahora solo dime los precios reales de hoy por fuente y cuál de esas fuentes es la que más se repite mes a mes." },
-      "M10:4": { from: [["M10", 2]], incremental: "Ya me contaste la incoherencia mayor con su cifra: ahora nombra al menos dos coherencias que sí se sostienen y una segunda contradicción, cada una citando los dos bloques que se apoyan o se contradicen." },
+      "M10:4": { from: [["M10", 2]], incremental: "Ya me contaste la incoherencia mayor con su cifra: esa es tu primera contradicción. Ahora nombra al menos dos coherencias que sí se sostienen y dos contradicciones en total — la que ya me contaste cuenta como la primera, así que aquí me falta la segunda —, cada una citando los dos bloques que se apoyan o se contradicen." },
       "M11:5": { from: [["M11", 2]], incremental: "Ya me contaste tu pedido: ahora solo dime la tracción — qué has logrado ya que demuestre que esto avanza: ventas, clientes, alianzas, reconocimientos, con cifras y fechas — y repite el pedido sin cambios." },
       "M12:4": { from: [["M12", 3]], incremental: "Ya me contaste tus tres tesis: ahora elige una y defiéndela — por qué esa, con la evidencia de tu propio diagnóstico, y no las otras dos — y dame la señal con cifra de que elegiste mal." }
     };
@@ -17944,6 +19352,7 @@
     var sendingAnswer = false;
     function sendAnswer() {
       var box = $("answerBox");
+      var sendMod = ui.module; /* v17.36 (WS6) · D1(a): el módulo del envío, para no restaurar el texto en otro compositor */
       if (state && paymentGateApplies(ui.module)) { clearActiveMode(); toast("Para responder aquí yo necesito que actives tu acceso con el pago por PSE, Nequi, Daviplata o tarjeta."); renderChat(); return; }
       var sendBlocker = executionBlocker(ui.module);
       if (sendBlocker) { clearActiveMode(); toast("Componente en solo lectura: completa primero " + codeOf(sendBlocker.id) + " · " + sendBlocker.name + " en su totalidad para poder responder aquí."); return; }
@@ -17980,7 +19389,7 @@
          pregunta nueva esperando, solo una corrección explícita es
          aclaración. */
       var freshBefore = answeredCount(ui.module) < mod(ui.module).questions.length;
-      var wasClar = !!(contraBefore && !pendBefore && isClarificationIntent(text, contraBefore, freshBefore));
+      var wasClar = !!(contraBefore && !pendBefore && !freshBefore && isClarificationIntent(text, contraBefore, freshBefore)); /* v17.36 (WS1) · F1-A: mismo criterio que commitAnswer — con pregunta nueva esperando, el texto es su respuesta, no una aclaración. */
       /* Sin detenciones: toda respuesta se acepta y el dato que falte se
          descubre con la siguiente pregunta de la cadena, en el flujo normal. */
       ui.pendingShort = null; hideNudge();
@@ -17995,7 +19404,7 @@
       sendingAnswer = true;
       var saved = false;
       try { saved = commitAnswer(text); } finally { sendingAnswer = false; }
-      if (!saved) { clearActiveMode(); /* v17.25: envío descartado (pestaña vieja, bloqueo, componente completo): el modo no queda armado para otro intento */ box.value = text; box.focus(); return; }
+      if (!saved) { clearActiveMode(); /* v17.25: envío descartado (pestaña vieja, bloqueo, componente completo): el modo no queda armado para otro intento */ if (ui.module === sendMod) box.value = text; box.focus(); return; }
       box.value = "";
       /* v17.26 (WS2) · La nota de «No pasa nada…» sale del VEREDICTO
          sobre todo lo acumulado de la pregunta, no de que el texto
@@ -18186,6 +19595,8 @@
            pregunta ACTUAL: si la etapa o el tamaño cambió entre
            responder y editar, no se puntúa contra la pregunta vieja. */
         storeVerdict(mid, qi, questionFor(mod(mid), qi), true);
+        /* v17.36 (WS6) · (g): editar C13 reconstruye el texto de la tarea con la brújula editada. */
+        if (mid === "M13") refreshTask13Text();
         canvasAfterAnswer([mid + ":" + qi]); /* v17.9: editar una respuesta también puede cambiar el lienzo */
         /* v17.32 (WS6) · Editar puede completar un objetivo por
            primera vez: congelar antes de persistir. Lo ya congelado
@@ -18375,7 +19786,12 @@
            vigente, no el casillero de la retractación (que ya no escribe
            el total). La redacción es de F2. */
         var zeroRetDeclared = null;
-        try { zeroRetDeclared = extractDeclaredMonthlyTotal(); } catch (e) { zeroRetDeclared = null; }
+        /* v17.36 (WS3) · F4 / cruce WS1: si esta misma aclaración corrigió
+           una cifra del Retar, el total verdadero es el del registro
+           reto-corregido, no la primera cifra mensual del texto (que
+           puede ser la negada: «No facturo $60.000 al mes»). */
+        try { zeroRetDeclared = retarCorrectedMonthlyTotalFor(zeroRet.resolution); } catch (e) { zeroRetDeclared = null; }
+        if (zeroRetDeclared == null) { try { zeroRetDeclared = extractDeclaredMonthlyTotal(); } catch (e2) { zeroRetDeclared = null; } }
         /* Sin total declarado en C0 Q0, la propia evidencia mensual de la
            retractación («facturo $9.000.000 al mes») es el importe: es la
            única fuente y nunca alimenta el total declarado. */
@@ -18398,6 +19814,15 @@
       if (retoRet) {
         html += '<div class="na-note"><strong>Corrección registrada (Retar):</strong> antes te reté diciendo: «' + esc(retoRet.retarSaid) + "»; con tu aclaración quedó corregido: " + esc(retoRet.retarCorrected || "") + ".</div>";
       }
+      /* v17.36 (WS1) · F2: el Retar usado y respondido se cita aunque no
+         se detectara una cita errónea: la sonda y la respuesta quedan
+         por escrito. Si la misma sonda ya tiene su corrección
+         registrada, la corrección manda y el uso no se repite. */
+      (state.contradictions || []).forEach(function (r) {
+        if (r.key !== RETO_USE_KEY || r.status !== "resolved" || !r.retarSaid) return;
+        if (retoUseCoveredByCorrection(r)) return;
+        html += '<div class="na-note"><strong>Retar:</strong> te reté diciendo: «' + esc(r.retarSaid) + '»; respondiste: «' + esc(r.resolution || "") + '».</div>';
+      });
       var unitNote0 = unitClarificationNote();
       if (unitNote0) html += '<div class="na-note">' + esc(unitNote0) + "</div>";
       /* v17.26 (WS4) · «Dónde mirar primero» es EL MISMO diagnóstico
@@ -19386,7 +20811,7 @@
       var m = mod(mid); if (!m) return { label: "Pendiente — sin evidencia todavía", miss: [] };
       var q = questionFor(m, qi);
       var a = assessEvidence(text, q, currentStage());
-      if (a.label === "Fuerte" && !evidenceFoundText(text, q)) a = { label: "Por validar", miss: a.miss };
+      if (a.label === "Fuerte" && !hasFoundEvidence(text, q)) a = { label: "Por validar", miss: a.miss };
       return { label: a.label, miss: a.miss || [] };
     }
     /* Los puntos de un veredicto en la escala 0–100 del diagnóstico:
@@ -20683,14 +22108,114 @@
       var parts = safe.split(/[,;]+/).map(function (p) { return p.replace(/\u0001/g, ".").trim(); }).filter(function (p) { return !!p; });
       return parts.length ? parts : [String(s || "").trim()];
     }
+    /* v17.36 (WS4) · F12 Canales: partir una cláusula por el
+       MARCADOR de canal roto, no por comas. Una frase que mezcla las
+       cifras de hoy con el canal abandonado sin coma ni punto y coma
+       («La recomendación me trae 350 clientes al mes y Facebook lo
+       abandoné hace 1 año») se clasificaba ENTERA como «Antes» y las
+       cifras de hoy quedaban como historia. El lado «Antes» es solo
+       la frase que nombra el canal abandonado; lo demás es «Hoy». */
+    function splitBrokenClauseOnMarker(s) {
+      var text = String(s || "");
+      if (!text.trim()) return null;
+      var m = BROKEN_CHANNEL_RE.exec(text);
+      var markerStart = -1, markerEnd = -1, fromHace = false;
+      if (m) { markerStart = m.index; markerEnd = m.index + m[0].length; }
+      if (markerStart < 0) {
+        var hm = /hace\s+\d+\s+(años|meses)\b/i.exec(text);
+        if (hm && BROKEN_CHANNEL_WORDS.test(text) && !/me\s+trae|llegan|trae\s+clientes|lleg[oó]\s+por/i.test(text)) {
+          markerStart = hm.index; markerEnd = hm.index + hm[0].length; fromHace = true;
+        }
+      }
+      if (markerStart < 0) return null;
+      /* Inicio del tramo roto: el último límite antes del marcador —
+         puntuación fuerte, conjunción adversativa, o el «y» que
+         presenta el canal nombrado («…y Facebook lo abandoné»). */
+      var head = text.slice(0, markerStart);
+      var start = 0;
+      var bi = -1;
+      [",", ";", ".", "!", "?", ":"].forEach(function (ch) { bi = Math.max(bi, head.lastIndexOf(ch)); });
+      if (bi >= 0) start = bi + 1;
+      var headAfter = text.slice(start, markerStart);
+      var conjRe = /\b(pero|mientras|aunque|sin\s+embargo)\b/gi, cm, lastConjEnd = -1;
+      while ((cm = conjRe.exec(headAfter)) !== null) lastConjEnd = start + cm.index + cm[0].length;
+      if (lastConjEnd > start) start = lastConjEnd;
+      var yRe = /\by\s+(?:(?:la|el|mi|su|una|un)\s+)?(facebook|instagram|p[aá]gina|redes|tiktok|sitio\s+web|canal|perfil)\b/gi, ym, lastChanStart = -1;
+      while ((ym = yRe.exec(headAfter)) !== null) lastChanStart = start + ym.index + ym[0].lastIndexOf(ym[1]);
+      if (lastChanStart > start) start = lastChanStart;
+      if (fromHace) {
+        /* «Facebook, hace 1 año…»: el canal es el sujeto del tramo
+           roto aunque una coma lo separe del marcador. */
+        var cwRe = /(facebook|instagram|p[aá]gina|redes|tiktok|sitio\s+web|canal|perfil)\b/gi, cw, lastCw = -1;
+        while ((cw = cwRe.exec(head)) !== null) lastCw = cw.index;
+        if (lastCw >= 0) {
+          var between = text.slice(lastCw, markerStart);
+          if (/^[\s,;:]*$/.test(between)) {
+            var pre = text.slice(0, lastCw);
+            var art = /(la|el|mi|su|una|un)\s+(p[aá]gina|canal|perfil|cuenta)(\s+de)?\s*$/i.exec(pre);
+            start = art ? art.index : lastCw;
+          }
+        }
+      }
+      /* Fin del tramo roto: el último marcador roto conectado con el
+         primero (sin puntuación fuerte en medio); después, el primer
+         límite — puntuación, adversativa con señal de hoy, o el «y»
+         que reanuda el flujo de hoy («…y la recomendación me trae…»;
+         «y ya no me trae» NO reanuda: sigue siendo historia). */
+      var lastEnd = markerEnd;
+      var reG = new RegExp(BROKEN_CHANNEL_RE.source, "gi"), gm, allMarks = [];
+      while ((gm = reG.exec(text)) !== null) allMarks.push({ s: gm.index, e: gm.index + gm[0].length });
+      for (var mi = 0; mi < allMarks.length; mi++) {
+        if (allMarks[mi].s < markerStart) continue;
+        if (/[.!?;:]/.test(text.slice(markerStart, allMarks[mi].s))) break;
+        lastEnd = Math.max(lastEnd, allMarks[mi].e);
+      }
+      var tail = text.slice(lastEnd);
+      var tailSafe = tail.replace(/(\d)\.(\d)/g, "$1\u0001$2");
+      var end = text.length;
+      var hard = tailSafe.search(/[.!?;:]/);
+      if (hard >= 0) end = lastEnd + hard;
+      var adv = tailSafe.match(/\b(pero|mientras|aunque|sin\s+embargo)\b/i);
+      if (adv) {
+        var advAfter = tailSafe.slice(adv.index + adv[0].length).split(/[.!?;:]/)[0];
+        if (!BROKEN_CHANNEL_RE.test(advAfter) && /(me\s+trae|trae\s+\S*\s*clientes|llega(n)?\b|hoy\b|\d[\d.,]*\s*(clientes|al\s+mes))/i.test(advAfter) && lastEnd + adv.index < end) end = lastEnd + adv.index;
+      }
+      var yToday = tailSafe.match(/\by\s+(?!ya\s+no\b|no\b)([^,;.!?]{0,60}?)(me\s+trae|trae\s+\S+\s+clientes|llega(n)?\b|hoy\b)/i);
+      if (yToday && lastEnd + yToday.index < end) end = lastEnd + yToday.index;
+      var broken = text.slice(start, end).replace(/[\s,;:]+$/g, "").trim();
+      var kept = (text.slice(0, start) + " " + text.slice(end)).replace(/\s+/g, " ").trim();
+      kept = kept.replace(/^(y|pero|e)\s+/i, "").replace(/\s+(y|pero|e)$/i, "").replace(/[\s,;:]+$/g, "").replace(/^[,;:\s]+/, "").trim();
+      if (!broken) return null;
+      if (kept) {
+        /* La parte rescatada tiene que decir el flujo de hoy (cifra,
+           «me trae», «hoy», canal vigente): una continuación de la
+           historia («ya no la uso») no es «Hoy» y la frase entera
+           sigue siendo historia. */
+        if (/^\s*(ya\s+no|no)\b/i.test(kept) || !/(me\s+trae|trae\s+\S*\s*clientes|llega(n)?\b|hoy\b|al\s+mes|\d[\d.,]*\s*(clientes|alumnas|ventas|pedidos|membresías|panes)|whatsapp|instagram|recomendación|tiktok)/i.test(kept)) return null;
+      }
+      if (!kept) return { broken: broken, kept: null };
+      return { broken: broken, kept: kept };
+    }
     function classifyBrokenSentence(s) {
       var clauses = splitBrokenClauses(s);
-      if (clauses.length < 2) return { broken: s, kept: null };
+      if (clauses.length < 2) {
+        var sp0 = splitBrokenClauseOnMarker(s);
+        if (sp0) return sp0;
+        return { broken: s, kept: null };
+      }
       var broken = [], kept = [];
       clauses.forEach(function (c) {
-        if (isBrokenChannelSentence(c)) broken.push(c); else kept.push(c);
+        if (isBrokenChannelSentence(c)) {
+          var sp = splitBrokenClauseOnMarker(c);
+          if (sp && sp.kept) { broken.push(sp.broken); kept.push(sp.kept); }
+          else broken.push(c);
+        } else kept.push(c);
       });
-      if (!broken.length || !kept.length) return { broken: s, kept: null };
+      if (!broken.length || !kept.length) {
+        var spAll = splitBrokenClauseOnMarker(s);
+        if (spAll && spAll.kept) return spAll;
+        return { broken: s, kept: null };
+      }
       return { broken: broken.join(", "), kept: kept.join(", ") };
     }
     /* Oraciones por línea: cada línea de blockSourceText (la
@@ -21438,8 +22963,18 @@
             }
             if (r.corrected.ingresoTotal) bits.push("Total mensual: $" + r.corrected.ingresoTotal.v.toLocaleString("es-CO") + " al mes");
             if (r.corrected.margenCliente) bits.push("Margen por cliente: $" + r.corrected.margenCliente.v.toLocaleString("es-CO") + correctedUnitSuffix(r.corrected.margenCliente.unit));
+            if (r.corrected.cac) bits.push("Costo de adquirir un cliente: $" + r.corrected.cac.v.toLocaleString("es-CO") + " por cliente");
+            if (r.corrected.cacChannels) Object.keys(r.corrected.cacChannels).forEach(function (ch) { var cc = r.corrected.cacChannels[ch]; bits.push("En " + ch.charAt(0).toUpperCase() + ch.slice(1) + ": $" + cc.v.toLocaleString("es-CO") + " por cliente"); });
           }
-          h += '<div class="qa"><div class="q">Aclaración registrada</div><div class="a">' + esc(r.resolution) + (bits.length ? "<br>" + esc(bits.join(" · ")) : "") + "</div></div>";
+          /* v17.36 (WS1) · F1: el Plan cita la aclaración por
+             referencia (dónde se dio y qué cifras quedaron), no repite
+             su texto entero: el texto completo vive una sola vez, en
+             el chat donde se dio. */
+          var refBits = bits.join(" · ");
+          if (r.key === RETO_CORRECTION_KEY && r.retarCorrected) refBits = (refBits ? refBits + " · " : "") + r.retarCorrected;
+          if (r.key === RETO_USE_KEY) refBits = "Respondiste a la sonda del Retar en este chat.";
+          var refMod = r.resolvedModule ? codeOf(r.resolvedModule) : codeOf((contradictionMods(r.key) || ["M0"])[0]);
+          h += '<div class="qa"><div class="q">Aclaración registrada en ' + esc(refMod) + " · " + esc(clarificationKeyLabel(r.key)) + '</div><div class="a">' + esc(refBits || "Quedó registrada en el chat.") + "</div></div>";
         });
       }
       h += "<h2>8. Decálogo maestro</h2>";
@@ -22335,24 +23870,15 @@
        pintura nunca es la bienvenida de sesión cerrada: mientras la
        cuenta no se resuelva se muestra «Cargando», y solo si pasa el
        tiempo sin respuesta se cae a la bienvenida. */
+    /* v17.36 (leak fix) · Al arrancar, antes de que la sesión se resuelva,
+       NO se leen las claves con uid de otros usuarios: escanear todas las
+       claves analia.proyecto.v2.* mostraba los proyectos del administrador
+       a quien entrara con otra cuenta en el mismo navegador. Solo se lee
+       la clave sin cuenta (LS_KEY); la copia de la cuenta se carga cuando
+       la sesión se resuelve. */
     function loadPersistedBest() {
-      var best = null, bestScore = -1, bestKey = null;
-      var keys = [LS_KEY];
-      try {
-        for (var ki = 0; ki < window.localStorage.length; ki++) {
-          var kk = window.localStorage.key(ki);
-          if (kk && kk.indexOf(LS_KEY + ".") === 0 && keys.indexOf(kk) < 0) keys.push(kk);
-        }
-      } catch (e) {}
-      keys.forEach(function (k) {
-        var p = readPersisted(k);
-        if (p) {
-          var s = projectContentScore(p).answered;
-          if (s > bestScore) { bestScore = s; best = p; bestKey = k; }
-        }
-      });
-      if (bestKey) readPersisted(bestKey);
-      return best;
+      var p = readPersisted(LS_KEY);
+      return p || null;
     }
     window.__loadPersistedBest = loadPersistedBest;
     var restoredProject = loadPersistedBest();
@@ -22817,6 +24343,7 @@
                   return;
                 }
                 var cc = projectCountsFor(cloudProj), mc = projectCountsFor(up);
+                var rdMig = redoDroppedCounts(up, cloudProj); cc.answers -= rdMig.answers; cc.completed -= rdMig.completed;
                 if (mc.answers < cc.answers || mc.completed < cc.completed) {
                   check.refused.push(id);
                   check.projects[id] = { before: before[id], after: cc, ok: false, reason: "cloud-conflict" };
@@ -23434,6 +24961,18 @@
                  sube: es un error, y el error no se sube. */
               if (merged) {
                 var mc = storeCountsFor(merged.store), cc = storeCountsFor(cloudShape, tombstonedDropsIn(merged.store, cloudShape));
+                /* v17.36 (WS6) · (h): un rehacer baja el conteo a propósito: las respuestas que la lápida borró no cuentan como pérdida. */
+                (function () {
+                  try {
+                    var mStore = merged.store, cShape = toStoreShape(cloudShape);
+                    var rdA = 0, rdC = 0;
+                    Object.keys(mStore.projects || {}).forEach(function (pid) {
+                      var d = redoDroppedCounts(mStore.projects[pid], cShape.projects && cShape.projects[pid]);
+                      rdA += d.answers; rdC += d.completed;
+                    });
+                    cc.answers -= rdA; cc.completed -= rdC;
+                  } catch (e) {}
+                })();
                 if (mc.answers < cc.answers || mc.completed < cc.completed) merged = null;
               }
             } catch (e) { merged = null; }
@@ -23953,6 +25492,7 @@
           if (uid === (me && me.uid) && store && store.projects && store.projects[projectId]) {
             var merged = mergeProjects(store.projects[projectId], proj);
             var mc = projectCountsFor(merged.proj), cc = projectCountsFor(proj);
+            var rdPay = redoDroppedCounts(merged.proj, proj); cc.answers -= rdPay.answers; cc.completed -= rdPay.completed;
             if (mc.answers < cc.answers || mc.completed < cc.completed) throw new Error("La fusión traería menos respuestas que la nube: no cambié el pago para no perder respuestas.");
             proj = merged.proj;
             store.projects[projectId] = proj;
@@ -24253,7 +25793,10 @@
     <script>
       /* Barra lateral: un solo estado (expandida/compacta), con su botón,
          persistido en localStorage («analia-sidebar»). Nada la cambia
-         automáticamente al renderizar ni al cambiar el tamaño. */
+         automáticamente al renderizar ni al cambiar el tamaño, salvo al
+         arrancar: en pantalla angosta sin preferencia guardada se arranca
+         colapsada (WS7 móvil), porque con el menú expandido el área de
+         trabajo queda en solo 126px a 390px de ancho. */
       (function () {
         var KEY = "analia-sidebar";
         var app = document.querySelector(".app");
@@ -24268,7 +25811,13 @@
         }
         var stored = null;
         try { stored = window.localStorage.getItem(KEY); } catch (e) {}
-        apply(stored === "collapsed", false);
+        /* WS7 móvil: en pantalla angosta y sin preferencia guardada se
+           arranca colapsada (área de trabajo 126px -> 326px a 390px).
+           La preferencia guardada manda siempre y el botón sigue igual;
+           este arranque no se persiste (save=false). */
+        var narrow = false;
+        try { narrow = !!(window.matchMedia && window.matchMedia("(max-width: 900px)").matches); } catch (e) {}
+        apply(stored === "collapsed" || (stored === null && narrow), false);
         btn.addEventListener("click", function () {
           apply(!app.classList.contains("side-collapsed"), true);
         });
