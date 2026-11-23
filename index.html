@@ -9063,6 +9063,16 @@
        Firebase) sincroniza además el proyecto en Firestore. */
     var currentUid = null;
     function lsKey() { return currentUid ? LS_KEY + "." + currentUid : LS_KEY; }
+    /* v17.37 · Procedencia de la tienda en memoria. La clave sin cuenta
+       (LS_KEY) es un almacén COMPARTIDO por quien use este navegador sin
+       sesión: si la tienda en memoria vino de una sesión autenticada y se
+       escribiera bajo esa clave, el próximo usuario heredaría los
+       proyectos. storeOwnerUid es el uid dueño de la tienda en memoria
+       (null = anónima, de este navegador); __everAuthed marca que esta
+       pestaña ya tuvo una sesión autenticada, para distinguir el cierre
+       de sesión de la primera carga sin sesión. */
+    var storeOwnerUid = null;
+    window.__everAuthed = false;
     /* v17.27 (WS2) · El aviso de «no se guardó» se muestra una sola vez
        por episodio de pestaña vieja: persist() se llama en cada cambio y
        un aviso repetido en cada respuesta taparía el trabajo. */
@@ -9096,6 +9106,10 @@
       return storedRaw === lastPersistedRaw;
     }
     function persist() {
+      /* v17.37 · La tienda de una sesión autenticada NUNCA se escribe
+         bajo la clave sin cuenta: esa clave es compartida y el próximo
+         usuario heredaría los proyectos. */
+      if (!currentUid && storeOwnerUid) return false;
       if (!state) {
         /* v17.27 (WS2) · Sin proyecto activo (se borró el último) la
            tienda IGUAL se guarda: sobre todo sus lápidas — si no, el
@@ -9166,6 +9180,9 @@
        original, para que en la próxima entrada no parezca más nueva
        que la nube de la que vino (v17.11). */
     function persistLocalOnly(keepStamp, force) {
+      /* v17.37 · Igual que persist(): nunca escribir la tienda de una
+         sesión autenticada bajo la clave sin cuenta. */
+      if (!currentUid && storeOwnerUid) return;
       if (!state) return;
       /* v17.14 · Una pestaña vieja no re-escribe su copia local salvo que
          venga de adoptar una fusión (force): re-escribir es lo que
@@ -10304,6 +10321,9 @@
       return best;
     }
     function clearPersisted() {
+      /* v17.37 · Tras una sesión autenticada, no tocar la clave sin
+         cuenta: borrarla destruiría el trabajo anónimo de este navegador. */
+      if (!currentUid && storeOwnerUid) return;
       /* v17: borra solo el proyecto activo de la tienda; los demás quedan. */
       try {
         if (store && state && store.projects[state.id]) {
@@ -23881,25 +23901,20 @@
       return p || null;
     }
     window.__loadPersistedBest = loadPersistedBest;
-    var restoredProject = loadPersistedBest();
-    if (restoredProject) {
-      window.__booted = true; /* la copia de este navegador ya es un dato real */
-      state = restoredProject;
-      ensureAnswers();
-      ui.module = "M0";
-      for (var ri = 0; ri < MODULES.length; ri++) {
-        if (!moduleFullyComplete(MODULES[ri].id)) { ui.module = MODULES[ri].id; break; }
-      }
-      renderSidebar();
-      showView("resumen");
-      toast("Proyecto recuperado: " + state.project.name + ". Tu avance estaba guardado en este navegador.");
-    } else {
-      renderSidebar();
-      showView("loading");
-      window.__bootAuthTimer = setTimeout(function () {
-        if (!window.__booted && !state) showView("welcome");
-      }, 8000);
-    }
+    /* v17.37 · La copia sin cuenta se RETIENE, no se presenta: antes de
+       que la sesión se resuelva no se sabe si pertenece a quien va a
+       entrar. lockScreen la restaura si no hay sesión (anónimo, como
+       antes); si hay sesión, syncOnLogin usa la copia de la cuenta y la
+       retenida se descarta sin fusionarla. Se retiene la tienda entera,
+       no solo el proyecto activo, para restaurar la lista completa. */
+    window.__bootHeldProject = loadPersistedBest();
+    window.__bootHeldStore = store;
+    state = null; store = null; /* readPersisted deja state/store con la copia sin cuenta: se retiene aparte */
+    renderSidebar();
+    showView("loading");
+    window.__bootAuthTimer = setTimeout(function () {
+      if (!window.__booted && !state) showView("welcome");
+    }, 8000);
     </script>
 
     <!-- ================= FIREBASE: cuentas, nube y administración ================= -->
@@ -24859,16 +24874,57 @@
          inmediato. Si la nube está vacía, sube la copia de este
          navegador (la del usuario o la anterior sin cuenta): así un
          proyecto local se migra a la cuenta sin perder nada. */
+      /* v17.37 (e) · Limpieza de la clave sin cuenta (solo administrador).
+         La clave sin cuenta es un almacén compartido: si el administrador
+         trabajó sin sesión en este navegador, sus proyectos quedaron ahí
+         y antes se filtraban a la próxima cuenta. Al entrar el
+         administrador, si la nube YA contiene cada proyecto de esa clave
+         (mismo id y al menos las mismas respuestas), se borra la clave:
+         no se pierde nada, porque la nube ya lo trae todo. Si falta
+         algún proyecto o la nube trae menos respuestas, NO se borra: la
+         copia local es lo único que tiene ese avance. */
+      function maybeCleanupLegacyBareKey(cloudShape) {
+        if (!isAdmin) return;
+        var raw = null;
+        try { raw = window.localStorage.getItem(LS_KEY); } catch (e) { return; }
+        if (!raw) return;
+        var bare = null;
+        try { bare = toStoreShape(JSON.parse(raw)); } catch (e) { return; }
+        var bareIds = Object.keys((bare && bare.projects) || {});
+        if (!bareIds.length) return;
+        var cloudProjects = (cloudShape && cloudShape.projects) || {};
+        for (var i = 0; i < bareIds.length; i++) {
+          var id = bareIds[i];
+          var cp = cloudProjects[id];
+          if (!cp) return;
+          var cc = null, bc = null;
+          try { cc = projectCountsFor(cp); } catch (e) { return; }
+          try { bc = projectCountsFor(bare.projects[id]); } catch (e) { return; }
+          if (!cc || !bc || cc.answers < bc.answers || cc.completed < bc.completed) return;
+        }
+        try { window.localStorage.removeItem(LS_KEY); } catch (e) { return; }
+        window.__legacyBareKeyCleanup = { removed: true, at: new Date().toISOString(), projects: bareIds.length };
+        try { console.info("[v17.37] Clave sin cuenta limpiada al entrar el administrador: " + bareIds.length + " proyecto(s) ya estaban en la nube."); } catch (e) {}
+        toast("Limpié la copia local sin cuenta de este navegador: tus proyectos ya están todos en tu cuenta.");
+      }
       function syncOnLogin(user) {
         currentUid = user.uid;
+        /* v17.37 · La tienda que se construye aquí pertenece a esta
+           cuenta; la copia sin cuenta retenida al arrancar se descarta
+           (nunca se fusiona en la cuenta de nadie). */
+        storeOwnerUid = user.uid;
+        window.__bootHeldProject = null; window.__bootHeldStore = null;
         /* v17.27 (WS1) · Mientras esta fusión no termine, ninguna
            escritura en la nube arranca (cloudMergeDone en false): un
            pagehide o un guardado que llegara antes no sube nada. */
         window.__cloudMergeDone = false;
         window.__cloudConflict = false;
+        /* v17.37 · Solo la copia local DE ESTA CUENTA (clave con uid):
+           la clave sin cuenta es compartida y fusionarla aquí era la
+           fuga: los proyectos del usuario anterior acababan en la nube
+           de quien entrara después. */
         var localUser = readPersisted(lsKey());
-        var localLegacy = readPersisted(LS_KEY);
-        var hasLocal = !!(localUser || localLegacy);
+        var hasLocal = !!localUser;
         /* v17.28 (WS2) · La entrada lee el diseño NUEVO: la subcolección
            items (readCloudAllProjects) y el documento meta (readCloudMeta)
            son la fuente principal; el documento viejo de un solo documento
@@ -24923,7 +24979,7 @@
              la negativa por proyecto de doCloudWrite: nunca se sube nada
              por encima de él. */
           if (cloudParseFailed && !hasItems) {
-            state = localUser || localLegacy || state;
+            state = localUser || null;
             window.__cloudConflict = true;
             window.__cloudError = { code: "cloud-parse-failed", message: "La copia de la nube no se pudo leer." };
             setCloudStatus("failed");
@@ -24941,19 +24997,14 @@
                  proyectos que haya en este navegador —bajo la clave de
                  la cuenta Y bajo la clave anterior sin cuenta, para que
                  ninguna respuesta local quede fuera de la fusión. */
+              /* v17.37 · La tienda local es SOLO la copia de esta cuenta:
+                 la clave sin cuenta no entra en la fusión. */
               var localStoreShape = null;
               try {
                 var rawLocal = window.localStorage.getItem(lsKey());
                 if (rawLocal) localStoreShape = toStoreShape(JSON.parse(rawLocal));
               } catch (e2) {}
-              try {
-                var rawLegacy = window.localStorage.getItem(LS_KEY);
-                if (rawLegacy) {
-                  var legShape = toStoreShape(JSON.parse(rawLegacy));
-                  localStoreShape = localStoreShape ? mergeStores(localStoreShape, legShape).store : legShape;
-                }
-              } catch (e3) {}
-              if (!localStoreShape) localStoreShape = toStoreShape(localUser || localLegacy);
+              if (!localStoreShape) localStoreShape = toStoreShape(localUser);
               merged = mergeStores(localStoreShape, cloudShape);
               /* v17.27 (WS1) · Guarda de no-pérdida también al entrar:
                  una fusión que trajera menos respuestas o menos
@@ -25028,7 +25079,7 @@
                  local sin fusionar, por encima de la nube. Ahora no se
                  sube nada: se queda lo local, se avisa del conflicto y
                  el próximo guardado reintenta la fusión. */
-              state = localUser || localLegacy || null;
+              state = localUser || null;
               window.__cloudConflict = true;
               window.__cloudError = { code: "cloud-merge-failed", message: "No pude fusionar tus copias al entrar." };
               setCloudStatus("failed");
@@ -25058,7 +25109,7 @@
               /* v17.27 (WS1) · La copia de la nube no es un proyecto
                  válido: antes se subía lo local por encima. Ahora no se
                  sube nada y se avisa del conflicto. */
-              state = localUser || localLegacy || null;
+              state = localUser || null;
               window.__cloudConflict = true;
               window.__cloudError = { code: "cloud-invalid", message: "La copia de la nube no es un proyecto válido." };
               setCloudStatus("failed");
@@ -25067,10 +25118,9 @@
             }
             }
           } else if (hasLocal) {
-            state = localUser || localLegacy;
-            if (localLegacy && !localUser) {
-              try { window.localStorage.removeItem(LS_KEY); } catch (e) {}
-            }
+            /* v17.37 · Solo la copia local de esta cuenta sube a su nube;
+               la copia sin cuenta queda en este navegador, sin migrar. */
+            state = localUser;
             persistLocalOnly(false, true);
             /* v17.28 (WS2) · Primera subida de esta cuenta: lo local
                puede traer VARIOS proyectos y todos deben estrenar su
@@ -25078,12 +25128,15 @@
             markStoreDirty(store);
             markCloudMergeDone();
             window.__cloudSaveNow();
-            if (localLegacy && !localUser) toast("Tu proyecto se migró a tu cuenta: " + state.project.name + ". Desde ahora se sincroniza en la nube.");
-            else toast("Tu proyecto de este navegador se subió a tu cuenta: " + state.project.name + ".");
+            toast("Tu proyecto de este navegador se subió a tu cuenta: " + state.project.name + ".");
           } else {
             state = null;
             markCloudMergeDone();
           }
+          /* v17.37 (e) · Solo el administrador: si su nube ya trae todo
+             lo de la clave sin cuenta, esa clave se borra para que no
+             pueda filtrarse a la próxima cuenta. */
+          try { maybeCleanupLegacyBareKey(cloudShape); } catch (e) {}
           ensureAnswers();
           ui.module = "M0";
           if (state) {
@@ -25096,7 +25149,7 @@
           showView(state ? "resumen" : "welcome");
         }).catch(function () {
           // Sin conexión con Firestore: se trabaja con la copia local.
-          state = localUser || localLegacy || state;
+          state = localUser || null;
           booted = true; window.__booted = true;
           /* v17.27 (WS1) · La fusión de entrada no pudo leer la nube,
              así que no se sube nada ahora; la puerta se abre para que
@@ -25119,6 +25172,30 @@
         window.__cloudLoginPending = false; /* v17.27 (WS4) · sin sesión no hay fusión de entrada en curso */
         window.__cloudMergeDone = false; window.__cloudConflict = false; /* v17.27 (WS1) · al cerrar sesión la puerta de la nube se vuelve a cerrar hasta la próxima fusión de entrada */
         currentUid = null; booted = false; window.__booted = false; demoMode = false;
+        /* v17.37 · Al salir de una sesión autenticada, la tienda sale de
+           la memoria junto con la sesión: si quedara, el guardado al
+           cerrar la pestaña la escribiría bajo la clave sin cuenta y el
+           próximo usuario la heredaría (la fuga). En la primera carga
+           sin sesión (nunca hubo sesión en esta pestaña) no se toca
+           nada: ahí se restaura la copia sin cuenta retenida al
+           arrancar, como antes. */
+        if (window.__everAuthed) {
+          state = null; store = null; storeOwnerUid = null;
+          renderSidebar();
+        } else if (window.__bootHeldProject) {
+          state = window.__bootHeldProject;
+          store = window.__bootHeldStore || null;
+          window.__bootHeldProject = null; window.__bootHeldStore = null;
+          ensureAnswers();
+          ui.module = "M0";
+          for (var ri = 0; ri < MODULES.length; ri++) {
+            if (!moduleFullyComplete(MODULES[ri].id)) { ui.module = MODULES[ri].id; break; }
+          }
+          window.__booted = true;
+          renderSidebar();
+          showView("resumen");
+          toast("Proyecto recuperado: " + state.project.name + ". Tu avance estaba guardado en este navegador.");
+        }
         document.body.classList.add("locked");
         $("accountBox").hidden = true;
         $("navAdmin").style.display = "none";
@@ -25127,6 +25204,9 @@
 
       auth.onAuthStateChanged(function (user) {
         if (!user) { lockScreen(); return; }
+        /* v17.37 · Esta pestaña ya tuvo una sesión autenticada: el
+           próximo cierre de sesión limpia la tienda de la memoria. */
+        window.__everAuthed = true;
         window.__cloudLoginPending = true; /* v17.27 (WS4) · hay sesión: la restauración espera a que su fusión de entrada termine */
         var ref = db.collection("usuarios").doc(user.uid);
         ref.get().then(function (snap) {
@@ -25249,14 +25329,16 @@
         persist();
         if (demoMode) {
           demoMode = false;
-          state = null; store = null; currentUid = null;
+          state = null; store = null; currentUid = null; storeOwnerUid = null;
           renderSidebar();
           document.body.classList.add("locked");
           toast("Saliste del modo demo. Tus datos de demostración siguen en este navegador.");
           return;
         }
         auth.signOut().then(function () {
-          state = null;
+          /* v17.37 · La tienda también sale de la memoria (lockScreen ya
+             la limpia al resolver el cierre; esto cubre el mismo caso). */
+          state = null; store = null; storeOwnerUid = null;
           renderSidebar();
           toast("Sesión cerrada. Tu proyecto quedó guardado en tu cuenta.");
         });
