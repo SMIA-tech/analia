@@ -6771,6 +6771,21 @@
     /* v17.40 · F6: una aclaración abierta se responde donde se
        muestra: el botón lleva al componente dueño y enfoca la
        casilla de respuesta. */
+    /* v17.42 · F8: el destino del botón «Responder» se calcula al
+       pintar, no solo al hacer clic: el ancla si sigue abierta, si
+       no el primer módulo dueño que no esté completo; si todos están
+       completos, el ancla (el clic habilita la casilla solo para esta
+       aclaración). Antes el botón llevaba siempre el ancla o el
+       primer módulo (C0 para la brecha) y, si la re-resolución del
+       clic fallaba, se navegaba a C0 con el compositor deshabilitado. */
+    function clarResponderTarget(contra) {
+      if (!contra) return "M0";
+      var mods = contra.mods || contradictionMods(contra.key) || [];
+      var anchor = contra.anchorModule || null;
+      if (anchor && !moduleComplete(anchor)) return anchor;
+      for (var i = 0; i < mods.length; i++) { if (!moduleComplete(mods[i])) return mods[i]; }
+      return anchor || mods[0] || "M0";
+    }
     document.addEventListener("click", function (e) {
       var b = e.target && e.target.closest ? e.target.closest("[data-answer-contra]") : null;
       if (!b) return;
@@ -6802,6 +6817,18 @@
           else { mid = anchor41 || mods41[0] || mid; ui.clarAnswerKey = oc41.key; ui.clarAnswerModule = mid; }
         }
       } catch (err41) {}
+      /* v17.42 · F8: nunca se navega a un módulo completo sin la marca
+         de respuesta a la aclaración: si la re-resolución de arriba
+         falló (o la aclaración ya se resolvió entre el pintado y el
+         clic), la casilla se habilita para esta aclaración en el
+         módulo destino. Sin esto, el clic caía en C0 con el compositor
+         deshabilitado y la aclaración no se podía responder. */
+      try {
+        if (!ui.clarAnswerKey && moduleComplete(mid) && !pendingStep(mid)) {
+          var ck42 = ckey41 || (oc41 && oc41.key) || null;
+          if (ck42) { ui.clarAnswerKey = ck42; ui.clarAnswerModule = mid; }
+        }
+      } catch (err42) {}
       try { ui.module = mid; ui.awaitingProbe = null; hideNudge(); showView("chat"); } catch (err) {}
       setTimeout(function () { var ab = document.getElementById("answerBox"); if (ab) ab.focus(); }, 60);
     });
@@ -12179,6 +12206,42 @@
       }
       return false;
     }
+    /* v17.42 · F4b: un caso con NOMBRE + acción de cliente + tiempo o
+       desenlace («El vecino Carlos vino el lunes a pedirme un corte
+       para una boda y se fue porque tenía la agenda llena», «Carlos
+       vino el lunes y me pagó $30.000») ES el caso real aunque no haya
+       verbo de habla: la persona es concreta, lo que hizo también, y
+       cuándo. Sin nombre no cuenta (la regla v17.38 sigue: «un cliente
+       me pagó $30.000…» sin nombre no es el ejemplo), y sin tiempo ni
+       desenlace tampoco («Mi cliente viene cada semana…» no es un
+       caso). Los topónimos no son nombres: «Ciénaga me dijo» no
+       cuenta, como en hasNamedCase. La negación se borra antes, igual
+       que en hasNamedCase. */
+    function hasNamedActionCase(text) {
+      var t = stripNegatedCase(String(text || ""));
+      var PLACE_NAMES = "Ciénaga|Santa Marta|Barranquilla|Cartagena|Bogotá|Medellín|Cali|Bucaramanga|Manizales|Pereira|Armenia|Ibagué|Neiva|Pasto|Popayán|Tunja|Villavicencio|Montería|Sincelejo|Valledupar|Riohacha|Maicao|Fundación|Aracataca|Zona Bananera|Pueblo Viejo|Ciénaga Grande|Nueva Venecia|Buenavista|Minca|Taganga|Gaira|Mamatoco";
+      var tNoPlaces = t.replace(new RegExp("\\b(" + PLACE_NAMES + ")\\b", "g"), " ");
+      var NOT_A_NAME = /^(un|una|unos|unas|el|la|los|las|mi|mis|su|sus|tu|tus|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|cada|ning[úu]n(?:a|o|os|as)?|alg[úu]n(?:a|o|os|as)?|otro|otra|otros|otras|todo|toda|todos|todas|nadie|alguien|también|además|pero|cuando|como|porque|desde|hasta|entre|sobre|con|por|para|en|de|y|o|si|no|me|yo|se|lo|le|nos|ella|él|ellos|ellas|usted|ustedes|eso|esto|aquello|hoy|ayer|mañana|ahora|después|antes|luego|siempre|nunca|jamás|muchos|muchas|pocos|pocas|varios|varias|cierto|cierta|mismo|misma|propio|propia|sin|doña|don)$/i;
+      /* Verbos que abren oración («Tengo…», «Vendo…», «Cobro…»): van en
+         mayúscula por ir al principio y no son nombres. */
+      var VERB_START = /^(tengo|vendo|cobro|hago|pago|compro|atiendo|sirvo|entrego|trabajo|vivo|soy|estoy|voy|puedo|quiero|llevo|pongo|dejo|digo|creo|sé|veo|gano|pierdo|empiezo|termino|abro|cierro|salgo|entro|llego|vuelvo|quedo|cuento|mido|busco|ofrezco|preparo|uso|tomo|doy|pido|conozco|entiendo|manejo|dirijo|aporto|invierto|gasto|ahorro|facturo|recibo|mando|sigo|traigo|paso|digo|dejo|pongo|salgo|vengo|ando|debo|suelo|acabo)$/i;
+      var ACTION_RE = "(vino|vinieron|lleg[oó]|llegaron|pas[oó]|pasaron|pidi[oó]|pidieron|compr[oó]|compraron|pag[oó]|pagaron|reserv[oó]|reservaron|volvi[oó]|volvieron|me eligi[oó]|me recomend[oó]|me pidi[oó]|me pag[oó])";
+      var TIME_RE = "(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \\d+ (d[ií]as?|semanas?)|este mes|el \\w+ pasado)";
+      var OUTCOME_RE = "(se fue porque|perd[ií]|me recomend[oó]|volvi[oó]|qued[oó] content[oa]|no volvi[oó]|se qued[oó]|me pag[oó]|me eligi[oó])";
+      var found = false;
+      tNoPlaces.split(/[.?!;]+/).forEach(function (sent) {
+        if (found || !sent.trim()) return;
+        if (!new RegExp("\\b" + ACTION_RE + "(?![a-záéíóúñ])", "i").test(sent)) return;
+        if (!new RegExp("\\b" + TIME_RE + "\\b", "i").test(sent) && !new RegExp("\\b" + OUTCOME_RE + "(?![a-záéíóúñ])", "i").test(sent)) return;
+        var NAME_RE = /\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b/g, mName;
+        while ((mName = NAME_RE.exec(sent)) !== null) {
+          if (NOT_A_NAME.test(mName[1]) || VERB_START.test(mName[1])) continue;
+          found = true;
+          break;
+        }
+      });
+      return found;
+    }
     /* v17.34 (WS4) · F5a: una cantidad positiva de clientes («120
        clientes», «8 de cada 10 clientes») también es un ejemplo
        concreto: el conteo es del cliente mismo, no un dígito
@@ -12250,6 +12313,28 @@
       });
       return found;
     }
+    /* v17.42 · F4b: una pérdida en primera persona con tiempo y
+       mercancía cuantificada («la semana pasada se fue la luz dos
+       horas y perdí una tanda de 30 helados», «la semana pasada se me
+       cayó la navaja y perdí 3 cortes») ES el caso real: qué pasó,
+       cuándo y cuánto se perdió. El sustantivo perdido tiene que ser
+       mercancía o unidades (tanda, cortes, helados, panes, pedidos…),
+       nunca un cliente: «eso me costó 2 alumnas en octubre» sigue sin
+       contar (regla v17.38 / ws6 S3b). El dinero solo («perdí
+       $40.000») tampoco es la pérdida: sin mercancía no hay caso. */
+    function hasLossIncidentCase(text) {
+      var t = String(text || "");
+      var GOODS = "(tanda|tandas|cortes?|helados?|panes?|pedidos?|reservas?|unidades?|ventas?|platos?|tazas?|piezas?|sesiones?|clases?|membres[ií]as?|productos?|art[ií]culos?)";
+      var TIME = "(la semana pasada|el mes pasado|ayer|hoy|esta semana|este mes|el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|hace \\d+ (d[ií]as?|semanas?))";
+      var found = false;
+      t.split(/[.?!;]+/).forEach(function (sent) {
+        if (found || !sent.trim()) return;
+        if (!/\b(perd[ií]|perdimos|se me (cay[oó]|dañ[oó]|rompi[oó])|me qued[eé] sin)(?![a-záéíóúñ])/i.test(sent)) return;
+        if (!new RegExp("\\b\\d+\\s*" + GOODS + "\\b", "i").test(sent)) return;
+        if (new RegExp("\\b" + TIME + "\\b", "i").test(sent)) found = true;
+      });
+      return found;
+    }
     /* v17.40 · F4: cuántos casos distintos trae un texto (una
        oración con caso = un caso): dos casos separados (2 + 3) no
        se funden en uno. */
@@ -12258,7 +12343,9 @@
       if (!t.trim()) return 0;
       var n = 0;
       t.split(/[.?!;]+/).forEach(function (s) {
-        if (hasNumberedClientCase(s) || hasNamedCase(s) || hasQuotedPersonCase(s) || hasFirstPersonIncidentCase(s)) n++;
+        /* v17.42 · F4b: el caso con nombre + acción de cliente también cuenta. */
+        /* v17.42 · F4b: la pérdida con mercancía cuantificada también cuenta. */
+        if (hasNumberedClientCase(s) || hasNamedCase(s) || hasQuotedPersonCase(s) || hasFirstPersonIncidentCase(s) || hasNamedActionCase(s) || hasLossIncidentCase(s)) n++;
       });
       return n;
     }
@@ -12331,6 +12418,10 @@
       /* v17.41 · F4b: el incidente en primera persona con desenlace
          también es el ejemplo real. */
       if (hasFirstPersonIncidentCase(t)) return true;
+      /* v17.42 · F4b: el caso con nombre + acción de cliente también es el ejemplo real. */
+      if (hasNamedActionCase(t)) return true;
+      /* v17.42 · F4b: la pérdida con mercancía cuantificada también es el ejemplo real. */
+      if (hasLossIncidentCase(t)) return true;
       return false;
     }
     /* v17.32 (WS4b) · G8: la fecha de algo declarado INEXISTENTE no se
@@ -13999,7 +14090,11 @@
          evidencia nueva: si el veredicto anterior pedía el caso y el texto
          acumulado ya trae un caso real, la nueva valoración manda aunque su
          rango sea menor — la guarda de «nunca degrada» no puede mantener
-         una falta que la evidencia nueva ya cubrió. */
+         una falta que la evidencia nueva ya cubrió.
+         v17.42 · F4b: el «caso real» de hasExample ahora incluye el nombre
+         + acción con tiempo o desenlace y la pérdida con mercancía
+         cuantificada: un caso de esos en la repregunta también levanta
+         el veredicto congelado. */
       var ws6CaseMissBefore = !!(prevVerdict && (prevVerdict.miss || []).some(function (mm) { return /el caso o ejemplo real/.test(mm); }));
       var ws6CaseNow = hasExample(text);
       if (!isEdit && prevVerdict && verdictRank(a.label, a.miss) < verdictRank(prevVerdict.label, prevVerdict.miss) && !(ws6CaseMissBefore && ws6CaseNow)) {
@@ -17053,7 +17148,7 @@
         /* v17.40 · F6: la aclaración abierta se responde donde se
            muestra — el botón lleva al componente dueño y enfoca la
            casilla de respuesta. */
-        if (contra && contraMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contra.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(contra.anchorModule || contraMods[0] || m.id) + '" data-contra-key="' + esc(contra.key) + '">Responder esta aclaración</button>', "micro");
+        if (contra && contraMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contra.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(clarResponderTarget(contra)) + '" data-contra-key="' + esc(contra.key) + '">Responder esta aclaración</button>', "micro"); /* v17.42 · F8: el destino se calcula al pintar */
         else if (!contra) {
           /* La pregunta por unidades o por vías distintas también se
              ve en el chat del componente que la origina, no solo en
@@ -17140,7 +17235,7 @@
         /* v17.40 · F6: con el componente ya completo la aclaración
            también se responde donde se muestra — el mismo botón que en
            el chat del componente abierto. */
-        if (contraDone && contraDoneMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contraDone.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(contraDone.anchorModule || contraDoneMods[0] || m.id) + '" data-contra-key="' + esc(contraDone.key) + '">Responder esta aclaración</button>', "micro");
+        if (contraDone && contraDoneMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contraDone.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(clarResponderTarget(contraDone)) + '" data-contra-key="' + esc(contraDone.key) + '">Responder esta aclaración</button>', "micro"); /* v17.42 · F8: el destino se calcula al pintar */
         if (m.id === "M13" && !taskComplete13()) {
           /* Cierre de C13 con la tarea del Coach: las preguntas están
              completas, pero el componente NO queda completado en su
@@ -17307,6 +17402,23 @@
           ui.awaitingProbe = null;
           canvasAfterAnswer(); /* v17.9: reiniciar un componente rehace su bloque del lienzo */
           persist();
+          /* v17.42 · F8b: la lápida del rehacer sube a la nube de
+             inmediato, como la del borrado: con el guardado aplazado
+             de 900 ms, recargar antes de que subiera dejaba la nube
+             con las respuestas viejas y el módulo resucitaba al
+             recargar. */
+          if (window.__cloudMarkDirty) window.__cloudMarkDirty(m.id);
+          if (window.__cloudMarkMetaDirty) window.__cloudMarkMetaDirty();
+          if (window.__cloudSaveNow) window.__cloudSaveNow();
+          /* v17.42 · F8b: si el guardado local no dejó la lápida (el
+             almacenamiento lleno o una pestaña vieja), se dice en voz
+             alta: el reinicio vive solo en esta pestaña hasta que la
+             nube lo reciba, y recargar ahora lo resucitaría. */
+          try {
+            var redoSaved42 = false;
+            try { var rawRedo42 = window.localStorage.getItem(lsKey()); if (rawRedo42) { var parsedRedo42 = JSON.parse(rawRedo42); var prRedo42 = parsedRedo42 && parsedRedo42.projects && parsedRedo42.projects[state.id]; redoSaved42 = !!(prRedo42 && prRedo42.redoTombstones && prRedo42.redoTombstones[m.id]); } } catch (eRedo42) {}
+            if (!redoSaved42) toast("El reinicio no quedó guardado en este navegador: no recargues todavía, se está subiendo a la nube.");
+          } catch (eRedo42b) {}
           renderSidebar(); renderChat();
           toast("Componente " + codeOf(m.id) + " reiniciado. A responder de nuevo, con lo que ya sabes.");
         } else {
@@ -17966,6 +18078,16 @@
       if (pastSaleWithFigure(s)) return true;
       return !!positiveSalesEvidenceInText(s, null, null);
     }
+    /* v17.42 · F5: un cero de ventas es solo el «0 ventas» SOLO (al
+       inicio o tras un carácter que no es dígito): «240 ventas» o
+       «450 ventas» terminan en 0 pero no afirman cero ventas, y
+       leerlas como cero inventaba una retractación del Retar y una
+       aclaración de Ventas en el Plan. El cero genuino («todavía no
+       tienes ventas: 0 ventas y 0 clientes») sí coincide: el 0 va
+       tras «: » o al inicio. */
+    function isRealZeroVentas(t) {
+      return /(?:^|[^\d])0 ventas/.test(String(t || ""));
+    }
     /* Una sonda de Retar sin contestar cuya foto afirma 0 ventas. */
     function liveZeroProbeSnapshot() {
       if (!state || !state.followups) return null;
@@ -17977,7 +18099,7 @@
           if (!rec || !Array.isArray(rec.steps)) return;
           rec.steps.forEach(function (st) {
             if (found) return;
-            if (st && st.kind === "probe" && !st.answer && st.probeSnapshot && /0 ventas/.test(st.probeSnapshot)) found = { mid: mid, qi: parseInt(qi, 10), step: st };
+            if (st && st.kind === "probe" && !st.answer && st.probeSnapshot && isRealZeroVentas(st.probeSnapshot)) found = { mid: mid, qi: parseInt(qi, 10), step: st };
           });
         });
       });
@@ -18624,18 +18746,18 @@
           var rec = qs[qi];
           if (!rec || !Array.isArray(rec.steps)) return;
           rec.steps.forEach(function (st) {
-            if (!st || st.kind !== "probe" || st.answer || !st.probeSnapshot || /0 ventas/.test(st.probeSnapshot) === false) return;
+            if (!st || st.kind !== "probe" || st.answer || !st.probeSnapshot || !isRealZeroVentas(st.probeSnapshot)) return;
             /* v17.33 (WS1b) · La foto guarda el encabezado del reto («Reto sobre tu respuesta a la Pregunta 1 de C2. …»): al reconstruirla se conserva, o el reto perdería su referencia. */
             var oldSnap = st.probeSnapshot;
             var prefix = "";
             var pm = oldSnap.match(/^Reto sobre tu respuesta a la [^.]+\.\s*/);
             if (pm) prefix = pm[0];
             var fresh = prefix + buildRetarProbe(mod(mid), parseInt(qi, 10));
-            if (fresh.indexOf("0 ventas") === -1) {
+            if (!isRealZeroVentas(fresh)) {
               st.probeSnapshot = fresh; st.probe = fresh;
               rec.probeSnapshot = fresh;
               /* v17.33 (WS1b) · La foto también vive en el aviso del modo armado (renderChat pinta ui.activeModeScope.probeText tal cual): si el modo sigue armado sobre esta misma sonda, su texto se actualiza igual — si no, el aviso seguiría mostrando el cero viejo aunque la sonda ya se reconstruyó. */
-              if (typeof ui !== "undefined" && ui.activeMode === "retar" && ui.activeModeScope && ui.activeModeScope.probeText && /0 ventas/.test(ui.activeModeScope.probeText) && (ui.activeModeScope.probeText === oldSnap || (ui.activeModeScope.module === mid && (ui.activeModeScope.challengedQi === parseInt(qi, 10) || ui.activeModeScope.qi === parseInt(qi, 10))))) ui.activeModeScope.probeText = fresh;
+              if (typeof ui !== "undefined" && ui.activeMode === "retar" && ui.activeModeScope && ui.activeModeScope.probeText && isRealZeroVentas(ui.activeModeScope.probeText) && (ui.activeModeScope.probeText === oldSnap || (ui.activeModeScope.module === mid && (ui.activeModeScope.challengedQi === parseInt(qi, 10) || ui.activeModeScope.qi === parseInt(qi, 10))))) ui.activeModeScope.probeText = fresh;
               changed = true;
             }
           });
@@ -20670,7 +20792,7 @@
         html += '<div class="na-note" style="border-color:var(--danger)"><strong>Recordatorio de tu tarea:</strong> vence el ' + esc(fmtTask13Due(state.task13.due)) + (dl0.days < 0 ? " — ya pasó la fecha: repórtala cuando puedas en la Conversación." : dl0.days === 0 ? " — vence hoy." : " — faltan " + dl0.days + " días.") + "</div>";
       }
       var contra0 = openContradiction();
-      if (contra0) { var contra0Mods = contra0.mods || contradictionMods(contra0.key) || []; html += '<div class="na-note"><strong>Algo que yo quiero aclarar contigo:</strong> ' + esc(contra0.text) + ' <button class="btn small" type="button" data-answer-contra="' + esc(contra0.anchorModule || contra0Mods[0] || "M0") + '" data-contra-key="' + esc(contra0.key) + '">Responder</button></div>'; }
+      if (contra0) { var contra0Mods = contra0.mods || contradictionMods(contra0.key) || []; html += '<div class="na-note"><strong>Algo que yo quiero aclarar contigo:</strong> ' + esc(contra0.text) + ' <button class="btn small" type="button" data-answer-contra="' + esc(clarResponderTarget(contra0)) + '" data-contra-key="' + esc(contra0.key) + '">Responder</button></div>'; } /* v17.42 · F8: el destino se calcula al pintar */
       /* v17.33 (WS1) · H1: si un reto afirmó 0 ventas y tu aclaración lo corrigió, el Resumen lo dice de frente: el cero queda retractado, no solo en silencio. */
       var zeroRet = zeroSalesRetractionRecord();
       if (zeroRet) {
