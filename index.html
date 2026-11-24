@@ -487,7 +487,10 @@
       .ficha-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
       .ficha-field { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
       .ficha-field .flbl { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 800; }
-      .ficha-field .fval { font-size: 13.5px; margin-top: 3px; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: break-word; line-height: 1.45; }
+      /* v17.39 (WS1) · F5: la ficha muestra el valor completo: el
+         recorte a 3 líneas cortaba el texto con «…» y podía esconder
+         una cifra al final del campo. */
+      .ficha-field .fval { font-size: 13.5px; margin-top: 3px; color: var(--ink); overflow-wrap: break-word; line-height: 1.45; }
       .ficha-field.empty { background: var(--panel-3); }
       .ficha-field.empty .fval { color: var(--muted); font-style: italic; }
       .ficha-field.hipotesis { background: rgba(201, 154, 46, .14); border-color: rgba(201, 154, 46, .55); }
@@ -12580,8 +12583,41 @@
       if (!state) return null;
       var mine = mainAnswerText(mid, qi);
       if (!mine || mine.trim().length < 20) return null;
-      if (ws6Tokens(mine).length < 4) return null;
       var order = {}; MODULES.forEach(function (m, i) { order[m.id] = i; });
+      /* v17.39 (WS1) · F3: la identidad literal no tiene piso de
+         tokens: «Tengo una peluquería en Santa Marta» tiene 3
+         palabras de contenido y ES la primera frase de C0 Q1,
+         palabra por palabra. La comparación normaliza (minúsculas,
+         sin tildes, sin puntuación, espacios colapsados) y vale
+         frase completa contra frase completa, o contra una oración
+         de una respuesta anterior. */
+      var normMine = ws6StripAccents(mine).toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+      if (normMine) {
+        var litHit = null;
+        MODULES.forEach(function (m) {
+          var arrL = (state.answers && state.answers[m.id]) || [];
+          arrL.forEach(function (other, oj) {
+            if (litHit) return;
+            if (!other || !other.trim()) return;
+            if (m.id === mid && oj === qi) return;
+            if (order[m.id] > order[mid] || (m.id === mid && oj > qi)) return;
+            var normOther = ws6StripAccents(other).toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+            if (!normOther) return;
+            if (normOther === normMine) { litHit = { mid: m.id, qi: oj, overlap: 1 }; return; }
+            /* v17.39 (WS1) · F3: las oraciones se parten ANTES de quitar
+               la puntuación: quitar el punto primero funde «Tengo una
+               peluquería en Santa Marta. Mi peluquería…» en una sola
+               frase y la identidad literal no se ve. */
+            var sents = String(other).split(/[.?!;]+/).map(function (s) { return ws6StripAccents(s).toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim(); }).filter(function (s) { return !!s; });
+            if (sents.indexOf(normMine) >= 0) litHit = { mid: m.id, qi: oj, overlap: 1 };
+          });
+        });
+        if (litHit) return litHit;
+      }
+      /* El piso de 4 tokens vale para el solape de vocabulario, no
+         para la identidad literal de arriba: una frase corta repetida
+         palabra por palabra ya se devolvió como repetición. */
+      if (ws6Tokens(mine).length < 4) return null;
       var best = null;
       MODULES.forEach(function (m) {
         var arr = (state.answers && state.answers[m.id]) || [];
@@ -12776,7 +12812,11 @@
           var want = qi === 6 ? "tu versión de 30 segundos" : "tu versión de 2 minutos";
           if (trac && ws6OverlapGated(main, trac) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu tracción", wants: want });
           else if (market && ws6OverlapGated(main, market) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu mercado", wants: want });
-          else if (profile && ws6OverlapGated(main, profile) >= 0.6) out.push({ kind: "offtopic", looksLike: "tu perfil", wants: want });
+          /* v17.39 (WS1) · F4: el perfil solo marca con identidad
+             casi total (0,9): una versión que nombra el negocio, la
+             ciudad o el producto solapa 0,5–0,75 con el perfil y no
+             es el perfil pegado. */
+          else if (profile && ws6OverlapGated(main, profile) >= 0.9) out.push({ kind: "offtopic", looksLike: "tu perfil", wants: want });
           else if (main.trim().length >= 60 && ws6PitchElements(main) === 0 && !ws6HasConcreteData(main)) out.push({ kind: "offtopic", looksLike: "un texto general", wants: want });
         }
       }
@@ -12879,26 +12919,47 @@
       if (neto && neto.v) margin = neto.v;
       if (margin == null) {
         var price = null; try { price = ownPrice(); } catch (e) { price = null; }
-        var cm = q0.match(/cada (venta|servicio) me cuesta[^$]{0,40}?\$?\s*([\d][\d.,]*)/i);
+        /* v17.39 (WS1) · F6: el costo por unidad se lee con cualquier
+           sustantivo de venta («cada corte me cuesta…»), no solo
+           venta/servicio; un cliente nunca es la unidad de costo. */
+        var cm = q0.match(/cada (?!(?:cliente|clienta|alumn[oa]|persona)s?\b)([a-záéíóúñ]+) me cuesta[^$]{0,40}?\$?\s*([\d][\d.,]*)/i);
         if (price != null && cm) margin = price - ws6ParseMoneyNum(cm[2]);
         if (margin != null && margin <= 0) margin = null;
       }
       var q1 = mainAnswerText("M10", 1) || "";
-      var vm = q1.match(/vendo[^.]{0,60}?(\d[\d.,]*)\s*(ventas|servicios)/i);
+      /* v17.39 (WS1) · F6: el volumen de hoy y el equilibrio
+         declarado se leen con cualquier unidad («240 cortes»,
+         «150 helados»), no solo «ventas/servicios»: la unidad la
+         pone la línea del equilibrio, no esta lectura. */
+      var vm = q1.match(/vendo[^.]{0,60}?(\d[\d.,]*)\s*([a-záéíóúñ]+)/i);
       if (vm) salesNow = ws6ParseMoneyNum(vm[1]);
-      var stm = q1.match(/punto de equilibrio[^.]{0,80}?(\d[\d.,]*)\s*(ventas|servicios)/i);
+      var stm = q1.match(/punto de equilibrio[^.]{0,80}?(\d[\d.,]*)\s*([a-záéíóúñ]+)/i);
       if (stm) stated = ws6ParseMoneyNum(stm[1]);
       return { fixed: fixed, margin: margin, salesNow: salesNow, stated: stated, computed: computeBreakEven(fixed, margin) };
     }
     /* La línea del equilibrio calculado, lista para mostrarse:
        el número, la división que lo sostiene, la distancia de hoy
        y, si lo declarado contradice lo calculado, el aviso. */
+    /* v17.39 (WS1) · F6: el equilibrio se dice en las unidades del
+       propio negocio («120 cortes al mes», «150 helados al mes»), no
+       en «ventas» genéricas: el sustantivo es el mismo que usa KR2
+       (volumen declarado o, si no lo hay, el plural del sustantivo
+       por venta del valor de vida). */
     function breakEvenLine() {
       var be = breakEvenInputs();
       if (be.computed == null) return "";
-      var s = "Tu punto de equilibrio es " + be.computed + " ventas al mes: costos fijos de $" + be.fixed.toLocaleString("es-CO") + " al mes divididos entre $" + be.margin.toLocaleString("es-CO") + " de margen por venta.";
-      if (be.salesNow != null) s += " Hoy vendes unas " + be.salesNow + " ventas al mes, " + (be.salesNow >= be.computed ? "por encima del equilibrio." : "por debajo del equilibrio.");
-      if (be.stated != null && be.stated !== be.computed) s += " Tu respuesta dice " + be.stated + " ventas, pero la división da " + be.computed + ": revisa cuál de las dos cifras es la buena.";
+      var beNoun = "ventas", beNounSg = "venta";
+      try {
+        var beVol = okrVolumeNow();
+        if (beVol && beVol.noun) { beNoun = beVol.noun; }
+        else {
+          var beLtv = extractLtvInfo();
+          if (beLtv && beLtv.perSaleNoun) { beNounSg = beLtv.perSaleNoun; beNoun = okrPluralNoun(beNounSg); }
+        }
+      } catch (e) {}
+      var s = "Tu punto de equilibrio es " + be.computed + " " + beNoun + " al mes: costos fijos de $" + be.fixed.toLocaleString("es-CO") + " al mes divididos entre $" + be.margin.toLocaleString("es-CO") + " de margen por " + beNounSg + ".";
+      if (be.salesNow != null) s += " Hoy vendes unas " + be.salesNow + " " + beNoun + " al mes, " + (be.salesNow >= be.computed ? "por encima del equilibrio." : "por debajo del equilibrio.");
+      if (be.stated != null && be.stated !== be.computed) s += " Tu respuesta dice " + be.stated + " " + beNoun + ", pero la división da " + be.computed + ": revisa cuál de las dos cifras es la buena.";
       return s;
     }
 
@@ -13499,11 +13560,18 @@
         }
         var mm = t.match(/margen[^$]{0,60}?\$?\s*([\d.,]+)\s*por/i);
         if (mm) marginNow = ws6ParseMoneyNum(mm[1]);
+        /* v17.39 (WS1) · F2: un KR se mide por SU métrica: el valor
+           de vida y el CAC son las mitades primarias; el margen es
+           apoyo, nunca el veredicto solo. «Vendiste 4 cortes por
+           $120.000» dice que el margen se sostuvo, pero no mide ni el
+           valor de vida ni el CAC: con solo margen, el KR queda
+           «Sin medir todavía». */
         var halves = [];
-        if (ltvNow != null && kr.target.ltv != null) halves.push({ ok: ltvNow >= kr.target.ltv, txt: "tu valor de vida es " + okrFmt(ltvNow) + " (meta " + okrFmt(kr.target.ltv) + ")" });
-        if (cacNow != null && kr.target.cacMax != null) halves.push({ ok: cacNow <= kr.target.cacMax, txt: "adquirir cada " + cl2.sg + " te cuesta " + okrFmt(cacNow) + " (tope " + okrFmt(kr.target.cacMax) + ")" });
-        if (marginNow != null && kr.target.margin != null) halves.push({ ok: marginNow >= kr.target.margin, txt: "tu margen es " + okrFmt(marginNow) + " por " + (kr.target.noun || "venta") + " (meta " + okrFmt(kr.target.margin) + ")" });
-        if (!halves.length) {
+        if (ltvNow != null && kr.target.ltv != null) halves.push({ primary: true, ok: ltvNow >= kr.target.ltv, txt: "tu valor de vida es " + okrFmt(ltvNow) + " (meta " + okrFmt(kr.target.ltv) + ")" });
+        if (cacNow != null && kr.target.cacMax != null) halves.push({ primary: true, ok: cacNow <= kr.target.cacMax, txt: "adquirir cada " + cl2.sg + " te cuesta " + okrFmt(cacNow) + " (tope " + okrFmt(kr.target.cacMax) + ")" });
+        if (marginNow != null && kr.target.margin != null) halves.push({ primary: false, ok: marginNow >= kr.target.margin, txt: "tu margen es " + okrFmt(marginNow) + " por " + (kr.target.noun || "venta") + " (meta " + okrFmt(kr.target.margin) + ")" });
+        var hasPrimary = halves.some(function (h) { return h.primary; });
+        if (!halves.length || !hasPrimary) {
           /* v17.36 (WS5) · Un resultado real de 7 días también mide el
              valor de vida: el ingreso por unidad vendida dice si el
              margen se sostuvo (precio menos costo por unidad), y el
@@ -13515,15 +13583,20 @@
             if (wkL.units != null && wkL.units > 0 && wkL.money != null && kr.target.margin != null && kr.target.price != null) {
               var revPerUnit = wkL.money / wkL.units;
               var realizedMargin = Math.round(revPerUnit - (kr.target.price - kr.target.margin));
-              halvesW.push({ ok: realizedMargin >= kr.target.margin, txt: "vendiste " + wkL.units + " " + okrPluralNoun(kr.target.noun || "venta") + " por " + okrFmt(wkL.money) + " en 7 días, o sea " + okrFmt(Math.round(revPerUnit)) + " por " + (kr.target.noun || "venta") + ": tu margen se mantiene en " + okrFmt(realizedMargin) + " por " + (kr.target.noun || "venta") + " (meta " + okrFmt(kr.target.margin) + ")" });
+              halvesW.push({ primary: false, ok: realizedMargin >= kr.target.margin, txt: "vendiste " + wkL.units + " " + okrPluralNoun(kr.target.noun || "venta") + " por " + okrFmt(wkL.money) + " en 7 días, o sea " + okrFmt(Math.round(revPerUnit)) + " por " + (kr.target.noun || "venta") + ": tu margen se mantiene en " + okrFmt(realizedMargin) + " por " + (kr.target.noun || "venta") + " (meta " + okrFmt(kr.target.margin) + ")" });
             }
             if (wkL.units != null && wkL.units > 0 && wkL.cost != null && kr.target.cacMax != null) {
               var realizedCac = Math.round(wkL.cost / wkL.units);
-              halvesW.push({ ok: realizedCac <= kr.target.cacMax, txt: "adquirir cada " + cl2.sg + " te costó " + okrFmt(realizedCac) + " (tope " + okrFmt(kr.target.cacMax) + ")" });
+              halvesW.push({ primary: true, ok: realizedCac <= kr.target.cacMax, txt: "adquirir cada " + cl2.sg + " te costó " + okrFmt(realizedCac) + " (tope " + okrFmt(kr.target.cacMax) + ")" });
             }
-            if (halvesW.length) {
-              var allOkW = halvesW.every(function (h) { return h.ok; });
-              return { measured: true, label: allOkW ? "Cumplido" : "Por debajo", detail: halvesW.map(function (h) { return h.txt; }).join("; "), provenance: provenance };
+            var hasPrimaryW = halvesW.some(function (h) { return h.primary; });
+            if (halvesW.length && hasPrimaryW) {
+              /* El margen directo, si lo había, se cita como apoyo
+                 junto a la mitad primaria que sí mide el KR. */
+              var combined = halves.filter(function (h) { return h.primary; }).concat(halvesW);
+              halves.filter(function (h) { return !h.primary; }).forEach(function (h) { combined.push(h); });
+              var allOkW = combined.every(function (h) { return h.ok; });
+              return { measured: true, label: allOkW ? "Cumplido" : "Por debajo", detail: combined.map(function (h) { return h.txt; }).join("; "), provenance: provenance };
             }
           }
           return unm;
@@ -13555,10 +13628,16 @@
       }
       return { measured: false, label: "Sin medir todavía", detail: "", provenance: "" };
     }
-    /* Medir UN resultado clave en un ámbito: "C13" solo lee el reporte
-       verificado de la tarea; "C14" lee primero C14 (línea base, metas
-       y valores semanales) y arrastra lo ya medido en C13. Un KR
-       pendiente nunca se mide: su cifra no existe todavía. */
+    /* v17.39 (WS1) · F2: "C14" lee PRIMERO el reporte verificado de
+       C13 y solo si ese reporte no mide el KR cae a C14 (línea base,
+       metas y valores semanales) y luego al registro semanal. El
+       cierre de C14 es una declaración, no un resultado: leerlo
+       primero dejaba que «240 cortes al mes» (C14 Q2) pisara el
+       resultado verificado de C13 («4 cortes en 7 días»). C13 y C14
+       ya no pueden contradecirse: el reporte verificado manda.
+       Medir UN resultado clave en un ámbito: "C13" solo lee el
+       reporte verificado de la tarea. Un KR pendiente nunca se mide:
+       su cifra no existe todavía. */
     function okrMeasureOne(kr, scope) {
       if (!kr) return { measured: false, label: "Sin medir todavía", detail: "", provenance: "" };
       if (kr.status === "pending") return { measured: false, label: "Pendiente de confirmación", detail: kr.pendingText || "", provenance: "" };
@@ -13567,14 +13646,14 @@
         var rep = (state.task13 && state.task13.report) || "";
         return okrMeasureFromText(kr, rep, "lo reportaste en C13 el " + fmtDateISO(state.task13.reportedAt));
       }
-      var m14 = okrMeasureFromText(kr, okrC14Text(), "lo escribiste en C14");
-      if (m14.measured) return m14;
-      var mlog = okrMeasureFromLog(kr);
-      if (mlog.measured) return mlog;
       if (taskExecutionState() === "verified") {
         var m13 = okrMeasureFromText(kr, (state.task13 && state.task13.report) || "", "medido en C13 el " + fmtDateISO(state.task13.reportedAt));
         if (m13.measured) return m13;
       }
+      var m14 = okrMeasureFromText(kr, okrC14Text(), "lo escribiste en C14");
+      if (m14.measured) return m14;
+      var mlog = okrMeasureFromLog(kr);
+      if (mlog.measured) return mlog;
       return { measured: false, label: "Sin medir todavía", detail: "", provenance: "" };
     }
     /* ---------- Render ---------- */
@@ -13898,9 +13977,12 @@
        alternativa»...) va junto a la cifra que describe, dentro del
        texto de evidencia: antes se pegaba al final de toda la frase y
        el lector lo leía como si describiera la última cifra. */
+    /* v17.39 (WS1) · F1: «propio» se lee «tu precio propio»: «tu
+       precio» a secas no dice que es el propio frente a la
+       alternativa, y en vivo nunca apareció la palabra «propio». */
     function citedKindNoun(label) {
       if (!label) return "";
-      return label === "propio" ? "tu precio" : label === "costo" ? "tu costo" : label === "alternativa" ? "lo que cobra la alternativa" : label === "objetivo" ? "tu meta" : (label === "neto" || label === "margen") ? "lo que te queda neto" : label === "cac" ? "tu costo de adquirir un cliente" : label === "techo" ? "tu tope" : "";
+      return label === "propio" ? "tu precio propio" : label === "costo" ? "tu costo" : label === "alternativa" ? "lo que cobra la alternativa" : label === "objetivo" ? "tu meta" : (label === "neto" || label === "margen") ? "lo que te queda neto" : label === "cac" ? "tu costo de adquirir un cliente" : label === "techo" ? "tu tope" : "";
     }
     function evidenceFoundText(text, q) {
       var t = String(text || "");
@@ -14279,6 +14361,15 @@
         ws6IsMainBubble = !!(state && (quoteText || "") === (((state.answers || {})[m.id] || [])[qi] || ""));
         if (ws6IsMainBubble) ws6FlagsBubble = ws6QualityFlags(m.id, qi);
       } catch (e) { ws6FlagsBubble = []; }
+      /* v17.39 (WS1) · F3: una respuesta idéntica a una anterior se
+         marca como repetición, no como texto corto: el hueco
+         «desarrollo: N caracteres no alcanzan» no puede disparar
+         cuando el texto es idéntico a una respuesta anterior — la
+         repetición ya lo dice («Ojo con esta respuesta: ...»). */
+      if (ws6FlagsBubble.some(function (ff) { return ff.kind === "repeated"; }) && sol && sol.miss && sol.miss.length) {
+        var missSinDesarrollo = sol.miss.filter(function (mm) { return String(mm || "").indexOf("desarrollo:") !== 0; });
+        if (missSinDesarrollo.length !== sol.miss.length) sol = { label: sol.label, miss: missSinDesarrollo };
+      }
       var falta;
       if (sol.label === "Fuerte" || isZero || isDone(sol.label, sol.miss)) {
         var ws6OffBubble = ws6FlagsBubble.filter(function (ff) { return ff.kind === "offtopic"; });
@@ -17024,7 +17115,9 @@
            siendo una cifra etiquetada como propia, no un número
            cualquiera. */
         var ownLabelled = labOwn != null || labeledPrice(combinedAnswer("M0", 5), "propio") != null || propioMajorityValue(mainAnswerText("M0", 5)) != null || propioMajorityValue(combinedAnswer("M0", 5)) != null || correctedFigure("cobrado") != null || (state && typeof state.priceConfirmed === "number" && state.priceConfirmed === own) || (ownPriceFromBrief() != null && ownPriceFromBrief() === own);
-        return { text: fmtMoney(own) + " — tu precio", status: ownLabelled ? "validado" : "hipotesis" };
+        /* v17.39 (WS1) · F1: el precio propio se nombra «tu precio
+           propio» también en la ficha, para que el Resumen lo lea así. */
+        return { text: fmtMoney(own) + " — tu precio propio", status: ownLabelled ? "validado" : "hipotesis" };
       }
       var t = mainAnswerText("M0", f.qi);
       if (f.label === "Problema") {
@@ -22168,7 +22261,7 @@
     /* v17.24 · Contenido del Brief que ya llena bloques antes de que
        su componente empiece: la Propuesta se esboza con el problema y
        con qué se vende (C0 Q3/Q0), los Segmentos con el cliente
-       inicial (C0 Q1) y los Ingresos con el precio (C0 Q5). Solo se
+       inicial (C0 Q1) y los Ingresos con lo que factura al mes (C0 Q6). Solo se
        usa mientras el bloque no tiene su propia respuesta: en cuanto
        llega, el borrador cede sin borrar nada. */
     /* v17.26 (WS4) · Los 9 bloques tienen respaldo del Brief, no
@@ -22180,7 +22273,12 @@
     var CANVAS_FALLBACK = {
       propuesta: [{ mod: "M0", qs: [3, 0] }],
       segmentos: [{ mod: "M0", qs: [1] }],
-      ingresos: [{ mod: "M0", qs: [5] }],
+      /* v17.39 (WS1) · F5: los Ingresos se respaldan con C0 Q6
+         (cómo cobra y cuánto factura al mes), no con C0 Q5 (la
+         comparación de precios): el texto corregido de Q5 («me
+         equivoqué: la alternativa cobra…») no son fuentes de
+         ingresos. */
+      ingresos: [{ mod: "M0", qs: [6] }],
       canales: [{ mod: "M0", qs: [2] }],
       costos: [{ mod: "M0", qs: [7] }],
       relaciones: [{ mod: "M0", qs: [1, 2] }],
@@ -23264,7 +23362,10 @@
         resolvedClars.forEach(function (r) {
           var bits = [];
           if (r.corrected) {
-            if (r.corrected.cobrado) bits.push("Precio: $" + r.corrected.cobrado.v.toLocaleString("es-CO") + correctedUnitSuffix(r.corrected.cobrado.unit));
+            /* v17.39 (WS1) · F1: el precio corregido es el propio:
+               «Precio propio», no «Precio» a secas frente a
+               «Alternativa». */
+            if (r.corrected.cobrado) bits.push("Precio propio: $" + r.corrected.cobrado.v.toLocaleString("es-CO") + correctedUnitSuffix(r.corrected.cobrado.unit));
             if (r.corrected.costo) bits.push("Costo: $" + r.corrected.costo.v.toLocaleString("es-CO") + correctedUnitSuffix(r.corrected.costo.unit));
             if (r.corrected.neto) bits.push("Neto: $" + r.corrected.neto.v.toLocaleString("es-CO") + correctedUnitSuffix(r.corrected.neto.unit));
             if (r.corrected.alternativa) bits.push("Alternativa: $" + r.corrected.alternativa.v.toLocaleString("es-CO") + correctedUnitSuffix(r.corrected.alternativa.unit));
@@ -25959,7 +26060,16 @@
               bDel.textContent = "Eliminar";
               bDel.setAttribute("data-confirm", "0");
               bDel.addEventListener("click", function () { deleteUser(bDel, docSnap.id, d.email); });
+              /* v17.39 (WS1) · F7: control de contraseña para un
+                 usuario existente: le llega el correo de
+                 restablecimiento y él mismo pone su clave nueva (el
+                 navegador no puede fijar la clave de otro usuario). */
+              var bReset = document.createElement("button");
+              bReset.className = "btn small ghost";
+              bReset.textContent = "Restablecer contraseña";
+              bReset.addEventListener("click", function () { resetUserPassword(bReset, d.email); });
               acts.appendChild(bToggle);
+              acts.appendChild(bReset);
               acts.appendChild(bDel);
             } else {
               var self = document.createElement("span");
@@ -26067,11 +26177,38 @@
           m.textContent = friendlyError(err); m.className = "admin-msg err";
         });
       }
+      /* v17.39 (WS1) · F7: restablecer la contraseña de un usuario
+         existente por correo (Firebase Auth): el usuario recibe el
+         enlace y pone su clave nueva. */
+      function resetUserPassword(btn, email) {
+        if (!email) return;
+        if (btn.getAttribute("data-confirm") !== "1") {
+          btn.setAttribute("data-confirm", "1");
+          if (!btn.getAttribute("data-label")) btn.setAttribute("data-label", btn.textContent);
+          btn.textContent = "Le llegará un correo para poner su clave nueva. Toca de nuevo para enviarlo";
+          return;
+        }
+        btn.setAttribute("data-confirm", "0");
+        btn.textContent = btn.getAttribute("data-label") || "Restablecer contraseña";
+        auth.sendPasswordResetEmail(email).then(function () {
+          toast("Correo de restablecimiento enviado a " + email + ": ahí podrá poner su clave nueva.");
+        }).catch(function (err) {
+          var m = $("adminListMsg");
+          m.textContent = friendlyError(err); m.className = "admin-msg err";
+        });
+      }
+      /* v17.39 (WS1) · F7: el borrado quita los datos en Firestore y
+         la cuenta ya no puede entrar, pero el registro de acceso en
+         Firebase Auth NO se puede borrar desde el navegador (el SDK
+         del cliente solo borra la sesión propia): el aviso lo dice y
+         pide borrarlo en la consola, para que el correo se pueda
+         registrar de nuevo. El borrado completo del acceso necesita
+         una función de servidor. */
       function deleteUser(btn, uid, email) {
         if (btn.getAttribute("data-confirm") !== "1") {
           btn.setAttribute("data-confirm", "1");
           if (!btn.getAttribute("data-label")) btn.setAttribute("data-label", btn.textContent);
-          btn.textContent = "Se borra su registro y su proyecto. Toca de nuevo para confirmar";
+          btn.textContent = "Se borran su registro y su proyecto. El acceso se borra en la consola de Firebase. Toca de nuevo para confirmar";
           return;
         }
         /* v17.28 (WS2) · Borrar la cuenta borra TODOS sus documentos por
@@ -26091,7 +26228,7 @@
         }).then(function () {
           return db.collection("usuarios").doc(uid).delete();
         }).then(function () {
-          toast("Usuario eliminado: " + email + ". Sin su registro, esa cuenta ya no puede entrar a Analía.");
+          toast("Usuario eliminado: " + email + ". Sus datos y su proyecto se borraron y esa cuenta ya no puede entrar a Analía. Para registrar ese correo de nuevo, borra también su acceso en la consola de Firebase (Authentication → Usuarios).");
           renderAdminUsers();
         }).catch(function (err) {
           var m = $("adminListMsg");
