@@ -3613,7 +3613,7 @@
                             "chain": [
                                 "¿Qué barrera, si fuera la única, te haría cambiar la oferta?"
                             ],
-                            "exige": "El detonante, las barreras que crees y cómo comprobarás cada una.",
+                            "exige": "El detonante con un caso reciente que lo pruebe, las barreras que crees y cómo comprobarás cada una.",
                             "q": "¿Qué hecho concreto crees que detonará la compra — una fecha, un problema que se agudiza, una recomendación — y qué barreras crees que la frenarán: precio, desconfianza, dificultad para encontrarte, falta de tiempo, miedo a equivocarse? ¿Cómo vas a comprobar cada barrera con personas reales?",
                             "why": "Sin ventas, las barreras son supuestas: la que no compruebas te espera en la primera venta real."
                         },
@@ -7450,7 +7450,14 @@
          la sabe («no sé cuántas veces al mes»), ningún atajo débil la
          inventa: solo vale un conteo explícito. */
       var freqUnknown = /no\s+s[eé]\s+(cu[aá]nt[oa]s?\s+veces|la\s+frecuencia|cu[aá]nto|con\s+qu[eé]\s+frecuencia)/i.test(String(combinedAnswer("M6", 5) || ""));
-      var texts = [combinedAnswer("M6", 5), combinedAnswer("M0", 1)];
+      /* v17.38 · La frecuencia se busca en todas las respuestas de C6
+         (la principal de C6 Q5 primero): si la fórmula del valor de
+         vida vive en otro hueco de C6, su «N veces al mes» sigue
+         valiendo. Los escenarios («240 cortes al mes») no casan con
+         «veces al mes», así que no contaminan. */
+      var texts = [combinedAnswer("M6", 5)];
+      (function () { var _mm = mod("M6"); if (!_mm) return; for (var _qi = 0; _qi < _mm.questions.length; _qi++) { if (_qi !== 5) texts.push(combinedAnswer("M6", _qi)); } })();
+      texts.push(combinedAnswer("M0", 1));
       for (var i = 0; i < texts.length; i++) {
         var t = String(texts[i] || "");
         if (!t.trim()) continue;
@@ -7695,6 +7702,30 @@
         }
         return { v: monthlyCand.v * 12, monthly: true, base: monthlyCand.v, months: 12, freqPerMonth: freq, marginPerSale: mg ? mg.v : null, perSaleNoun: mg ? mg.noun : "venta" };
       }
+      /* v17.38 · La fórmula escrita en OTRO hueco de C6 vale igual: si
+         la respuesta de C6 Q5 no trae la multiplicación, se busca la
+         fórmula «$X × N × M = $Y» en las demás respuestas de C6. La
+         fórmula es autocontenida (margen, frecuencia y meses salen de
+         ella misma), así que no depende del hueco donde viva. */
+      try {
+        var _m6 = mod("M6");
+        if (_m6) {
+          for (var _qi2 = 0; _qi2 < _m6.questions.length; _qi2++) {
+            if (_qi2 === 5) continue;
+            var _tt = combinedAnswer("M6", _qi2);
+            if (!String(_tt || "").trim()) continue;
+            var _wf = String(_tt).match(/\\$\\s*([\\d.,]+)\\s*[×x]\\s*(\\d+)\\s*[×x]\\s*(\\d+)\\s*=\\s*\\$\\s*([\\d.,]+)/);
+            if (!_wf) continue;
+            var _wm = parseInt(_wf[1].replace(/[.,]/g, ""), 10);
+            var _wfq = parseInt(_wf[2], 10);
+            var _wmo = parseInt(_wf[3], 10);
+            var _wt = parseInt(_wf[4].replace(/[.,]/g, ""), 10);
+            if (_wm > 0 && _wfq > 0 && _wmo > 0 && _wmo <= 120 && _wt > 0) {
+              return { v: _wt, monthly: false, base: _wm * _wfq, months: _wmo, freqPerMonth: _wfq, marginPerSale: _wm, perSaleNoun: mg ? mg.noun : "venta" };
+            }
+          }
+        }
+      } catch (e) {}
       return null;
     }
     function extractLtv() {
@@ -7912,9 +7943,37 @@
        respaldo C1 — el primer sitio donde el dueño lista sus fuentes
        es C1 Q6 (Fuentes de ingresos), y esas cifras también cuentan. */
     function extractIncomeSources() {
-      var fromM6 = extractIncomeSourcesFromText(combinedAnswer("M6", 0));
+      /* v17.38 · Las fuentes salen de la respuesta PRINCIPAL (v17.24:
+         las cifras del modelo se construyen solo con mainAnswerText).
+         Una repregunta que repite una cifra de fuente («sí, tintes
+         $2.000.000») la contaba como tercera fuente y la brecha salía
+         al revés («Sobran $1.300.000»). Las repreguntas solo AÑADEN
+         fuentes con valores que la principal no trae. */
+      function sourcesMainPlusFollowups(mid, qi) {
+        var base = extractIncomeSourcesFromText(mainAnswerText(mid, qi));
+        var steps = [];
+        try { steps = fuSteps(mid, qi) || []; } catch (e) { steps = []; }
+        var seen = {};
+        if (base && base.sources) base.sources.forEach(function (s) { seen[s.v] = true; });
+        steps.forEach(function (st) {
+          if (!st || !st.answer || !String(st.answer).trim()) return;
+          if (isGradeWordStep(st)) return;
+          var extra = extractIncomeSourcesFromText(st.answer);
+          if (!extra || !extra.sources) return;
+          extra.sources.forEach(function (s) {
+            if (seen[s.v]) return;
+            seen[s.v] = true;
+            if (!base) base = { sources: [], sum: 0, statedTotal: null };
+            base.sources.push(s);
+            base.sum += s.v;
+          });
+          if (base && extra.statedTotal != null && base.statedTotal == null) base.statedTotal = extra.statedTotal;
+        });
+        return base;
+      }
+      var fromM6 = sourcesMainPlusFollowups("M6", 0);
       if (fromM6 && fromM6.sources && fromM6.sources.length >= 2) return fromM6;
-      var fromM1 = extractIncomeSourcesFromText(combinedAnswer("M1", 6));
+      var fromM1 = sourcesMainPlusFollowups("M1", 6);
       if (fromM1 && fromM1.sources && fromM1.sources.length >= 2) return fromM1;
       return fromM6 || fromM1;
     }
@@ -8881,7 +8940,11 @@
       return /(aclar[oa]|correcci[oó]n|mi precio (es|no es)|no (es )?mi precio)/i.test(String(text || ""));
     }
     function recordPriceCorrection(text) {
-      if (!state || !looksLikePriceCorrection(text)) return;
+      /* v17.38 · Solo una corrección EXPLÍCITA registra una aclaración
+         de precio: «Mi precio es $30.000 por corte» es una respuesta
+         normal, no una corrección, y antes se auto-registraba (y
+         re-anclaba el registro único al componente de turno). */
+      if (!state || !looksLikeExplicitCorrection(text)) return;
       /* Solo cifras ETIQUETADAS como propias o de la alternativa: la
          adivinanza por palabra cercana de parseCorrectedFigures
          asignaba mal (el «mi precio» de la cláusula siguiente se le
@@ -9057,6 +9120,15 @@
        exportado sigue siendo el respaldo para cambiar de equipo. */
     var LS_KEY = "analia.proyecto.v2";
     var storageOK = true;
+    /* v17.38 · «Lleno» no es «no permite»: si el almacén está lleno
+       (QuotaExceededError) el navegador sí permite guardar, solo no
+       cabe más — la nube sigue funcionando y el aviso debe decirlo.
+       Solo un fallo de acceso real apaga el guardado local. */
+    var storageFull = false;
+    function markStorageWriteError(e) {
+      if (e && (e.name === "QuotaExceededError" || e.code === 22 || e.code === 1014)) { storageFull = true; return; }
+      storageOK = false;
+    }
     /* Con sesión iniciada, la copia local se guarda bajo la clave del
        usuario (LS_KEY + uid): en el mismo navegador, cada persona ve
        solo su proyecto. window.__cloudSave (definido por el script de
@@ -9121,13 +9193,13 @@
           if (Object.keys(store.projects || {}).length || Object.keys(store.deleted || {}).length) {
             var raw0 = JSON.stringify(store);
             window.localStorage.setItem(lsKey(), raw0);
-            storageOK = true;
+            storageOK = true; storageFull = false;
             notePersisted(raw0, storeContentKey());
             if (window.__cloudMarkMetaDirty) window.__cloudMarkMetaDirty();
             renderSaveStatus();
             return true;
           }
-        } catch (e) { storageOK = false; }
+        } catch (e) { markStorageWriteError(e); }
         return false;
       }
       /* v17.14 · Antes de sobrescribir nada, se comprueba que la copia
@@ -9163,9 +9235,9 @@
         store.activeProjectId = state.id;
         var raw = JSON.stringify(store);
         window.localStorage.setItem(lsKey(), raw);
-        storageOK = true;
+        storageOK = true; storageFull = false;
         notePersisted(raw, storeContentKey());
-      } catch (e) { storageOK = false; }
+      } catch (e) { markStorageWriteError(e); }
       /* v17.28 · El proyecto activo cambió en local: su documento por
          proyecto (items/{id}) queda marcado para subir, y el documento
          meta (activeProjectId, lápidas) también. */
@@ -9200,9 +9272,9 @@
         if (!keepStamp) state.savedAt = new Date().toISOString();
         var raw = JSON.stringify(store);
         window.localStorage.setItem(lsKey(), raw);
-        storageOK = true;
+        storageOK = true; storageFull = false;
         notePersisted(raw, storeContentKey());
-      } catch (e) { storageOK = false; }
+      } catch (e) { markStorageWriteError(e); }
       /* v17.28 · Igual que en persist(): lo que cambió en local queda
          marcado para subir a su documento por proyecto (y al meta). */
       if (window.__cloudMarkDirty) window.__cloudMarkDirty(state.id);
@@ -9812,10 +9884,6 @@
         out.redoTombstones = rtMerged;
       }
       var fuMerged = mergeFollowups(a.followups, b.followups, out.answers);
-      if (stableStringify(fuMerged) !== stableStringify(a.followups || {})) {
-        changed = true; adoptedFromB = true;
-        if (followupsAdoptedFromB(a.followups, b.followups, fuMerged)) adoptedAnsB = true;
-      }
       out.followups = fuMerged;
       /* v17.36 (WS6) · (h): los pasos de seguimiento contestados antes de
          la lápida del módulo no resucitan; los pendientes sin contestar se
@@ -9838,6 +9906,15 @@
         });
         if (stableStringify(out.followups || {}) !== before) changed = true;
       })();
+      /* v17.38 · Las banderas de adopción se calculan DESPUÉS del filtro
+         de lápida: antes, los pasos de seguimiento borrados por la
+         lápida seguían marcando «adoptedAnswersFromB» y el rehacer se
+         veía como una pestaña vieja (storedCopyAhead bloqueaba el
+         guardado y la lápida nunca llegaba al disco). */
+      if (stableStringify(out.followups || {}) !== stableStringify(a.followups || {})) {
+        changed = true; adoptedFromB = true;
+        if (followupsAdoptedFromB(a.followups, b.followups, out.followups)) adoptedAnsB = true;
+      }
       /* v17.32 (WS6) · El registro de confirmaciones sobrevive a la
          fusión: unión por clave (módulo, objetivo); en conflicto
          gana el lado A. Sin esto, fusionar con una copia sin registro
@@ -10400,12 +10477,14 @@
        sincronización. El texto estático por defecto es el local (sin
        promesa de nube); la nube solo se promete cuando se confirma. */
     var WELCOME_SAVE_NO_STORAGE = "Este navegador no permite el guardado automático: exporta tu proyecto para no perderlo.";
+    var WELCOME_SAVE_FULL = "El almacenamiento de este navegador está lleno: tu proyecto se guarda en la nube, pero no cabe en este equipo. Exporta tu proyecto como respaldo.";
     var WELCOME_SAVE_LOCAL = "Tu cuenta es personal: tu proyecto se guarda en este navegador. Además puedes exportar tu proyecto en un archivo como respaldo o para compartirlo.";
     var WELCOME_SAVE_CLOUD = "Tu cuenta es personal: tu proyecto se guarda en este navegador y se sincroniza con tu cuenta, para que lo retomes desde cualquier computador. Además puedes exportar tu proyecto en un archivo como respaldo o para compartirlo.";
     function syncWelcomeSaveCopy() {
       var el = $("welcomeSaveCopy");
       if (!el) return;
       if (!storageOK) { el.textContent = WELCOME_SAVE_NO_STORAGE; return; }
+      if (storageFull) { el.textContent = WELCOME_SAVE_FULL; return; }
       var enNube = currentUid && currentUid !== "demo";
       var cs = (typeof window.__cloudStatus === "function") ? window.__cloudStatus() : "unknown";
       if (enNube && cs === "ok") el.textContent = WELCOME_SAVE_CLOUD;
@@ -10423,6 +10502,11 @@
       }
       if (!storageOK) {
         el.textContent = "Este navegador no permite el guardado automático: exporta tu proyecto para no perderlo.";
+        setSaveNote("hidden");
+        return;
+      }
+      if (storageFull) {
+        el.textContent = "El almacenamiento de este navegador está lleno: tu proyecto no cabe en este equipo, pero se sigue guardando en la nube. Exporta tu proyecto como respaldo.";
         setSaveNote("hidden");
         return;
       }
@@ -10523,8 +10607,11 @@
       if (!d) return null;
       var src = duplicateSourceTextFor(p, d.from);
       if (!src) return null;
+      /* v17.38 · Un duplicado completo también trae su incremental: la
+         pregunta se presenta como sugerencia/confirmación, no como hueco
+         ya consumido (ver answeredCountFor y displayPrompt). */
       if (d.fullIfTwoFigures && moneySpans(src).length >= 2) {
-        return { kind: "full", excerpt: excerptOf(src, 140), incremental: "" };
+        return { kind: "full", excerpt: excerptOf(src, 140), incremental: d.incremental || "" };
       }
       return { kind: "partial", excerpt: excerptOf(src, 140), incremental: d.incremental };
     }
@@ -10539,7 +10626,17 @@
       for (var i = 0; i < arr.length; i++) {
         if (arr[i] && arr[i].trim().length > 0) { n++; continue; }
         var dup = duplicateInfoFor(p, id, i);
-        if (dup && dup.kind === "full") { n++; continue; }
+        /* v17.38 · Un duplicado completo NUNCA consume el hueco: la
+           pregunta se sigue haciendo (con su incremental) y cada
+           pregunta del módulo se pregunta exactamente una vez. Solo
+           los módulos ya completados bajo la regla vieja (hueco vacío
+           con todo lo posterior respondido) conservan el conteo, para
+           no despromocionar trabajo terminado. */
+        if (dup && dup.kind === "full") {
+          var laterAll = true;
+          for (var j = i + 1; j < arr.length; j++) { if (!arr[j] || !arr[j].trim()) { laterAll = false; break; } }
+          if (laterAll) { n++; continue; }
+        }
         break;
       }
       return n;
@@ -11943,6 +12040,11 @@
     }
     function hasNamedCase(text) {
       var t = stripNegatedCase(String(text || ""));
+      /* v17.38 · Un lugar no es una persona: «Ciénaga me dijo» no es
+         un caso con nombre. Los patrones de nombre + verbo y de nombre
+         + coma + oficio se prueban sin los topónimos. */
+      var PLACE_NAMES = "Ciénaga|Santa Marta|Barranquilla|Cartagena|Bogotá|Medellín|Cali|Bucaramanga|Manizales|Pereira|Armenia|Ibagué|Neiva|Pasto|Popayán|Tunja|Villavicencio|Montería|Sincelejo|Valledupar|Riohacha|Maicao|Fundación|Aracataca|Zona Bananera|Pueblo Viejo|Ciénaga Grande|Nueva Venecia|Buenavista|Minca|Taganga|Gaira|Mamatoco";
+      var tNoPlaces = t.replace(new RegExp("\\b(" + PLACE_NAMES + ")\\b", "g"), " ");
       /* Tratamiento + nombre: «doña Rosa», «don Rafael».
          v17.34 (WS4) · F5c: el tratamiento también vale a principio de
          oración («Doña Rosa…», «Don Rafael…»): antes, sin la mayúscula
@@ -11957,13 +12059,29 @@
       if (/\b(un|una|el|la)\s+grupo\s+de\b/i.test(t)) return true;
       /* Nombre + coma + oficio o papel: «Carlos, empleado de la
          alcaldía», «María Fernanda, 34 años, enfermera del hospital». */
-      if (/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?\s*,[^.!?;]{0,45}?\b(vecin[oa]|emplead[oa]|client[ea]|dueñ[oa]|enfermer[oa]|comerciante|tender[oa]|profesor[a]?|m[eé]dic[oa]|abogad[oa]|cocinero|cociner[oa]|mesero|mesera|pescador[a]?|conductor[a]?)\b/.test(t)) return true;
+      if (/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?\s*,[^.!?;]{0,45}?\b(vecin[oa]|emplead[oa]|client[ea]|dueñ[oa]|enfermer[oa]|comerciante|tender[oa]|profesor[a]?|m[eé]dic[oa]|abogad[oa]|cocinero|cociner[oa]|mesero|mesera|pescador[a]?|conductor[a]?)\b/.test(tNoPlaces)) return true;
       /* Nombre + «me dijo/pidió/confirmó/contó»: «Rosa me dijo». */
       /* v17.36 (WS6) · D1(b): el cierre no es «\b» (ASCII: tras «contó»
          nunca hay límite de palabra) sino «no sigue letra». */
-      if (/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+me\s+(dijo|pidió|confirmó|contó|preguntó|escribió)(?![a-záéíóúñ])/.test(t)) return true;
+      if (/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+me\s+(dijo|pidió|confirmó|contó|preguntó|escribió)(?![a-záéíóúñ])/.test(tNoPlaces)) return true;
       /* Cliente con nombre: «un cliente con nombre: Carlos». */
       if (/\bclient[ea]\s+con\s+nombre\s*:\s*[A-ZÁÉÍÓÚÑ]/.test(t)) return true;
+      /* v17.38 WS2 · G1b: nombre propio + verbo de habla A DISTANCIA en
+         la misma frase («Ana, hace 2 semanas, llegó y no había cupo:
+         me dijo que volvería»): la persona es concreta y lo que dice
+         también, aunque el nombre no vaya pegado al verbo. Solo el
+         nombre propio vale: «Una/Un/El/La…» a principio de oración es
+         artículo, no nombre («Una alumna me contó…» sigue sin contar),
+         y el habla negada («Ana no me dijo nada», «nadie me dijo») se
+         borra antes de buscar, igual que en hasQuotedPersonCase. */
+      var tNoNegSpeech = tNoPlaces.replace(/\b(no|nunca|jam[aá]s|nadie|ning[uú]n(?:a|o|os|as)?)\b[^.!?;,]{0,12}?\b(dijo|contó|pidió|confirmó|preguntó|escribió|comentó|avisó)(?![a-záéíóúñ])/gi, " ");
+      var NAME_DIST_RE = /\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b[^.!?;]{0,80}?\bme\s+(dijo|contó|pidió|confirmó|preguntó|escribió)(?![a-záéíóúñ])/g;
+      var NOT_A_NAME = /^(un|una|unos|unas|el|la|los|las|mi|mis|su|sus|tu|tus|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|cada|ning[úu]n(?:a|o|os|as)?|alg[úu]n(?:a|o|os|as)?|otro|otra|otros|otras|todo|toda|todos|todas|nadie|alguien|también|además|pero|cuando|como|porque|desde|hasta|entre|sobre|con|por|para|en|de|y|o|si|no|me|yo|se|lo|le|nos|ella|él|ellos|ellas|usted|ustedes|eso|esto|aquello|hoy|ayer|mañana|ahora|después|antes|luego|siempre|nunca|jamás|muchos|muchas|pocos|pocas|varios|varias|cierto|cierta|mismo|misma|propio|propia)$/i;
+      var _mnd;
+      while ((_mnd = NAME_DIST_RE.exec(tNoNegSpeech)) !== null) {
+        if (!NOT_A_NAME.test(_mnd[1])) return true;
+        if (_mnd.index === NAME_DIST_RE.lastIndex) NAME_DIST_RE.lastIndex++;
+      }
       return false;
     }
     /* v17.34 (WS4) · F5a: una cantidad positiva de clientes («120
@@ -11971,7 +12089,11 @@
        concreto: el conteo es del cliente mismo, no un dígito
        cualquiera del texto («3 horas», «0 clientes»). */
     function hasPositiveClientCount(t) {
-      var re = /(\d[\d.,]*)\s*(clientes?|personas?|compradores?|usuarios?|familias?)/gi, m;
+      /* v17.38 WS2 · G1a: la lista de sustantivos es la misma de cabezas
+         que el arreglo de volumen del KR2 (clientes, alumnas, personas):
+         alumnas/alumnos y clientas también son la clientela del
+         negocio. «vecinas» no está en esa lista y sigue sin contar. */
+      var re = /(\d[\d.,]*)\s*(clientes?|clientas?|alumnos?|alumnas?|personas?|compradores?|usuarios?|familias?)/gi, m;
       while ((m = re.exec(t)) !== null) {
         var v = parseInt(m[1].replace(/[.,]/g, ""), 10);
         if (!isNaN(v) && v > 0) return true;
@@ -12009,7 +12131,10 @@
       var t = stripNegatedCase(String(text || ""));
       if (/(por ejemplo|ejemplo|un caso|el caso)/i.test(t)) return true;
       if (hasNamedCase(t)) return true;
-      if (hasQuotedPersonCase(t)) return true;
+      /* v17.38 · Un caso CITADO sin nombre («un cliente me dijo…») NO
+         es el ejemplo real: el seguimiento que pide el caso con nombre
+         nunca se disparaba y la evidencia quedaba sin verificar. Solo
+         el caso con nombre, o una medida real, vale. */
       /* v17.32 (WS4b) · G8: las palabras sueltas («cliente», «cuando»,
          «la semana»…) solo cuentan como ejemplo si la respuesta trae
          además una cifra concreta: «Mi cliente viene cada semana cuando
@@ -12023,7 +12148,16 @@
          más el conteo de clientes): un dígito cualquiera no basta —
          «Tengo 0 clientes» o «3 horas a la semana» no son un ejemplo
          de cliente, pero «120 clientes que compraron» sí lo es. */
-      if (/(cliente|cuando|vez que|la vez|pasada|pasado|ayer|la semana|el mes)/i.test(t) && (hasNamedCase(t) || moneySpans(t).some(function (sp) { return sp.v > 0; }) || hasPositiveClientCount(t))) return true;
+      /* v17.38 · Una cifra de dinero SUELTA no es el caso: el precio
+         vigente («deciden por el precio de $12.000») limpiaba el
+         «todavía me falta: el caso o ejemplo real» de un caso sin
+         nombre (prueba 13 A C4 P3). Solo el caso con nombre o una
+         cantidad positiva de clientes vale como ejemplo con números. */
+      /* v17.38 WS2 · G1c: la puerta también se abre con la variación
+         de artículo («este mes», «al mes») y con «semana(s)»: una
+         cantidad positiva de clientes o un caso con nombre no se
+         bloquea por cómo se dice el mes o la semana. */
+      if (/(cliente|cuando|vez que|la vez|pasada|pasado|ayer|la semana|el mes|este mes|al mes|semanas?)/i.test(t) && (hasNamedCase(t) || hasPositiveClientCount(t))) return true;
       return false;
     }
     /* v17.32 (WS4b) · G8: la fecha de algo declarado INEXISTENTE no se
@@ -12812,6 +12946,24 @@
       if (m2) return m2[0];
       return null;
     }
+    /* v17.38 · Un volumen contado en cabezas (clientes, alumnas,
+       personas) no es un volumen de ventas: si el negocio tiene
+       sustantivo por venta (del valor de vida), ese es la unidad. */
+    function okrVolumeFixHeadcount(vol, ltvPlural) {
+      if (!vol || !ltvPlural) return vol;
+      if (/^(clientes|clientas|alumnos|alumnas|personas)$/.test(String(vol.noun || "").toLowerCase())) vol.noun = String(ltvPlural).toLowerCase();
+      return vol;
+    }
+    /* v17.38 · Concordancia de «cuántos/cuántas» con la unidad de
+       volumen: -o/-os y -es masculino (cortes, panes, helados) van
+       con «cuántos»; -a/-as y -es femenino (clases, noches, sesiones,
+       membresías) con «cuántas». */
+    function okrCuantos(noun) {
+      var s = String(noun || "ventas").toLowerCase();
+      if (/^(clases|noches|sesiones|membresías|membresias)$/.test(s)) return "cuántas";
+      if (/(a|as)$/.test(s)) return "cuántas";
+      return "cuántos";
+    }
     /* v17.35 (WS-OKR) · El volumen de hoy, en un solo extractor dedicado.
        NO se tocan retarFigures ni breakEvenInputs (territorio de otros
        trabajos). Cadena: (1) C10 Q2 con verbo de venta/atención y el
@@ -12827,7 +12979,13 @@
          estaban en la lista, así que el volumen caía al Retar y un
          negocio de panes se medía en «clientes». «Tengo» también vale
          como verbo de volumen («Hoy tengo unas 40 membresías al mes»). */
-      var NOUNS = "prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas|alumnos|consultas|noches|panes|membresías|membresias|clases|sesiones|tazas|platos|piezas";
+      /* v17.38 · El sustantivo por venta del propio negocio (del valor
+         de vida: corte, helado, pan…) es la unidad de volumen: sin él,
+         «240 cortes» no casaba y el volumen caía en «120 clientes» —
+         cabezas, no ventas — y «450 helados» no casaba en absoluto. */
+      var ltvUnitPlural = null;
+      try { var _li0 = extractLtvInfo(); if (_li0 && _li0.perSaleNoun) ltvUnitPlural = okrPluralNoun(_li0.perSaleNoun); } catch (e) { ltvUnitPlural = null; }
+      var NOUNS = "prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas|alumnos|consultas|noches|panes|membresías|membresias|clases|sesiones|tazas|platos|piezas" + (ltvUnitPlural ? "|" + ltvUnitPlural : "");
       var VERBS = "vendo|atiendo|hago|entrego|sirvo|realizo|completo|muevo|tengo";
       function scanVol(t) {
         if (!t) return null;
@@ -12839,13 +12997,13 @@
         return { v: v, noun: m[4].toLowerCase(), verb: m[2].toLowerCase(), raw: m[0] };
       }
       var a = scanVol(mainAnswerText("M10", 1));
-      if (a) { a.src = "C10 Q2"; return a; }
+      if (a) { a = okrVolumeFixHeadcount(a, ltvUnitPlural); a.src = "C10 Q2"; return a; }
       var q7 = mainAnswerText("M6", 6) || "";
-      var bm = q7.match(/base[^:]{0,60}?:\s*(\d[\d.,]*)\s*(prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas|panes|membresías|membresias|clases|sesiones|tazas|platos|piezas)/i);
-      if (bm) { var bv = ws6ParseMoneyNum(bm[1]); if (bv != null && bv > 0) return { v: bv, noun: bm[2].toLowerCase(), verb: null, raw: bm[0], src: "C6 Q7" }; }
+      var bm = q7.match(new RegExp("base[^:]{0,60}?:\\\\s*(\\\\d[\\\\d.,]*)\\\\s*(" + NOUNS + ")", "i"));
+      if (bm) { var bv = ws6ParseMoneyNum(bm[1]); if (bv != null && bv > 0) return okrVolumeFixHeadcount({ v: bv, noun: bm[2].toLowerCase(), verb: null, raw: bm[0], src: "C6 Q7" }, ltvUnitPlural); }
       var q7b = mainAnswerText("M10", 6) || "";
-      var bm2 = q7b.match(/(?:mes normal|normal)[^:]{0,60}?:\s*(\d[\d.,]*)\s*(prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas|panes|membresías|membresias|clases|sesiones|tazas|platos|piezas)/i);
-      if (bm2) { var bv2 = ws6ParseMoneyNum(bm2[1]); if (bv2 != null && bv2 > 0) return { v: bv2, noun: bm2[2].toLowerCase(), verb: null, raw: bm2[0], src: "C10 Q7" }; }
+      var bm2 = q7b.match(new RegExp("(?:mes normal|normal)[^:]{0,60}?:\\\\s*(\\\\d[\\\\d.,]*)\\\\s*(" + NOUNS + ")", "i"));
+      if (bm2) { var bv2 = ws6ParseMoneyNum(bm2[1]); if (bv2 != null && bv2 > 0) return okrVolumeFixHeadcount({ v: bv2, noun: bm2[2].toLowerCase(), verb: null, raw: bm2[0], src: "C10 Q7" }, ltvUnitPlural); }
       try {
         var rf = retarFigures();
         var rv = rf && rf.volume;
@@ -12956,7 +13114,7 @@
         krs.push({
           id: "KR1", kind: "gap", status: "ok",
           title: "Cerrar la brecha de ingresos",
-          text: "Tus fuentes suman " + okrFmt(gap.declaredTotal) + " al mes, lo mismo que declaras: la brecha de " + okrFmt(gap.gap) + " al mes queda en $0.",
+          text: "Tus fuentes suman " + okrFmt(gap.sourcesTotal) + " al mes frente a " + okrFmt(gap.declaredTotal) + " declarados: la brecha de " + okrFmt(gap.gap) + " al mes queda en $0.",
           baseline: "hoy tus fuentes suman " + okrFmt(gap.sourcesTotal) + " al mes (" + srcList + ") frente a " + okrFmt(gap.declaredTotal) + " declarados.",
           source: "C6 Q1 contra C0 Q1",
           target: { gap: 0, sourcesTotal: gap.sourcesTotal, declaredTotal: gap.declaredTotal }
@@ -12982,7 +13140,7 @@
         krs.push({
           id: "KR1", kind: "gap", status: "ok",
           title: "Mantener las cuentas cuadradas",
-          text: "Tus fuentes siguen sumando " + okrFmt(declared) + " al mes, lo mismo que declaras: sin brecha.",
+          text: "Tus fuentes siguen sumando " + okrFmt(srcs.sum) + " al mes, lo mismo que declaras: sin brecha.",
           baseline: "hoy tus fuentes suman " + okrFmt(srcs.sum) + " al mes (" + srcList2 + ") frente a " + okrFmt(declared) + " declarados.",
           source: "C6 Q1 contra C0 Q1",
           target: { gap: 0, sourcesTotal: srcs.sum, declaredTotal: declared }
@@ -13021,7 +13179,7 @@
         var volBase = null;
         if (vol && vol.raw) { volBase = vol.raw.charAt(0).toLowerCase() + vol.raw.slice(1) + "."; }
         else if (vol) volBase = "hoy vendes unas " + vol.v + " " + vol.noun + " al mes.";
-        else volBase = "pendiente de confirmación — todavía no me dijiste cuántas " + beNoun + " vendes al mes.";
+        else volBase = "pendiente de confirmación — todavía no me dijiste " + okrCuantos(beNoun) + " " + beNoun + " vendes al mes.";
         krs.push({
           id: "KR2", kind: "breakeven", status: "ok",
           title: "Sostener el equilibrio",
@@ -13184,6 +13342,18 @@
       if (/^\d/.test(r)) return ws6ParseMoneyNum(r);
       return OKR_WORDNUM[r] != null ? OKR_WORDNUM[r] : null;
     }
+    /* v17.38 WS2 · G3/G4: equivalencia singular/plural de un sustantivo
+       (ignora acentos): «corte» = «cortes», «pan» = «panes», «sesión» =
+       «sesiones». */
+    function okrSameNounForm(a, b) {
+      function normN(s) { return String(s || "").toLowerCase().replace(/[áàä]/g, "a").replace(/[éèë]/g, "e").replace(/[íìï]/g, "i").replace(/[óòö]/g, "o").replace(/[úùü]/g, "u"); }
+      var x = normN(a), y = normN(b);
+      if (!x || !y) return false;
+      if (x === y) return true;
+      if (x + "s" === y || x + "es" === y) return true;
+      if (y + "s" === x || y + "es" === x) return true;
+      return false;
+    }
     function okrWeeklyResult(text, kr) {
       var t = String(text || "");
       if (!t.trim()) return null;
@@ -13212,11 +13382,37 @@
     try { pl = okrPluralNoun(s); } catch (e) { pl = ""; }
     if (pl && String(pl).toLowerCase() !== s) nounForms.push(String(pl).toLowerCase());
   });
+  /* v17.38 · Las cabezas no son unidades vendidas: «6 clientes»
+     no puede medirse como 6 ventas del resultado clave. */
+  nounForms = nounForms.filter(function (nf) { return !/^(clientes|clientas|alumnos|alumnas|personas)$/.test(nf); });
   var nounRe = nounForms.length ? nounForms.join("|") : "ventas";
       var numAlt = "(\\d[\\d.,]*|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|quince|veinte)";
       var units = null;
-      var wm1 = t.match(new RegExp(numAlt + "\\s+compraron\\b", "i"));
-      if (wm1) units = okrWordNum(wm1[1]);
+      /* v17.38 · Una reserva ES una venta para medir el resultado: «4
+         reservaron corte» cuenta 4, no 0. «Hablé con 6 clientes» no
+         cuenta: hablar no es vender. */
+      /* v17.38 WS2 · G3/G4: una reserva (o un pedido, una cita…) solo
+         es una venta cuando es la métrica del propio resultado clave:
+         «4 reservaron corte» cuenta 4 porque «corte» es la unidad del
+         KR; «2 pidieron cotización» o «2 pidieron cita semanal» no
+         cuentan nada — la cotización y la cita no son la unidad que
+         mide el KR — y «3 reservas» tampoco. «N compraron» sigue
+         contando pelado, como en la v17.36: comprar es vender. */
+      var wm1 = t.match(new RegExp(numAlt + "\\s+(compraron|reservaron|reservó|apartaron|pidieron|contrataron|agendaron|llevaron)\\b", "i"));
+      if (wm1) {
+        var verb1 = String(wm1[2] || "").toLowerCase();
+        var objOk = (verb1 === "compraron");
+        if (!objOk) {
+          var afterVerb = t.slice(wm1.index + wm1[0].length);
+          var wordsAfter = afterVerb.replace(/^[^a-záéíóúñ]+/i, "").split(/[^a-záéíóúñ]+/i).slice(0, 3);
+          for (var wi = 0; wi < wordsAfter.length && !objOk; wi++) {
+            for (var ni = 0; ni < nounForms.length; ni++) {
+              if (okrSameNounForm(wordsAfter[wi], nounForms[ni])) { objOk = true; break; }
+            }
+          }
+        }
+        if (objOk) units = okrWordNum(wm1[1]);
+      }
       if (units == null) {
         var wm2 = t.match(new RegExp(numAlt + "\\s*(" + nounRe + ")\\b", "i"));
         if (wm2) units = okrWordNum(wm2[1]);
@@ -13689,12 +13885,22 @@
       }
       var seen = {};
       var extra = 0;
+      var extraLabels = [];
       figs.forEach(function (f) {
         if (f.v === cited.v) return;
         if (seen[f.v]) return;
         seen[f.v] = true; extra++;
+        if (f.label && f.label !== "ninguna" && extraLabels.indexOf(f.label) < 0) extraLabels.push(f.label);
       });
-      return { value: cited.v, label: cited.label, unit: cited.unit, kind: cited.kind, extraCount: extra };
+      return { value: cited.v, label: cited.label, unit: cited.unit, kind: cited.kind, extraCount: extra, extraLabels: extraLabels };
+    }
+    /* v17.38 · El tipo de una cifra («tu precio», «lo que cobra la
+       alternativa»...) va junto a la cifra que describe, dentro del
+       texto de evidencia: antes se pegaba al final de toda la frase y
+       el lector lo leía como si describiera la última cifra. */
+    function citedKindNoun(label) {
+      if (!label) return "";
+      return label === "propio" ? "tu precio" : label === "costo" ? "tu costo" : label === "alternativa" ? "lo que cobra la alternativa" : label === "objetivo" ? "tu meta" : (label === "neto" || label === "margen") ? "lo que te queda neto" : label === "cac" ? "tu costo de adquirir un cliente" : label === "techo" ? "tu tope" : "";
     }
     function evidenceFoundText(text, q) {
       var t = String(text || "");
@@ -13703,7 +13909,12 @@
          pide la pregunta, por etiqueta; el «y N cifras más» cuenta
          TODAS las demás cifras distintas del texto citado. */
       var cf = citedFigure(t, q);
-      if (cf) parts.push("la cifra de $" + cf.value.toLocaleString("es-CO") + (cf.extraCount > 0 ? " y " + cf.extraCount + " cifra" + (cf.extraCount > 1 ? "s" : "") + " más" : ""));
+      if (cf) {
+        var cfKind = citedKindNoun(cf.label);
+        var extrasKind = "";
+        if (cf.extraCount > 0 && cf.extraLabels && cf.extraLabels.length === 1) { var ek = citedKindNoun(cf.extraLabels[0]); if (ek) extrasKind = " (" + ek + ")"; }
+        parts.push("la cifra de $" + cf.value.toLocaleString("es-CO") + (cfKind ? " (" + cfKind + ")" : "") + (cf.extraCount > 0 ? " y " + cf.extraCount + " cifra" + (cf.extraCount > 1 ? "s" : "") + " más" + extrasKind : ""));
+      }
       /* v17.29 (WS2) · La fecha solo se reconoce cuando ESTA pregunta
          la pide (exigeNeeds().date): antes, cualquier fecha del texto
          —un año suelto, un «hoy»— hacía decir «la fecha que me
@@ -13789,6 +14000,18 @@
            cuenta dos veces como «300.000 por». */
         if (/\$\s*$/.test(str.slice(Math.max(0, mn.index - 2), mn.index))) continue;
         var ph2 = mn[1] + " " + mn[2].toLowerCase();
+        /* v17.38 · No cortar la cifra a mitad de frase: «78 al mes» no
+           es «78 al». Si la primera palabra es una preposición, la
+           frase sigue con el artículo y la unidad («al mes», «por
+           corte», «de clientes»); «2 veces al mes» se completa igual. */
+        var tail = str.slice(reN.lastIndex);
+        if (/^(al|por|a|de|en)$/i.test(mn[2])) {
+          var mTail = tail.match(/^\s*(?:(el|la|los|las)\s+)?([a-záéíóúñ]+)/i);
+          if (mTail) ph2 += (mTail[1] ? " " + mTail[1].toLowerCase() : "") + " " + mTail[2].toLowerCase();
+        } else if (/^veces$/i.test(mn[2])) {
+          var mTail2 = tail.match(/^\s*al\s+(?:(el|la|los|las)\s+)?([a-záéíóúñ]+)/i);
+          if (mTail2) ph2 += " al" + (mTail2[1] ? " " + mTail2[1].toLowerCase() : "") + " " + mTail2[2].toLowerCase();
+        }
         if (!seen[ph2]) { seen[ph2] = 1; out.push(ph2); }
       }
       return out;
@@ -14028,8 +14251,11 @@
          tema de esta pregunta. Dos respuestas distintas nunca dicen
          lo mismo en la primera línea. */
       var cf = citedFigure(citeText, q);
-      var kindNoun = !cf ? "" : cf.label === "propio" ? "tu precio" : cf.label === "costo" ? "tu costo" : cf.label === "alternativa" ? "lo que cobra la alternativa" : cf.label === "objetivo" ? "tu meta" : (cf.label === "neto" || cf.kind === "neto") ? "lo que te queda neto" : cf.label === "cac" ? "tu costo de adquirir un cliente" : cf.label === "techo" ? "tu tope" : "";
-      var kindClause = kindNoun ? " (" + kindNoun + ")" : "";
+      /* v17.38 · El tipo ya viaja dentro de `found` (ver
+         evidenceFoundText), junto a la cifra que describe: pegarlo aquí
+         al final de toda la frase hacía leerlo como si describiera la
+         última cifra. */
+      var kindClause = "";
       var topic = full ? bubbleTopicFull(q) : bubbleTopic(q);
       /* v17.33 (WS9) · G7-7: el aviso de cero es POR PASO y va
          primero: si ESTE paso trae un cero real, la burbuja lo dice
@@ -17054,7 +17280,14 @@
         var cl = sentences[si];
         var markers = [];
         var reM = /(\btodav[ií]a\s+no\s+(tengo|tenemos|hay)\b|\bno\s+(tengo|tenemos|hay)\b|\bning[uú]n(a|o|os|as)?\b|\b(0|cero|sin)\b)/gi, mm;
-        while ((mm = reM.exec(cl)) !== null) { markers.push(mm.index + mm[0].length); if (mm.index === reM.lastIndex) reM.lastIndex++; }
+        while ((mm = reM.exec(cl)) !== null) {
+          /* v17.38 · Igual que honestZero (v17.34 F10) y que el camino
+             verbal de arriba: un «no hay / no tengo» dentro de una
+             condicional («si yo no corto, no hay ingreso») es una
+             hipótesis, no un cero medido: no marca. */
+          if (/\bno\s+(tengo|tenemos|hay)\b/i.test(mm[0]) && /\b(si|cuando)\b/i.test(cl.slice(0, mm.index))) { if (mm.index === reM.lastIndex) reM.lastIndex++; continue; }
+          markers.push(mm.index + mm[0].length); if (mm.index === reM.lastIndex) reM.lastIndex++;
+        }
         if (!markers.length) continue;
         var reU = /\b(ventas?|clientes?|ingresos?|pedidos?|reservas?|facturaci[oó]n)\b/gi, mu;
         var hitNouns = [];
@@ -17097,6 +17330,10 @@
         var cl = sentences[i];
         var mZero = /(?:\$0\b|\b0\b|\bcero\b)/i.exec(cl);
         if (!mZero) continue;
+        /* v17.38 · Igual que el camino prieto: un cero desnudo dentro
+           de una condicional («si tengo 0 ventas…») es una hipótesis,
+           no un cero medido. */
+        if (/\b(si|cuando)\b/i.test(cl.slice(0, mZero.index))) continue;
         /* v17.35 (WS1) · F1: el cero desnudo tampoco vale cuando es de
            un canal («Facebook me trae 0 clientes»): el canal está en
            la vecindad del marcador. */
@@ -18826,6 +19063,15 @@
         }
       }
       clearActiveMode();
+      /* v17.38 WS2 · G2 (aviso de Investigar): el modo se consumió en
+         esta respuesta — el aviso de ese toque ya está gastado. El
+         conteo de pasos no siempre avanza con la respuesta (la
+         corrección de doble deber se guarda en la pregunta del aviso,
+         no en la mostrada), así que sin esto el resultado tardío de la
+         búsqueda re-toastearía y taparía el «Gracias por aclararlo».
+         Ver F8-L2/L3: tras una respuesta, la resolución tardía no
+         re-toastea. */
+      if (ui) ui.researchNoticeFor = mid + ":spent";
       return true;
     }
 
@@ -18947,6 +19193,9 @@
          ninguna cifra de la familia del aviso abierto no se registra
          como aclaración — el texto sigue su camino como respuesta. */
       var clarCorr = null;
+      /* v17.38 WS2 · G2: el doble uso de la aclaración (ver el guarda
+         abajo) responde a la pregunta del aviso, no al hueco duplicado. */
+      var clarDoubleDuty = false;
       /* v17.36 (WS1) · F1-A: una respuesta solo es resolución de
          aclaración cuando la pregunta pendiente ES la aclaración —
          sin pregunta nueva esperando ni repregunta pendiente. Con una
@@ -19006,6 +19255,7 @@
            también es su respuesta y se guarda abajo como tal — nunca
            se pierde. */
         toast("Gracias por aclararlo: lo dejé registrado y ya no te lo vuelvo a preguntar igual.");
+        clarDoubleDuty = true; /* v17.38 WS2 · G2: el texto resuelve la aclaración Y responde a la pregunta del aviso (ver el guarda abajo). */
       }
       var pend = pendingStep(m.id);
       /* v17.34 (WS3) · F3: una sonda de grado nunca se borra en
@@ -19083,6 +19333,31 @@
         return true;
       }
       var step = answeredCount(m.id);
+      /* v17.38 WS2 · G2: el doble uso de la aclaración responde a la
+         pregunta del propio aviso, no al hueco duplicado: un hueco
+         cubierto por un duplicado completo (M6[1], cubierto por M0:7)
+         no es la pregunta del aviso — el texto de la corrección va al
+         siguiente hueco real (M6[2]), como antes de la v17.38. El
+         conteo nuevo (fix 8) se conserva para el flujo normal: la
+         pregunta duplicada se sigue haciendo con su incremental. */
+      if (clarDoubleDuty) {
+        var arrDD = state.answers[m.id] || [];
+        step = 0;
+        for (var iDD = 0; iDD < arrDD.length; iDD++) {
+          if (arrDD[iDD] && arrDD[iDD].trim()) { step++; continue; }
+          var dupDD = null;
+          try { dupDD = duplicateInfo(m.id, iDD); } catch (e) { dupDD = null; }
+          if (dupDD && dupDD.kind === "full") { step++; continue; }
+          break;
+        }
+        /* v17.38 WS2 · G2 (alcance del modo): la respuesta que viene
+           era la pregunta del aviso, no la mostrada — el modo armado en
+           este mismo intercambio (Investigar/Retar) sigue a la
+           respuesta que realmente llega, para que consumeModeInto no lo
+           descarte como «otra pregunta» ni su aviso tape el «Gracias
+           por aclararlo» de la aclaración. */
+        if (ui.activeMode && ui.activeModeScope) ui.activeModeScope.qi = step;
+      }
       /* v17.24 · Este guarda ya no es silencioso: si el componente está
          completo, se dice y el envío se descarta SIN vaciar la caja. */
       if (step >= m.questions.length) { toast("Este componente ya está completo."); clearActiveMode(); return false; }
@@ -19304,8 +19579,10 @@
       if (!d) return null;
       var src = duplicateSourceText(d.from);
       if (!src) return null;
+      /* v17.38 · Igual que duplicateInfoFor: el incremental vive también
+         en el duplicado completo. */
       if (d.fullIfTwoFigures && moneySpans(src).length >= 2) {
-        return { kind: "full", excerpt: excerptOf(src, 140), incremental: "" };
+        return { kind: "full", excerpt: excerptOf(src, 140), incremental: d.incremental || "" };
       }
       return { kind: "partial", excerpt: excerptOf(src, 140), incremental: d.incremental };
     }
@@ -19316,7 +19593,7 @@
       var q = questionFor(m, qi);
       if (!q) return { q: null, text: "" };
       var dup = duplicateInfo(m.id, qi);
-      if (dup && dup.kind === "partial") {
+      if (dup) {
         var inc = dup.incremental;
         /* v17.29 (WS1) · El incremental sigue a la variante resuelta:
            en etapa sin ventas (o negocio con 0 ventas/clientes), se
@@ -19618,6 +19895,18 @@
         /* v17.36 (WS6) · (g): editar C13 reconstruye el texto de la tarea con la brújula editada. */
         if (mid === "M13") refreshTask13Text();
         canvasAfterAnswer([mid + ":" + qi]); /* v17.9: editar una respuesta también puede cambiar el lienzo */
+        /* v17.38 · Una corrección hecha con Editar también se
+           registra como aclaración, anclada en ESTE componente: antes,
+           corregir por Editar nunca registraba nada y la corrección
+           real (p. ej. la de C0 Q6) no llegaba al Plan. */
+        try { recordPriceCorrection(val); } catch (e) {}
+        try { maybeRecordRetarCorrection(val); } catch (e) {}
+        try { maybeRecordZeroRetraction(val, null, null); } catch (e) {}
+        try {
+          (state.contradictions || []).forEach(function (r) {
+            if (r && r.key === "precio-aclarado" && r.status === "resolved" && r.resolution === val) r.resolvedModule = mid;
+          });
+        } catch (e) {}
         /* v17.32 (WS6) · Editar puede completar un objetivo por
            primera vez: congelar antes de persistir. Lo ya congelado
            no se toca. */
@@ -22966,7 +23255,10 @@
       /* v17.25 · Las aclaraciones resueltas llegan al Plan: antes la
          resolución solo vivía guardada y ningún documento la mostraba.
          Las cifras corregidas mandan sobre las respuestas originales. */
-      var resolvedClars = (state.contradictions || []).filter(function (r) { return r.status === "resolved" && r.resolution; });
+      /* v17.38 · Responder a la sonda del Retar no es una
+         corrección: el registro de mero uso (RETO_USE_KEY) no se lista
+         aquí como aclaración. La corrección real del Retar sí. */
+      var resolvedClars = (state.contradictions || []).filter(function (r) { return r.status === "resolved" && r.resolution && r.key !== RETO_USE_KEY; });
       if (resolvedClars.length) {
         h += "<h2>Aclaraciones que corregiste</h2><p>Cuando algo no me cuadraba, lo aclaraste conmigo. Estas correcciones mandan sobre las respuestas originales: son las cifras que uso para comparar.</p>";
         resolvedClars.forEach(function (r) {
@@ -24591,6 +24883,10 @@
                 });
               }
               var cc = projectCountsFor(cloudProj), mc = projectCountsFor(merged.proj);
+              /* v17.38 · Un rehacer baja el conteo a propósito: las
+                 respuestas que la lápida borró no cuentan como pérdida
+                 (misma exención que la guarda de entrada y la de pago). */
+              var rdUp = redoDroppedCounts(merged.proj, cloudProj); cc.answers -= rdUp.answers; cc.completed -= rdUp.completed;
               if (mc.answers < cc.answers || mc.completed < cc.completed) {
                 refusals.push(id);
                 refusalCodes[id] = "cloud-conflict";
