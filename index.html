@@ -6775,6 +6775,33 @@
       var b = e.target && e.target.closest ? e.target.closest("[data-answer-contra]") : null;
       if (!b) return;
       var mid = b.getAttribute("data-answer-contra");
+      /* v17.41 · F8(b): el botón lleva a un componente donde la casilla
+         esté habilitada. Antes iba al ancla o al primer módulo de la
+         clave (C0 para la brecha), donde el compositor está
+         deshabilitado por estar completo y la aclaración no se podía
+         responder. Se prefiere el ancla si sigue abierto, si no el
+         primer módulo de la clave que no esté completo; si todos están
+         completos, se va al ancla con la casilla habilitada solo para
+         responder esta aclaración (ui.clarAnswerKey), que se limpia
+         cuando la aclaración se resuelve. */
+      try {
+        var ckey41 = b.getAttribute("data-contra-key");
+        var oc41 = null;
+        if (ckey41 && state && state.contradictions) {
+          for (var i41 = 0; i41 < state.contradictions.length; i41++) { if (state.contradictions[i41].key === ckey41) { oc41 = state.contradictions[i41]; break; } }
+        }
+        if (!oc41) oc41 = openContradiction();
+        if (oc41) {
+          var mods41 = oc41.mods || contradictionMods(oc41.key) || [];
+          var anchor41 = oc41.resolvedModule || null;
+          if (!anchor41) { try { var note41 = openContradiction(); if (note41 && note41.key === oc41.key) anchor41 = note41.anchorModule || null; } catch (e41) { anchor41 = null; } }
+          var tgt41 = null;
+          if (anchor41 && !moduleComplete(anchor41)) tgt41 = anchor41;
+          if (!tgt41) { for (var j41 = 0; j41 < mods41.length; j41++) { if (!moduleComplete(mods41[j41])) { tgt41 = mods41[j41]; break; } } }
+          if (tgt41) { mid = tgt41; ui.clarAnswerKey = null; ui.clarAnswerModule = null; }
+          else { mid = anchor41 || mods41[0] || mid; ui.clarAnswerKey = oc41.key; ui.clarAnswerModule = mid; }
+        }
+      } catch (err41) {}
       try { ui.module = mid; ui.awaitingProbe = null; hideNudge(); showView("chat"); } catch (err) {}
       setTimeout(function () { var ab = document.getElementById("answerBox"); if (ab) ab.focus(); }, 60);
     });
@@ -12204,6 +12231,25 @@
       var t = String(text || "").toLowerCase();
       return /\b\d+\s+(vecin[oa]s?|client[ea]s?|alumn[oa]s?|personas?|comprador[ea]s?|usuari[oa]s?|familias?)\b[^.!?;]{0,60}?\b(pidieron|pidi[oó]|compraron|compr[oó]|reservaron|reserv[oó]|llegaron|lleg[oó]|vinieron|vin[oi]|probaron|prob[oó]|preguntaron|pregunt[oó]|escribieron|escribi[oó]|llamaron|llam[oó]|visitaron|visit[oó]|pagaron|pag[oó])\b[^.!?;]{0,60}?\b(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \d+ d[ií]as?|hace (una|dos|tres) semanas?|este mes|este fin de semana)\b/i.test(t);
     }
+    /* v17.41 · F4b: un incidente en primera persona con desenlace («me
+       pasó con un corte que quedó disparejo y el cliente volvió», «me
+       pasó cuando se acabó el mango y la clienta volvió al día
+       siguiente») ES el caso real que pide la pregunta: qué pasó y cómo
+       terminó, en palabras del dueño. Un «me pasó» sin desenlace («me
+       pasó una vez») no es un caso: es la anécdota sin cierre.
+       (El \b tras «pasó»/«volvió» no vale: \b es ASCII y la ó no es
+       carácter de palabra — se usa el lookahead negativo de letras,
+       como en el resto del archivo.) */
+    function hasFirstPersonIncidentCase(text) {
+      var t = String(text || "");
+      var found = false;
+      t.split(/[.?!;]+/).forEach(function (s) {
+        if (found || !s.trim()) return;
+        if (!/\bme\s+(pas[oó]|ocurri[oó]|toc[oó])(?![a-záéíóúñ])|\btuv[eo]\s+un\s+caso\b/i.test(s)) return;
+        if (/\b(volvi[oó]|volvieron|regres[oó]|qued[oó]\s+content[oa]|qued[oó]\s+satisfech[oa]|me\s+recomend[oó]|volvi[oó]\s+a|se\s+fue\s+content[oa]|sali[oó]\s+content[oa])(?![a-záéíóúñ])/i.test(s)) found = true;
+      });
+      return found;
+    }
     /* v17.40 · F4: cuántos casos distintos trae un texto (una
        oración con caso = un caso): dos casos separados (2 + 3) no
        se funden en uno. */
@@ -12212,7 +12258,7 @@
       if (!t.trim()) return 0;
       var n = 0;
       t.split(/[.?!;]+/).forEach(function (s) {
-        if (hasNumberedClientCase(s) || hasNamedCase(s) || hasQuotedPersonCase(s)) n++;
+        if (hasNumberedClientCase(s) || hasNamedCase(s) || hasQuotedPersonCase(s) || hasFirstPersonIncidentCase(s)) n++;
       });
       return n;
     }
@@ -12221,6 +12267,32 @@
     function exigeNeedsTwoCases(q) {
       var ex = String((q && q.exige) || "");
       return /un caso real cada uno|cada uno con (un )?caso|dos casos|un caso (para|por) cada|un caso .* y otro caso/i.test(ex);
+    }
+    /* v17.41 · F4/F4b: ¿falta todavía el caso que esta pregunta exige,
+       después de todo lo contestado hasta aquí? Es el mismo hueco que
+       exigeGap mide (con la dispensa del cero honesto): si la pregunta
+       no pide caso, o el caso ya está, o el dueño declaró un cero
+       honesto, no hay nada que volver a pedir. */
+    function caseReaskNeeded(m, qi) {
+      var q = questionFor(m, qi);
+      if (!q) return false;
+      var rec = null;
+      try { rec = fuRec(m.id, qi); } catch (e) { rec = null; }
+      if (rec && rec.caseReaskAsked) return false;
+      var ev = "";
+      try { ev = combinedAnswerEvidence(m.id, qi); } catch (e) { ev = ""; }
+      var needs = null;
+      try { needs = exigeNeeds(q); } catch (e) { needs = null; }
+      if (!needs || !needs.example) return false;
+      try { if (honestZero(ev, q)) return false; } catch (e) {}
+      if (exigeNeedsTwoCases(q)) {
+        var cc = 0;
+        try { cc = countCases(ev); } catch (e) { cc = 0; }
+        return cc < 2;
+      }
+      var hasEx = false;
+      try { hasEx = hasExample(ev); } catch (e) { hasEx = false; }
+      return !hasEx;
     }
     function hasExample(text) {
       var t = stripNegatedCase(String(text || ""));
@@ -12256,6 +12328,9 @@
          cantidad positiva de clientes o un caso con nombre no se
          bloquea por cómo se dice el mes o la semana. */
       if (/(cliente|cuando|vez que|la vez|pasada|pasado|ayer|la semana|el mes|este mes|al mes|semanas?)/i.test(t) && (hasNamedCase(t) || hasPositiveClientCount(t))) return true;
+      /* v17.41 · F4b: el incidente en primera persona con desenlace
+         también es el ejemplo real. */
+      if (hasFirstPersonIncidentCase(t)) return true;
       return false;
     }
     /* v17.32 (WS4b) · G8: la fecha de algo declarado INEXISTENTE no se
@@ -13302,7 +13377,12 @@
         });
       } else if (goal && declared != null) {
         var note1 = null;
-        if (srcs && srcs.sources && srcs.sources.length >= 2 && srcs.sum != null) note1 = "Tus fuentes cuadran: suman " + okrFmt(srcs.sum) + " al mes, lo mismo que declaras: sin brecha que cerrar.";
+        /* v17.41 · F8: la nota solo dice que las fuentes cuadran cuando
+           de verdad suman lo declarado. Antes se afirmaba siempre que
+           había dos fuentes, y con la brecha resuelta por reafirmación
+           (las cifras siguen sin cuadrar: $6.500.000 frente a
+           $7.200.000) la nota mentía: «lo mismo que declaras». */
+        if (srcs && srcs.sources && srcs.sources.length >= 2 && srcs.sum != null && srcs.sum === declared) note1 = "Tus fuentes cuadran: suman " + okrFmt(srcs.sum) + " al mes, lo mismo que declaras: sin brecha que cerrar.";
         krs.push({
           id: "KR1", kind: "goalpace", status: "ok",
           title: "Llevar el ritmo de tu meta de 12 meses",
@@ -13318,10 +13398,16 @@
            aparezca después la detecte la medición en vez de pasar
            desapercibida. */
         var srcList2 = srcs.sources.map(function (s) { return okrFmt(s.v); }).join(" + ");
+        /* v17.41 · F8: «lo mismo que declaras: sin brecha» solo vale
+           cuando las fuentes suman de verdad lo declarado. Con la brecha
+           resuelta por reafirmación (las cifras siguen sin cuadrar), la
+           frase mentía; en ese caso el resultado clave es aclarar la
+           diferencia, no darla por cerrada. */
+        var square41 = srcs.sum === declared;
         krs.push({
           id: "KR1", kind: "gap", status: "ok",
-          title: "Mantener las cuentas cuadradas",
-          text: "Tus fuentes siguen sumando " + okrFmt(srcs.sum) + " al mes, lo mismo que declaras: sin brecha.",
+          title: square41 ? "Mantener las cuentas cuadradas" : "Aclarar la diferencia de ingresos",
+          text: square41 ? "Tus fuentes siguen sumando " + okrFmt(srcs.sum) + " al mes, lo mismo que declaras: sin brecha." : "Tus fuentes suman " + okrFmt(srcs.sum) + " al mes frente a " + okrFmt(declared) + " declarados: la diferencia está por aclarar.",
           baseline: "hoy tus fuentes suman " + okrFmt(srcs.sum) + " al mes (" + srcList2 + ") frente a " + okrFmt(declared) + " declarados.",
           source: "C6 Q1 contra C0 Q1",
           target: { gap: 0, sourcesTotal: srcs.sum, declaredTotal: declared }
@@ -16967,7 +17053,7 @@
         /* v17.40 · F6: la aclaración abierta se responde donde se
            muestra — el botón lleva al componente dueño y enfoca la
            casilla de respuesta. */
-        if (contra && contraMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contra.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(contra.anchorModule || contraMods[0] || m.id) + '">Responder esta aclaración</button>', "micro");
+        if (contra && contraMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contra.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(contra.anchorModule || contraMods[0] || m.id) + '" data-contra-key="' + esc(contra.key) + '">Responder esta aclaración</button>', "micro");
         else if (!contra) {
           /* La pregunta por unidades o por vías distintas también se
              ve en el chat del componente que la origina, no solo en
@@ -17054,7 +17140,7 @@
         /* v17.40 · F6: con el componente ya completo la aclaración
            también se responde donde se muestra — el mismo botón que en
            el chat del componente abierto. */
-        if (contraDone && contraDoneMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contraDone.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(contraDone.anchorModule || contraDoneMods[0] || m.id) + '">Responder esta aclaración</button>', "micro");
+        if (contraDone && contraDoneMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contraDone.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(contraDone.anchorModule || contraDoneMods[0] || m.id) + '" data-contra-key="' + esc(contraDone.key) + '">Responder esta aclaración</button>', "micro");
         if (m.id === "M13" && !taskComplete13()) {
           /* Cierre de C13 con la tarea del Coach: las preguntas están
              completas, pero el componente NO queda completado en su
@@ -17277,18 +17363,24 @@
       });
       var taskWait = m.id === "M13" && taskPendingReport();
       var isNA = !!(state.notApplicable && state.notApplicable[m.id]);
-      var execOff = tabStale || isLocked || isNA || (moduleComplete(m.id) && !pendingStep(m.id) && !taskWait);
+      /* v17.41 · F8(b): con la marca de respuesta a una aclaración, el
+         compositor se habilita en este componente aunque esté completo:
+         sin ella, el botón Responder llevaba a una casilla
+         deshabilitada. */
+      var execOff = tabStale || isLocked || isNA || (moduleComplete(m.id) && !pendingStep(m.id) && !taskWait && !(ui.clarAnswerKey && ui.clarAnswerModule === m.id));
       $("answerBox").disabled = execOff;
       $("btnSend").disabled = execOff;
       /* v17.36 (WS6) · D1(a): al completar un componente, el compositor
          queda vacío: nada de lo escrito antes sobrevive al cierre. */
-      if (moduleComplete(m.id) && !pendingStep(m.id) && !taskWait) { var abDone = $("answerBox"); if (abDone) abDone.value = ""; }
+      if (moduleComplete(m.id) && !pendingStep(m.id) && !taskWait && !(ui.clarAnswerKey && ui.clarAnswerModule === m.id)) { var abDone = $("answerBox"); if (abDone) abDone.value = ""; }
       $("answerBox").placeholder = tabStale
         ? "Solo lectura: otra pestaña tiene avances más recientes. Recarga para verlos o fusiona lo nuevo desde el aviso de arriba."
         : isLocked
         ? "Solo lectura: completa primero " + codeOf(blocker.id) + " · " + blocker.name + " en su totalidad para poder responder aquí."
         : isNA
           ? "Este bloque no aplica para tu negocio: yo lo registré así. Puedes quitar la marca en el panel de la derecha."
+        : (ui.clarAnswerKey && ui.clarAnswerModule === m.id)
+          ? "Responde la aclaración, aquí mismo: corrige la cifra o el dato que no cuadra…"
         : taskWait
           ? "Reporta el resultado de tu tarea: qué pasó, con números y lo que dijeron las personas. Datos, no opiniones…"
         : pend
@@ -17342,6 +17434,40 @@
       var s = String(text || "").replace(/(no (lo )?s[eé]|no tengo (idea|claro)|todav[ií]a no (lo )?s[eé]|pendiente|no aplica|no estoy segur[oa]|no lo tengo claro)/gi, " ").replace(/\s+/g, " ").trim();
       return s.length >= 40;
     }
+    /* v17.41 · F8b: el precio de la ficha sale SOLO de C0 Q5 (principal
+       + combinada): la ficha es la foto del Brief, no del diagnóstico.
+       Antes usaba ownPrice(), cuyos rescates (C6 Q2 etiquetado y el
+       escaneo de C1) sobrevivían al rehacer C0 y dejaban el precio
+       viejo mientras todo lo demás decía «aún no respondido». Los
+       pasos de C0 Q5 son los mismos de ownPrice() (etiqueta, pelado,
+       mayoría, combinada, marcador de producto), sin los rescates
+       fuera de C0. */
+    function fichaOwnPrice() {
+      var q5 = mainAnswerText("M0", 5);
+      var lab = labeledPrice(q5, "propio");
+      if (lab != null) return lab;
+      var bare = bareOwnPrice(q5);
+      if (bare != null) return bare;
+      var maj = propioMajorityValue(q5);
+      if (maj != null) return maj;
+      var combLab = labeledPrice(combinedAnswer("M0", 5), "propio");
+      if (combLab != null) return combLab;
+      var combMaj = propioMajorityValue(combinedAnswer("M0", 5));
+      if (combMaj != null) return combMaj;
+      var figs = moneyFigures(q5);
+      var prodKws = productKeywords(5);
+      var cands = [];
+      figs.forEach(function (f, fi) {
+        if (f.label === "costo") return;
+        var prevEnd = fi > 0 ? figs[fi - 1].i + (figs[fi - 1].len || 0) : 0;
+        var nextStart = fi + 1 < figs.length ? figs[fi + 1].i : q5.length;
+        var hit = f.label === "ninguna" ? figureHasOwnMarker(q5, f, prodKws, false, prevEnd, nextStart)
+          : f.label === "alternativa" ? figureHasOwnMarker(q5, f, prodKws, true, prevEnd, nextStart) : false;
+        if (hit && cands.indexOf(f.v) === -1) cands.push(f.v);
+      });
+      if (cands.length === 1) return cands[0];
+      return null;
+    }
     function fichaFieldValue(f) {
       if (f.kind === "project") {
         var v = (state.project && state.project[f.field]) || "";
@@ -17360,7 +17486,7 @@
         return { text: fmtMoney(alt) + " — lo que paga por la alternativa", status: "validado" };
       }
       if (f.label === "Precio") {
-        var own = ownPrice();
+        var own = fichaOwnPrice();
         /* v17.26 (WS1) · Sin precio propio no hay texto que volcar: la
            respuesta entera de C0 Q5 no es el precio. Y «validado»
            exige una cifra etiquetada como propia (o confirmada o
@@ -17371,7 +17497,7 @@
            rescató por mayoría o desde la respuesta combinada: sigue
            siendo una cifra etiquetada como propia, no un número
            cualquiera. */
-        var ownLabelled = labOwn != null || labeledPrice(combinedAnswer("M0", 5), "propio") != null || propioMajorityValue(mainAnswerText("M0", 5)) != null || propioMajorityValue(combinedAnswer("M0", 5)) != null || correctedFigure("cobrado") != null || (state && typeof state.priceConfirmed === "number" && state.priceConfirmed === own) || (ownPriceFromBrief() != null && ownPriceFromBrief() === own);
+        var ownLabelled = labOwn != null || labeledPrice(combinedAnswer("M0", 5), "propio") != null || propioMajorityValue(mainAnswerText("M0", 5)) != null || propioMajorityValue(combinedAnswer("M0", 5)) != null || correctedFigure("cobrado") === own || (state && typeof state.priceConfirmed === "number" && state.priceConfirmed === own);
         /* v17.39 (WS1) · F1: el precio propio se nombra «tu precio
            propio» también en la ficha, para que el Resumen lo lea así. */
         return { text: fmtMoney(own) + " — tu precio propio", status: ownLabelled ? "validado" : "hipotesis" };
@@ -17660,6 +17786,14 @@
                  0 clientes»): solo vale el cliente a secas («No tengo
                  clientes todavía»). */
               if (/^clientes?$/.test(mu[0].toLowerCase()) && zeroClientHitDisqualified(cl, markers, us, ue)) break;
+              /* v17.41 · F5: «no hay reserva» en una frase de espera
+                 («Tiene que esperar porque la barbería está llena y no
+                 hay reserva») no es un cero de ventas: es el dolor de
+                 no tener sistema de reservas, no la ausencia de ventas.
+                 Solo vale la reserva como cero cuando la frase no habla
+                 de esperar — o cuando el cero viene contado («0
+                 reservas»). */
+              if (/^reservas?$/.test(mu[0].toLowerCase()) && /\b(esperar|espera|esperando|llena|lleno|cola|turno)\b/i.test(cl) && !/(?:^|[^\d])0\b|\bcero\b/i.test(cl.slice(0, us))) break;
               hitNouns.push(mu[0].toLowerCase()); break;
             }
           }
@@ -17954,15 +18088,19 @@
         retarSaid = zeroClause ? zeroClause[0].trim() : snapTxt.trim();
       }
       if (existing) {
-        existing.resolution = text;
+        /* v17.41 · F5: la retractación la documenta LA PRIMERA respuesta
+           que corrigió el cero, no la última que mencionó ventas: antes
+           cada respuesta con cifras sobrescribía la resolución y una
+           respuesta normal (C12 Q1/Q5) aparecía en el Plan como si
+           fuera la aclaración, anclada en el módulo de la primera.
+           Solo se refrescan la foto de cifras y el hash; la evidencia
+           solo se rellena si la primera corrección no trajo ninguna. */
         existing.resolvedAt = new Date().toISOString();
         existing.sourceHash = contradictionSourceHash();
-        existing.corrected = null;
-        existing.salesEvidence = salesEvidence;
-        existing.needsRole = false;
-        if (zeroSaid) existing.zeroSaid = zeroSaid;
+        if (!existing.salesEvidence && salesEvidence) existing.salesEvidence = salesEvidence;
+        if (!existing.zeroSaid && zeroSaid) existing.zeroSaid = zeroSaid;
         if (retarSaid && !existing.retarSaid) existing.retarSaid = retarSaid;
-        if (src) existing.src = src;
+        if (src && !existing.src) existing.src = src;
       } else {
         existing = { key: ZERO_SALES_KEY, at: new Date().toISOString(), status: "resolved", resolution: text, resolvedAt: new Date().toISOString(), sourceHash: contradictionSourceHash(), corrected: null, salesEvidence: salesEvidence, needsRole: false, retarSaid: retarSaid, src: src, zeroSaid: zeroSaid };
         state.contradictions.push(existing);
@@ -19399,8 +19537,29 @@
            grado o de evidencia y esa clase ya está en cola, no se
            empuja (antes solo se cubría la clase de grado). */
         if (!dupProbe && degreeClassOf(nextProbe) && degreeClassQueued(rec, degreeClassOf(nextProbe))) dupProbe = true;
-        if (dupProbe) return false;
-        rec.steps.push({ probe: nextProbe, answer: "", kind: "chain" });
+        if (!dupProbe) {
+          rec.steps.push({ probe: nextProbe, answer: "", kind: "chain" });
+          return true;
+        }
+      }
+      /* v17.41 · F4/F4b: la cadena estática se agotó y el caso que la
+         pregunta exige sigue faltando (o falta el segundo caso cuando
+         la exige pide uno por elemento): se pide explícitamente, una
+         sola vez, en lugar de avanzar con el hueco abierto. Sin esto,
+         saltar la primera repregunta (o contestarla sin caso) dejaba el
+         hueco para siempre: la cadena terminaba y nadie volvía a pedir
+         el caso. El texto distingue si falta el primero o el segundo. */
+      if (!rec.chainSkipped && caseReaskNeeded(m, qi)) {
+        var ev41 = "";
+        try { ev41 = combinedAnswerEvidence(m.id, qi); } catch (e) { ev41 = ""; }
+        var two41 = exigeNeedsTwoCases(q);
+        var cc41 = 0;
+        try { cc41 = countCases(ev41); } catch (e) { cc41 = 0; }
+        var probe41 = (two41 && cc41 >= 1)
+          ? "Me diste un caso real. Para cerrar esta pregunta necesito un segundo caso distinto: ¿quién fue y qué pasó con otro cliente?"
+          : "Todavía me falta el caso o ejemplo real que pide esta pregunta: dame un caso real, ¿quién fue y qué pasó?";
+        rec.steps.push({ probe: probe41, answer: "", kind: "chain", caseReask: true });
+        rec.caseReaskAsked = true;
         return true;
       }
       return false;
@@ -19527,6 +19686,11 @@
          mostrarse con el precio nuevo (ver notePriceChangeForResearch). */
       var priceBeforeCommit = null;
       try { priceBeforeCommit = ownPrice(); } catch (e) { priceBeforeCommit = null; }
+      /* v17.41 · F8: la brecha de ingresos tal como estaba ANTES de esta
+         respuesta, para saber si la respuesta la confirmó sin cambiar
+         las cifras (ver la resolución en la rama principal). */
+      var gapBeforeCommit = null;
+      try { gapBeforeCommit = incomeGapCheck(); } catch (e) { gapBeforeCommit = null; }
       var m = mod(ui.module);
       var guardBlocker = executionBlocker(m.id);
       if (guardBlocker) { toast("Componente en solo lectura: completa primero " + codeOf(guardBlocker.id) + " · " + guardBlocker.name + " en su totalidad para poder responder aquí."); clearActiveMode(); return false; }
@@ -19610,6 +19774,10 @@
         existing.figures = contradictionFiguresSnapshot();
         clarResolvedRec = existing;
         stampClarificationRecord(existing, m.id);
+        /* v17.41 · F8(b): si se llegó aquí con la casilla habilitada para
+           responder una aclaración, la respuesta la cierra: la marca se
+           limpia y el componente vuelve a solo lectura. */
+        if (ui && ui.clarAnswerKey && ui.clarAnswerKey === openContra.key) { ui.clarAnswerKey = null; ui.clarAnswerModule = null; }
         /* v17.33 (WS1) · H1: si esta aclaración también corrige un cero de ventas que estaba vivo, queda registrada como retractación del cero. */
         maybeRecordZeroRetraction(text, zeroBefore, zeroLiveSnapBefore);
         maybeRecordRetarCorrection(text); /* v17.34 (WS2) · F4: una aclaración que niega literalmente una tasa del Retar también queda retractada. */
@@ -19750,6 +19918,35 @@
          guardar: la foto de antes no incluye esta respuesta y la
          aclaración volvía a aparecer como abierta para siempre. */
       if (clarDoubleDuty && clarResolvedRec) { try { clarResolvedRec.figures = contradictionFiguresSnapshot(); clarResolvedRec.sourceHash = contradictionSourceHash(); } catch (e) {} }
+      /* v17.41 · F8: responder la pregunta de ingresos (C6 Q1) con las
+         mismas cifras cierra la brecha: el dueño revisó los dos totales
+         y los confirmó, así que la aclaración no sigue abierta en el
+         Resumen ni en el chat. Solo vale con las cifras sin cambiar (si
+         cambian y cuadran, la brecha se cierra sola; si cambian y sigue
+         habiendo brecha, sigue abierta). */
+      if (m.id === "M6" && step === 0 && !incomeGapResolved()) {
+        try {
+          var gapAfterM6 = incomeGapCheck();
+          if (gapBeforeCommit && gapAfterM6 && gapBeforeCommit.sourcesTotal === gapAfterM6.sourcesTotal && gapBeforeCommit.declaredTotal === gapAfterM6.declaredTotal && gapBeforeCommit.gap === gapAfterM6.gap) {
+            if (!state.contradictions) state.contradictions = [];
+            var gapRec41 = null;
+            state.contradictions.forEach(function (r) { if (r.key === "ingresos-fuentes-vs-total") gapRec41 = r; });
+            if (gapRec41) {
+              gapRec41.status = "resolved";
+              gapRec41.resolution = text;
+              gapRec41.resolvedAt = new Date().toISOString();
+              gapRec41.sourceHash = contradictionSourceHash();
+              gapRec41.figures = contradictionFiguresSnapshot();
+              gapRec41.corrected = null;
+              gapRec41.needsRole = false;
+            } else {
+              gapRec41 = { key: "ingresos-fuentes-vs-total", at: new Date().toISOString(), status: "resolved", resolution: text, resolvedAt: new Date().toISOString(), sourceHash: contradictionSourceHash(), corrected: null, needsRole: false, figures: contradictionFiguresSnapshot() };
+              state.contradictions.push(gapRec41);
+            }
+            stampClarificationRecord(gapRec41, m.id);
+          }
+        } catch (e) {}
+      }
       /* v17.33 (WS1) · H1: si esta respuesta corrige un cero de ventas que estaba vivo, queda registrada la retractación. */
       maybeRecordZeroRetraction(text, zeroBefore, zeroLiveSnapBefore);
       recordPriceCorrection(text); /* v17.32 (WS2) · Una corrección de precio en una respuesta principal también se registra. */
@@ -19771,7 +19968,10 @@
          respuesta corta y completa («Cobro $8.000, me cuesta $1.200»)
          no necesita cadena, y un fragmento largo sin lo pedido sí. */
       var faltaDato = evidenceMissing(combinedAnswer(m.id, step), q, currentStage()).length > 0;
-      if ((faltaDato && q.chain && q.chain.length) || ui.activeMode === "investigar" || ui.activeMode === "retar") {
+      /* v17.41 · F4b: sin cadena estática, la repregunta del caso tampoco
+         llegaba: pushNextStep también corre cuando falta el caso que la
+         pregunta exige, aunque la cadena esté vacía. */
+      if ((faltaDato && (q.chain && q.chain.length || caseReaskNeeded(m, step))) || ui.activeMode === "investigar" || ui.activeMode === "retar") {
         var r = fuRec(m.id, step);
         if (!faltaDato) r.chainSkipped = true;
         if (ui.activeMode === "investigar" || ui.activeMode === "retar") consumeModeInto(r, m.id, step);
@@ -20470,7 +20670,7 @@
         html += '<div class="na-note" style="border-color:var(--danger)"><strong>Recordatorio de tu tarea:</strong> vence el ' + esc(fmtTask13Due(state.task13.due)) + (dl0.days < 0 ? " — ya pasó la fecha: repórtala cuando puedas en la Conversación." : dl0.days === 0 ? " — vence hoy." : " — faltan " + dl0.days + " días.") + "</div>";
       }
       var contra0 = openContradiction();
-      if (contra0) { var contra0Mods = contra0.mods || contradictionMods(contra0.key) || []; html += '<div class="na-note"><strong>Algo que yo quiero aclarar contigo:</strong> ' + esc(contra0.text) + ' <button class="btn small" type="button" data-answer-contra="' + esc(contra0.anchorModule || contra0Mods[0] || "M0") + '">Responder</button></div>'; }
+      if (contra0) { var contra0Mods = contra0.mods || contradictionMods(contra0.key) || []; html += '<div class="na-note"><strong>Algo que yo quiero aclarar contigo:</strong> ' + esc(contra0.text) + ' <button class="btn small" type="button" data-answer-contra="' + esc(contra0.anchorModule || contra0Mods[0] || "M0") + '" data-contra-key="' + esc(contra0.key) + '">Responder</button></div>'; }
       /* v17.33 (WS1) · H1: si un reto afirmó 0 ventas y tu aclaración lo corrigió, el Resumen lo dice de frente: el cero queda retractado, no solo en silencio. */
       var zeroRet = zeroSalesRetractionRecord();
       if (zeroRet) {
