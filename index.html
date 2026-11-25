@@ -9782,6 +9782,64 @@
        re-escritas después de la lápida sí sobreviven. Las ediciones
        ordinarias no tienen lápida y la fusión sin pérdida no cambia. */
     function redoTombstonesOf(proj) { return (proj && proj.redoTombstones && typeof proj.redoTombstones === "object") ? proj.redoTombstones : {}; }
+    /* v17.43 · F8b: la clave diminuta del rehacer
+       (analia.redo.<uid>.<pid>.<mid>) es la prueba síncrona de que un
+       módulo se rehízo: se escribe en el rehacer antes de cualquier
+       guardado asíncrono y se aplica al cargar o fusionar un proyecto,
+       para que un rehacer cuya subida no llegó no resucite al
+       recargar. La clave es diminuta (unos 70 bytes): cabe aunque el
+       almacenamiento esté casi lleno. Se borra cuando la lápida queda
+       confirmada en la nube o en el guardado local. */
+    function redoKeyFor(mid, pid) {
+      return "analia.redo." + (currentUid || "anon") + "." + (pid || (state && state.id) || "") + "." + mid;
+    }
+    function applyStoredRedoKeysToProject(proj) {
+      if (!proj || !proj.id || typeof window === "undefined" || !window.localStorage) return false;
+      var changed = false;
+      try {
+        var prefix = "analia.redo.";
+        var keys = [];
+        for (var i = 0; i < window.localStorage.length; i++) { var k = window.localStorage.key(i); if (k && k.indexOf(prefix) === 0) keys.push(k); }
+        keys.forEach(function (k) {
+          var parts = k.split(".");
+          if (parts.length !== 5 || parts[3] !== proj.id) return;
+          var mid = parts[4];
+          var tomb = null;
+          try { tomb = JSON.parse(window.localStorage.getItem(k)); } catch (e) { tomb = null; }
+          if (!tomb || !tomb.at) return;
+          if (!proj.redoTombstones) proj.redoTombstones = {};
+          var cur = proj.redoTombstones[mid];
+          if (cur && String(cur.at || "") >= String(tomb.at)) return;
+          proj.redoTombstones[mid] = { at: tomb.at, answered: tomb.answered || 0 };
+          changed = true;
+          /* Las respuestas anteriores a la lápida se borran, como en
+             la fusión: solo sobreviven las escritas después de ella. */
+          var mod = null;
+          try { mod = MODULES.filter(function (mm) { return mm.id === mid; })[0] || null; } catch (e) { mod = null; }
+          if (mod && Array.isArray(proj.answers[mid])) {
+            for (var qi = 0; qi < mod.questions.length; qi++) {
+              var aAt = (proj.answerMeta && proj.answerMeta[mid + ":" + qi] && proj.answerMeta[mid + ":" + qi].at) || null;
+              if (proj.answers[mid][qi] && String(proj.answers[mid][qi]).trim() && (!aAt || aAt <= tomb.at)) { proj.answers[mid][qi] = ""; changed = true; }
+            }
+          }
+        });
+      } catch (e) {}
+      return changed;
+    }
+    function clearStoredRedoKeysForProject(pid, proj) {
+      if (!pid || typeof window === "undefined" || !window.localStorage) return;
+      try {
+        var tombs = (proj && proj.redoTombstones) || {};
+        Object.keys(tombs).forEach(function (mid) {
+          var k = redoKeyFor(mid, pid);
+          var raw = window.localStorage.getItem(k);
+          if (!raw) return;
+          var tomb = null;
+          try { tomb = JSON.parse(raw); } catch (e) { tomb = null; }
+          if (!tomb || !tomb.at || String(tomb.at) <= String((tombs[mid] && tombs[mid].at) || "")) window.localStorage.removeItem(k);
+        });
+      } catch (e) {}
+    }
     function newestRedoTombstone(a, b, mid) {
       var ta = redoTombstonesOf(a)[mid] || null, tb = redoTombstonesOf(b)[mid] || null;
       if (!ta) return tb; if (!tb) return ta;
@@ -10005,6 +10063,11 @@
         if (stableStringify(rtMerged) !== stableStringify(a.redoTombstones || {})) { changed = true; adoptedFromB = true; }
         out.redoTombstones = rtMerged;
       }
+      /* La clave diminuta del rehacer manda sobre ambas copias: si una
+         lápida vive solo en la clave (la subida no llegó y el guardado
+         local falló), se aplica aquí y el módulo no resucita en la
+         fusión. */
+      try { if (applyStoredRedoKeysToProject(out)) changed = true; } catch (e) {}
       var fuMerged = mergeFollowups(a.followups, b.followups, out.answers);
       out.followups = fuMerged;
       /* v17.36 (WS6) · (h): los pasos de seguimiento contestados antes de
@@ -10544,6 +10607,8 @@
         var data = JSON.parse(raw);
         var proj = normalizeStored(data);
         if (!proj) return null;
+        /* La clave diminuta del rehacer se aplica al cargar: un rehacer cuya subida no llegó no resucita. */
+        try { applyStoredRedoKeysToProject(proj); } catch (e) {}
         MODULES.forEach(function (m) {
           if (!Array.isArray(proj.answers[m.id])) proj.answers[m.id] = [];
           while (proj.answers[m.id].length < m.questions.length) proj.answers[m.id].push("");
@@ -11887,7 +11952,9 @@
       sentences.forEach(function (cl) {
         /* Posiciones (fin) de los marcadores de cero en esta oración. */
         var markers = [];
+        var markerStarts = [];
         var hasBareZero = false;
+        var bareZeroStart = null;
         var reM = /(\$0\b|\b0\b|\bcero\b|\bning[uú]n(a|o|os|as)?\b|\bno\s+(tengo|tenemos|hay)\b)/gi, mm;
         while ((mm = reM.exec(cl)) !== null) {
           /* v17.34 (WS4) · F10: un «no hay / no tengo» dentro de una
@@ -11896,8 +11963,8 @@
              medido: no marca. Solo vale para no-tengo/hay; un 0, un
              «cero» o un «ningún» en la misma oración sigue contando. */
           if (/^no\s+(tengo|tenemos|hay)$/i.test(mm[0]) && /\b(si|cuando)\b/i.test(cl.slice(0, mm.index))) { if (mm.index === reM.lastIndex) reM.lastIndex++; continue; }
-          markers.push(mm.index + mm[0].length);
-          if (/^(?:\$?0|cero)$/.test(mm[0])) hasBareZero = true;
+          markers.push(mm.index + mm[0].length); markerStarts.push(mm.index);
+          if (/^(?:\$?0|cero)$/.test(mm[0])) { hasBareZero = true; if (bareZeroStart == null) bareZeroStart = mm.index; }
           if (mm.index === reM.lastIndex) reM.lastIndex++;
         }
         var reS = new RegExp("\\bsin\\s+" + HONEST_ZERO_UNITS.source, "gi"), ms;
@@ -11910,8 +11977,11 @@
         var reU = new RegExp(HONEST_ZERO_UNITS.source, "gi"), mu;
         while ((mu = reU.exec(cl)) !== null) {
           var us = mu.index, ue = us + mu[0].length;
-          var near = markers.some(function (me) { return Math.abs(us - me) <= 20 || Math.abs(me - ue) <= 20; });
-          if (near) { zeroNouns.push(mu[0].toLowerCase()); paired = true; break; }
+          var nearIdx = -1;
+          for (var nmi = 0; nmi < markers.length; nmi++) { var meN = markers[nmi]; if (Math.abs(us - meN) <= 20 || Math.abs(meN - ue) <= 20) { nearIdx = nmi; break; } }
+          /* v17.43 · F5: un cero confinado a un subconjunto o a una comparación no es un cero de ventas. */
+          if (nearIdx >= 0 && zeroClauseIsScoped(cl, markerStarts[nearIdx], markers[nearIdx], us, ue)) { if (mu.index === reU.lastIndex) reU.lastIndex++; continue; }
+          if (nearIdx >= 0) { zeroNouns.push(mu[0].toLowerCase()); paired = true; break; }
           if (mu.index === reU.lastIndex) reU.lastIndex++;
         }
         /* Un cero desnudo («ahora me traen cero») sin unidad pegada
@@ -11920,7 +11990,10 @@
            (que rige el sustantivo que sigue, no lo pedido). */
         if (!paired && hasBareZero && asked.length) {
           for (var ai = 0; ai < asked.length; ai++) {
-            if (new RegExp("\\b" + asked[ai] + "s?\\b").test(cl)) { zeroNouns.push(asked[ai]); break; }
+            var aM = new RegExp("\\b" + asked[ai] + "s?\\b").exec(cl);
+            if (!aM) continue;
+            if (bareZeroStart != null && zeroClauseIsScoped(cl, bareZeroStart, bareZeroStart + 1, aM.index, aM.index + aM[0].length)) continue;
+            zeroNouns.push(asked[ai]); break;
           }
         }
       });
@@ -12132,6 +12205,14 @@
       if (/\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b/i.test(t)) return true;
       if (/\b(la pr[oó]xima semana|el pr[oó]ximo mes|el mes que viene|la semana que viene)\b/i.test(t)) return true;
       if (/\b(en|dentro de)\s+(un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|\d+)\s+(d[ií]as?|semanas?)\b/i.test(t)) return true;
+      /* v17.43 · S1: «esta semana», «la semana pasada», «el mes
+         pasado», «este mes», «este fin de semana», «ayer» y «hoy» son
+         fechas (una semana, un día): antes no contaban y la lectura
+         pedía la fecha aunque ya estuviera («esta semana» en C11 Q6).
+         Y el mes pelado («en enero», «en febrero») también es una
+         fecha: antes solo valía con día o con año. */
+      if (/\b(esta semana|la semana pasada|el mes pasado|este mes|este fin de semana|ayer|hoy)\b/i.test(t)) return true;
+      if (/\b(en|para|desde|hasta)\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i.test(t)) return true;
       return false;
     }
     /* v17.32 (WS4b) · G8: un ejemplo/caso solo cuenta con casos
@@ -12221,24 +12302,96 @@
       var t = stripNegatedCase(String(text || ""));
       var PLACE_NAMES = "Ciénaga|Santa Marta|Barranquilla|Cartagena|Bogotá|Medellín|Cali|Bucaramanga|Manizales|Pereira|Armenia|Ibagué|Neiva|Pasto|Popayán|Tunja|Villavicencio|Montería|Sincelejo|Valledupar|Riohacha|Maicao|Fundación|Aracataca|Zona Bananera|Pueblo Viejo|Ciénaga Grande|Nueva Venecia|Buenavista|Minca|Taganga|Gaira|Mamatoco";
       var tNoPlaces = t.replace(new RegExp("\\b(" + PLACE_NAMES + ")\\b", "g"), " ");
-      var NOT_A_NAME = /^(un|una|unos|unas|el|la|los|las|mi|mis|su|sus|tu|tus|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|cada|ning[úu]n(?:a|o|os|as)?|alg[úu]n(?:a|o|os|as)?|otro|otra|otros|otras|todo|toda|todos|todas|nadie|alguien|también|además|pero|cuando|como|porque|desde|hasta|entre|sobre|con|por|para|en|de|y|o|si|no|me|yo|se|lo|le|nos|ella|él|ellos|ellas|usted|ustedes|eso|esto|aquello|hoy|ayer|mañana|ahora|después|antes|luego|siempre|nunca|jamás|muchos|muchas|pocos|pocas|varios|varias|cierto|cierta|mismo|misma|propio|propia|sin|doña|don)$/i;
+      var NOT_A_NAME = /^(un|una|unos|unas|el|la|los|las|mi|mis|su|sus|tu|tus|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|cada|ning[úu]n(?:a|o|os|as)?|alg[úu]n(?:a|o|os|as)?|otro|otra|otros|otras|todo|toda|todos|todas|nadie|alguien|también|además|pero|cuando|como|porque|desde|hasta|entre|sobre|con|por|para|en|de|y|o|si|no|me|yo|se|lo|le|nos|ella|él|ellos|ellas|usted|ustedes|eso|esto|aquello|hoy|ayer|mañana|ahora|después|antes|luego|siempre|nunca|jamás|muchos|muchas|pocos|pocas|varios|varias|cierto|cierta|mismo|misma|propio|propia|sin|doña|don|instagram|facebook|whatsapp|tiktok|youtube|google|nequi|daviplata|bancolombia|davivienda|rappi|uber|didi|amazon|zoom|meet|teams|telegram|pinterest|linkedin|kwai|mercado|libre)$/i;
       /* Verbos que abren oración («Tengo…», «Vendo…», «Cobro…»): van en
          mayúscula por ir al principio y no son nombres. */
       var VERB_START = /^(tengo|vendo|cobro|hago|pago|compro|atiendo|sirvo|entrego|trabajo|vivo|soy|estoy|voy|puedo|quiero|llevo|pongo|dejo|digo|creo|sé|veo|gano|pierdo|empiezo|termino|abro|cierro|salgo|entro|llego|vuelvo|quedo|cuento|mido|busco|ofrezco|preparo|uso|tomo|doy|pido|conozco|entiendo|manejo|dirijo|aporto|invierto|gasto|ahorro|facturo|recibo|mando|sigo|traigo|paso|digo|dejo|pongo|salgo|vengo|ando|debo|suelo|acabo)$/i;
-      var ACTION_RE = "(vino|vinieron|lleg[oó]|llegaron|pas[oó]|pasaron|pidi[oó]|pidieron|compr[oó]|compraron|pag[oó]|pagaron|reserv[oó]|reservaron|volvi[oó]|volvieron|me eligi[oó]|me recomend[oó]|me pidi[oó]|me pag[oó])";
+      var ACTION_RE = "(vino|vinieron|viene|vienen|lleg[oó]|llegaron|llega|llegan|pas[oó]|pasaron|pasa|pasan|pidi[oó]|pidieron|pide|piden|compr[oó]|compraron|compra|compran|pag[oó]|pagaron|paga|pagan|reserv[oó]|reservaron|reserva|reservan|volvi[oó]|volvieron|vuelve|vuelven|busc[oó]|buscaron|busca|buscan|escribi[oó]|escribieron|escribe|escriben|llam[oó]|llamaron|llama|llaman|visit[oó]|visitaron|visita|visitan|prob[oó]|probaron|prueba|prueban|pregunt[oó]|preguntaron|pregunta|preguntan|cont[oó]|contaron|cuenta|cuentan|dej[oó]|dejaron|deja|dejan|trajo|trajeron|trae|traen|encarg[oó]|encargaron|encarga|encargan|apart[oó]|apartaron|aparta|apartan|me eligi[oó]|me elige|me recomend[oó]|me recomienda|me pidi[oó]|me pide|me pag[oó]|me paga|me busc[oó]|me busca|me escribi[oó]|me escribe|me llam[oó]|me llama|me visit[oó]|me visita|me pregunt[oó]|me pregunta|me cont[oó]|me cuenta)";
       var TIME_RE = "(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \\d+ (d[ií]as?|semanas?)|este mes|el \\w+ pasado)";
+      /* v17.43 · F4b: el detalle concreto también ancla el episodio
+         sin fecha («Carlos me buscó por Instagram», «para una boda»,
+         «con su hermana», «cotización», «$8.000»): un caso es un
+         episodio concreto y específico, no solo un evento fechado. Lo
+         habitual («cada semana», «siempre») sin fecha que lo ancle no
+         es un episodio. */
+      var DETAIL_RE = "(\\$\\s*\\d|\\bpor (instagram|facebook|whatsapp|tel[eé]fono|correo)|\\bpara (una )?(boda|fiesta|entrevista|evento|graduaci[oó]n|reuni[oó]n)|\\bcon su (hermana|hermano|mam[aá]|pap[aá]|esposa|esposo|hija|hijo|familia)|\\bcotizaci[oó]n|\\bme recomend[oó]|\\bvolvi[oó]|\\bse qued[oó]|\\bqued[oó] content[oa])";
+      var HABITUAL_RE = "(cada (semana|mes|d[ií]a|vez)|siempre|todos los d[ií]as|por lo general|suele|suelen|a menudo|cada vez que)";
       var OUTCOME_RE = "(se fue porque|perd[ií]|me recomend[oó]|volvi[oó]|qued[oó] content[oa]|no volvi[oó]|se qued[oó]|me pag[oó]|me eligi[oó])";
       var found = false;
-      tNoPlaces.split(/[.?!;]+/).forEach(function (sent) {
+      splitSentencesSafe(tNoPlaces).forEach(function (sent) {
         if (found || !sent.trim()) return;
         if (!new RegExp("\\b" + ACTION_RE + "(?![a-záéíóúñ])", "i").test(sent)) return;
-        if (!new RegExp("\\b" + TIME_RE + "\\b", "i").test(sent) && !new RegExp("\\b" + OUTCOME_RE + "(?![a-záéíóúñ])", "i").test(sent)) return;
+        if (!new RegExp("\\b" + TIME_RE + "\\b", "i").test(sent) && !new RegExp("\\b" + OUTCOME_RE + "(?![a-záéíóúñ])", "i").test(sent) && !new RegExp(DETAIL_RE, "i").test(sent)) return;
+        if (new RegExp("\\b" + HABITUAL_RE + "\\b", "i").test(sent) && !new RegExp("\\b" + TIME_RE + "\\b", "i").test(sent)) return;
         var NAME_RE = /\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b/g, mName;
         while ((mName = NAME_RE.exec(sent)) !== null) {
           if (NOT_A_NAME.test(mName[1]) || VERB_START.test(mName[1])) continue;
           found = true;
           break;
         }
+      });
+      return found;
+    }
+    /* v17.43 · F4b: un caso con PERSONA IDENTIFICADA POR SU PAPEL +
+       acción concreta («Una mamá del barrio paga el helado de sus
+       niños: ellos lo usan y ella lo paga y decide») ES el caso real
+       aunque no lleve nombre propio ni fecha: la persona es concreta
+       (una mamá del barrio, no «una mamá» cualquiera), lo que hizo
+       también, y el objeto o la segunda cláusula lo anclan. El papel
+       tiene que venir identificado (artículo + papel, o papel + «del
+       barrio/de la cuadra/de siempre»): «mamá» suelta no basta. Los
+       verbos de habla NO cuentan aquí (regla v17.38: el discurso
+       citado sin nombre no es el ejemplo — hasQuotedPersonCase sigue
+       fuera de hasExample). Un pago AL DUEÑO sin más («una vecina me
+       pagó $30.000», sin fecha, sin objeto, sin segunda cláusula)
+       tampoco cuenta: es la misma forma que el pago sin nombre que la
+       regla v17.38 deja fuera. Lo habitual («cada semana», «siempre»)
+       no es un episodio: sin fecha que lo ancle, no cuenta. */
+    function hasRoleActionCase(text) {
+      var t = stripNegatedCase(String(text || ""));
+      var ROLES = "(mam[aá]|madre|pap[aá]|padre|vecin[oa]s?|señor[a]?s?|señora|tender[oa]s?|dueñ[oa]s?|alumn[oa]s?|herman[oa]s?|abuel[oa]s?|niñ[oa]s?|comprador[a]?s?|usuari[oa]s?|familia|espos[oa]|mototaxista|jefe|jefa)";
+      var ACTION = "(paga|pagan|pag[oó]|pagaron|pidi[oó]|pidieron|pide|piden|compr[oó]|compraron|compra|compran|vin[oi]|vino|vinieron|viene|vienen|lleg[oó]|llegaron|llega|llegan|volvi[oó]|volvieron|vuelve|vuelven|prob[oó]|probaron|prueba|prueban|reserv[oó]|reservaron|reserva|reservan|dej[oó]|dejaron|deja|dejan|busc[oó]|buscaron|busca|buscan|escribi[oó]|escribieron|escribe|escriben|llam[oó]|llamaron|llama|llaman|visit[oó]|visitaron|visita|visitan|me recomend[oó]|me recomienda|me eligi[oó]|me elige|me pidi[oó]|me pide)";
+      var TIME = "(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \\d+ (d[ií]as?|semanas?)|este mes|el \\w+ pasado)";
+      var HABITUAL = "(cada (semana|mes|d[ií]a|vez)|siempre|todos los d[ií]as|por lo general|suele|suelen|a menudo|cada vez que)";
+      var found = false;
+      splitSentencesSafe(t).forEach(function (sent) {
+        if (found || !sent.trim()) return;
+        var s = sent;
+        /* P01d: el contenido CITADO no es la acción de la
+           persona — «Una alumna me contó que antes pagaba $70.000…»
+           es lo que ella DIJO, no algo que se vio hacer: se quita
+           todo lo que sigue a «me dijo/contó que» antes de buscar
+           la acción, la fecha o el ancla. Es la misma frontera que
+           la regla v17.38 pone al caso citado sin nombre. */
+        s = s.replace(/\bme\s+(dijo|dijeron|contó|contaron|pidió|pidieron|confirmó|confirmaron|preguntó|preguntaron|escribió|escribieron|comentó|comentaron|avisó|avisaron)\s+que\b[\s\S]*$/i, "me dijo");
+        /* La persona tiene que venir identificada: artículo + papel
+           («una mamá», «la vecina», «mi hermana») o papel + lugar
+           («mamá del barrio», «vecina de la cuadra»). */
+        var roleRe = new RegExp("\\b(un[oa]?|el|la|los|las|mi|su|este|esta|ese|esa)\\s+" + ROLES + "\\b", "i");
+        var roleM = roleRe.exec(s);
+        if (!roleM) roleM = new RegExp("\\b" + ROLES + "\\s+(del barrio|de la cuadra|de siempre|del mercado|de la tienda)\\b", "i").exec(s);
+        if (!roleM) return;
+        /* P01d: el verbo tiene que ser DE esa persona — en
+           las 7 palabras que siguen a la mención del papel («Una
+           mamá del barrio paga…», «La vecina de la esquina me
+           recomendó…»). Un verbo de otra parte de la frase («pagan
+           por Nequi» de los clientes en general, o «viene» dentro
+           de lo citado) no es su acción. */
+        var afterRole = s.slice(roleM.index + roleM[0].length).split(/\s+/).filter(function (w) { return !!w; }).slice(0, 7).join(" ");
+        if (!new RegExp("\\b" + ACTION + "(?![a-záéíóúñ])", "i").test(afterRole)) return;
+        var hasTime = new RegExp("\\b" + TIME + "\\b", "i").test(s);
+        if (!hasTime && new RegExp("\\b" + HABITUAL + "\\b", "i").test(s)) return;
+        /* Ancla: fecha, objeto concreto, o segunda cláusula con el
+           reparto («ellos lo usan y ella lo paga»). */
+        var hasDetail = hasTime
+          || /(?:\$\s*\d|\bpor (instagram|facebook|whatsapp|tel[eé]fono|correo)|\bpara (una )?(boda|fiesta|entrevista|evento|graduaci[oó]n|reuni[oó]n)|\bcon su (hermana|hermano|mam[aá]|pap[aá]|esposa|esposo|hija|hijo|familia)|\bcotizaci[oó]n|\bme recomend[oó]|\bvolvi[oó]|\bse qued[oó]|\bqued[oó] content[oa]|\b(el|la|los|las|un|una|unos|unas)\s+\w+\s+de\s+(sus|su|mi|los|las)\s+\w+)/i.test(s)
+          || /[:;]\s*\w+[^.!?;]{0,60}?\b(lo|la|los|las)\s+(usa|usan|paga|pagan|decide|deciden|compra|compran)\b/i.test(s);
+        if (!hasDetail) return;
+        /* Un pago al dueño sin más no es el caso: «una vecina me pagó
+           $30.000» sin fecha, sin objeto y sin segunda cláusula es la
+           forma que la regla v17.38 deja fuera. */
+        if (/\bme\s+(pag[oó]|paga|pagaron|pagan)(?![a-záéíóúñ])/i.test(s) && !hasTime && !/(?:\b(el|la|los|las|un|una|unos|unas)\s+\w+\s+de\s+(sus|su|mi|los|las)\s+\w+|\bpor (instagram|facebook|whatsapp)|\bpara (una )?(boda|fiesta|entrevista|evento)|\bcotizaci[oó]n)/i.test(s) && !/[:;]/.test(s)) return;
+        found = true;
       });
       return found;
     }
@@ -12306,7 +12459,7 @@
     function hasFirstPersonIncidentCase(text) {
       var t = String(text || "");
       var found = false;
-      t.split(/[.?!;]+/).forEach(function (s) {
+      splitSentencesSafe(t).forEach(function (s) {
         if (found || !s.trim()) return;
         if (!/\bme\s+(pas[oó]|ocurri[oó]|toc[oó])(?![a-záéíóúñ])|\btuv[eo]\s+un\s+caso\b/i.test(s)) return;
         if (/\b(volvi[oó]|volvieron|regres[oó]|qued[oó]\s+content[oa]|qued[oó]\s+satisfech[oa]|me\s+recomend[oó]|volvi[oó]\s+a|se\s+fue\s+content[oa]|sali[oó]\s+content[oa])(?![a-záéíóúñ])/i.test(s)) found = true;
@@ -12327,7 +12480,7 @@
       var GOODS = "(tanda|tandas|cortes?|helados?|panes?|pedidos?|reservas?|unidades?|ventas?|platos?|tazas?|piezas?|sesiones?|clases?|membres[ií]as?|productos?|art[ií]culos?)";
       var TIME = "(la semana pasada|el mes pasado|ayer|hoy|esta semana|este mes|el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|hace \\d+ (d[ií]as?|semanas?))";
       var found = false;
-      t.split(/[.?!;]+/).forEach(function (sent) {
+      splitSentencesSafe(t).forEach(function (sent) {
         if (found || !sent.trim()) return;
         if (!/\b(perd[ií]|perdimos|se me (cay[oó]|dañ[oó]|rompi[oó])|me qued[eé] sin)(?![a-záéíóúñ])/i.test(sent)) return;
         if (!new RegExp("\\b\\d+\\s*" + GOODS + "\\b", "i").test(sent)) return;
@@ -12342,10 +12495,10 @@
       var t = String(text || "");
       if (!t.trim()) return 0;
       var n = 0;
-      t.split(/[.?!;]+/).forEach(function (s) {
+      splitSentencesSafe(t).forEach(function (s) {
         /* v17.42 · F4b: el caso con nombre + acción de cliente también cuenta. */
         /* v17.42 · F4b: la pérdida con mercancía cuantificada también cuenta. */
-        if (hasNumberedClientCase(s) || hasNamedCase(s) || hasQuotedPersonCase(s) || hasFirstPersonIncidentCase(s) || hasNamedActionCase(s) || hasLossIncidentCase(s)) n++;
+        if (hasNumberedClientCase(s) || hasNamedCase(s) || hasQuotedPersonCase(s) || hasFirstPersonIncidentCase(s) || hasNamedActionCase(s) || hasLossIncidentCase(s) || hasRoleActionCase(s)) n++;
       });
       return n;
     }
@@ -12422,6 +12575,8 @@
       if (hasNamedActionCase(t)) return true;
       /* v17.42 · F4b: la pérdida con mercancía cuantificada también es el ejemplo real. */
       if (hasLossIncidentCase(t)) return true;
+      /* v17.43 · F4b: el caso con persona identificada por su papel y acción concreta también es el ejemplo real. */
+      if (hasRoleActionCase(t)) return true;
       return false;
     }
     /* v17.32 (WS4b) · G8: la fecha de algo declarado INEXISTENTE no se
@@ -12634,6 +12789,25 @@
       var t = String(text || "").toLowerCase();
       return /(pienso probar|voy a probar|lo voy a probar|voy a validar|pienso validar|voy a testear|pienso testear|voy a hacer una prueba|pienso hacer una prueba)/.test(t);
     }
+    /* v17.43 · S2: ¿la estimación trae su base observada fuera de la
+       cláusula de la hipótesis? Número + unidad de tiempo o frecuencia
+       («2 horas», «3 días», «unos 40 al mes») en una cláusula que no
+       es la del «creo/supongo/pienso» y que no es un plan a futuro. */
+    function hasGroundedEstimateBase(text) {
+      var t = String(text || "");
+      var HYPO = /(creo|supongo|pienso|imagino|mi hip[oó]tesis|hip[oó]tesis|supuesto|apuesta|me parece|mi idea es|espero que|voy a probar|lo voy a)/i;
+      var NUM = "(\\d+|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cincuenta|cien)";
+      var BASE = new RegExp("\\b" + NUM + "\\s*(horas?|minutos?|d[ií]as?|semanas?|meses?)\\b|\\b(unos|unas)?\\s*" + NUM + "\\s*(al mes|al d[ií]a|a la semana|por mes|por d[ií]a)\\b", "i");
+      var FUTURE = /(voy a|pienso|creo|supongo|espero|quiero|planeo|voy a probar|lo voy a)/i;
+      var found = false;
+      t.split(/[.;!?\n]+/).forEach(function (cl) {
+        if (found || !cl.trim()) return;
+        if (HYPO.test(cl)) return;
+        if (FUTURE.test(cl)) return;
+        if (BASE.test(cl)) found = true;
+      });
+      return found;
+    }
     function isUntestedHypothesis(text, q, stage) {
       var t = String(text || "").toLowerCase();
       if (honestZero(text, q)) return false;
@@ -12641,6 +12815,12 @@
       var hasHyp = /(creo|supongo|pienso|mi hip[oó]tesis|hip[oó]tesis|supuesto|apuesta|imagino|me parece|mi idea es|espero que|voy a probar|lo voy a)/.test(t);
       if (!hasHyp) return false;
       if (hasTestedEvidence(text)) return false;
+      /* Una estimación CON su base observada no es un supuesto sin
+         probar: «espera unas 2 horas» (hecho observado fuera de la
+         cláusula del «creo que») sostiene «creo que se enfrían unos 5
+         al mes». Un «creo que venderé 40» sin base fuera de la
+         cláusula sigue siendo un supuesto. */
+      if (hasGroundedEstimateBase(text)) return false;
       return true;
     }
     function assessEvidence(text, q, stage) {
@@ -17377,6 +17557,11 @@
           if (!state.redoTombstones) state.redoTombstones = {};
           var redoPrevN = 0; (state.answers[m.id] || []).forEach(function (ra) { if (ra && String(ra).trim()) redoPrevN++; });
           state.redoTombstones[m.id] = { at: new Date().toISOString(), answered: redoPrevN };
+          /* La clave diminuta del rehacer se escribe ANTES de cualquier
+             guardado asíncrono: es la prueba síncrona de que el módulo
+             se rehízo, aunque el guardado local falle y la subida no
+             haya terminado. */
+          try { window.localStorage.setItem(redoKeyFor(m.id), JSON.stringify({ at: state.redoTombstones[m.id].at, answered: redoPrevN })); } catch (eRedo43) {}
           if (Array.isArray(state.contradictions)) state.contradictions = state.contradictions.filter(function (rc) { return !rc || rc.resolvedModule !== m.id; });
           if (state.diagnosis) delete state.diagnosis;
           if (state.coachNotes) Object.keys(state.coachNotes).forEach(function (ck) { if (ck.indexOf(m.id + ":") === 0) delete state.coachNotes[ck]; });
@@ -17414,13 +17599,25 @@
              almacenamiento lleno o una pestaña vieja), se dice en voz
              alta: el reinicio vive solo en esta pestaña hasta que la
              nube lo reciba, y recargar ahora lo resucitaría. */
-          try {
-            var redoSaved42 = false;
-            try { var rawRedo42 = window.localStorage.getItem(lsKey()); if (rawRedo42) { var parsedRedo42 = JSON.parse(rawRedo42); var prRedo42 = parsedRedo42 && parsedRedo42.projects && parsedRedo42.projects[state.id]; redoSaved42 = !!(prRedo42 && prRedo42.redoTombstones && prRedo42.redoTombstones[m.id]); } } catch (eRedo42) {}
-            if (!redoSaved42) toast("El reinicio no quedó guardado en este navegador: no recargues todavía, se está subiendo a la nube.");
-          } catch (eRedo42b) {}
+          var redoSaved42 = false;
+          try { var rawRedo42 = window.localStorage.getItem(lsKey()); if (rawRedo42) { var parsedRedo42 = JSON.parse(rawRedo42); var prRedo42 = parsedRedo42 && parsedRedo42.projects && parsedRedo42.projects[state.id]; redoSaved42 = !!(prRedo42 && prRedo42.redoTombstones && prRedo42.redoTombstones[m.id]); } } catch (eRedo42) {}
+          if (redoSaved42) { try { window.localStorage.removeItem(redoKeyFor(m.id)); } catch (eRedo43b) {} }
+          if (!redoSaved42) toast("El reinicio no quedó guardado en este navegador: no recargues todavía, se está subiendo a la nube.");
           renderSidebar(); renderChat();
-          toast("Componente " + codeOf(m.id) + " reiniciado. A responder de nuevo, con lo que ya sabes.");
+          /* El «reiniciado» solo se afirma cuando la nube lo confirma
+             (o cuando el guardado local ya lo dejó): si el guardado
+             local falló, la confirmación llega cuando la nube
+             responde; hasta entonces vale el aviso de no recargar. */
+          if (redoSaved42) {
+            toast("Componente " + codeOf(m.id) + " reiniciado. A responder de nuevo, con lo que ya sabes.");
+          } else if (window.__cloudSaveWait) {
+            window.__cloudSaveWait(function (ok43) {
+              if (ok43) toast("Componente " + codeOf(m.id) + " reiniciado. A responder de nuevo, con lo que ya sabes.");
+              else toast("El reinicio todavía no quedó confirmado en la nube: no recargues todavía.");
+            });
+          } else {
+            toast("Componente " + codeOf(m.id) + " reiniciado. A responder de nuevo, con lo que ya sabes.");
+          }
         } else {
           /* v17.36 (WS6) · (h): la confirmación vive en el estado, no en
              un atributo DOM: un re-render entre los dos toques ya no la
@@ -17847,6 +18044,24 @@
       for (j = 0; j < ZERO_CLIENT_CHANNELS.length; j++) { if (around.indexOf(ZERO_CLIENT_CHANNELS[j]) >= 0) return true; }
       return false;
     }
+    /* v17.43 · F5: un cero CONFINADO a un subconjunto o a una
+       comparación NO es una declaración de cero ventas. «En 0 ventas
+       del mes pasado pagó alguien distinto de quien usó» es un cero
+       sobre las ventas con pagador distinto, no sobre las ventas en
+       sí; «Ningún cliente me paga lo mismo que la alternativa» es un
+       cero sobre la comparación con la alternativa, no sobre los
+       clientes. El restrictor tiene que estar en la ventana del par
+       marcador–sustantivo (desde el marcador hasta 60 caracteres
+       después del sustantivo). Un cero sin restrictor («Todavía no he
+       vendido nada», «No tengo clientes todavía», «0 ventas y 0
+       clientes») sigue siendo un cero real. */
+    var ZERO_SCOPE_RE = /(distint[oa]s?|diferente(s)?|lo mismo que|igual que|que la alternativa|que en otro lado|que otro|de quien|otra persona|alguien (distint[oa]|diferente)|no (es|son) el mismo|mismo que|como (la|el) alternativa|que (la|el) (otra|otro))/i;
+    function zeroClauseIsScoped(cl, markerStart, markerEnd, nounStart, nounEnd) {
+      var s = String(cl || "");
+      var lo = Math.max(0, (markerStart != null ? markerStart : markerEnd));
+      var hi = Math.min(s.length, (nounEnd != null ? nounEnd : markerEnd) + 60);
+      return ZERO_SCOPE_RE.test(s.slice(lo, hi));
+    }
     function tightZeroSales(t) {
       var s = String(t || "");
       /* v17.35 (WS1) · F1: «no he vendido nada» / «todavía no vendo»
@@ -17867,6 +18082,7 @@
       for (var si = 0; si < sentences.length; si++) {
         var cl = sentences[si];
         var markers = [];
+        var markerStarts = [];
         var reM = /(\btodav[ií]a\s+no\s+(tengo|tenemos|hay)\b|\bno\s+(tengo|tenemos|hay)\b|\bning[uú]n(a|o|os|as)?\b|\b(0|cero|sin)\b)/gi, mm;
         while ((mm = reM.exec(cl)) !== null) {
           /* v17.38 · Igual que honestZero (v17.34 F10) y que el camino
@@ -17874,7 +18090,7 @@
              condicional («si yo no corto, no hay ingreso») es una
              hipótesis, no un cero medido: no marca. */
           if (/\bno\s+(tengo|tenemos|hay)\b/i.test(mm[0]) && /\b(si|cuando)\b/i.test(cl.slice(0, mm.index))) { if (mm.index === reM.lastIndex) reM.lastIndex++; continue; }
-          markers.push(mm.index + mm[0].length); if (mm.index === reM.lastIndex) reM.lastIndex++;
+          markers.push(mm.index + mm[0].length); markerStarts.push(mm.index); if (mm.index === reM.lastIndex) reM.lastIndex++;
         }
         if (!markers.length) continue;
         var reU = /\b(ventas?|clientes?|ingresos?|pedidos?|reservas?|facturaci[oó]n)\b/gi, mu;
@@ -17906,6 +18122,8 @@
                  de esperar — o cuando el cero viene contado («0
                  reservas»). */
               if (/^reservas?$/.test(mu[0].toLowerCase()) && /\b(esperar|espera|esperando|llena|lleno|cola|turno)\b/i.test(cl) && !/(?:^|[^\d])0\b|\bcero\b/i.test(cl.slice(0, us))) break;
+              /* v17.43 · F5: un cero confinado a un subconjunto o a una comparación no es un cero de ventas. */
+              if (zeroClauseIsScoped(cl, markerStarts[k], me, us, ue)) break;
               hitNouns.push(mu[0].toLowerCase()); break;
             }
           }
@@ -17942,6 +18160,8 @@
           if (!REVENUE_NOUNS.some(function (rn) { return sameZeroFamily(a, rn); })) continue;
           var nounM = new RegExp("\\b" + a + "s?\\b", "i").exec(cl);
           if (!nounM) continue;
+          /* v17.43 · F5: un cero confinado a un subconjunto o a una comparación no es un cero de ventas. */
+          if (zeroClauseIsScoped(cl, mZero.index, mZero.index + mZero[0].length, nounM.index, nounM.index + nounM[0].length)) continue;
           /* Un «clientes» calificado («fijos», «nuevos») en la
              vecindad del sustantivo no es un cero de ventas. */
           var nAround = cl.slice(Math.max(0, nounM.index - 20), Math.min(cl.length, nounM.index + nounM[0].length + 20)).toLowerCase();
@@ -18088,6 +18308,15 @@
     function isRealZeroVentas(t) {
       return /(?:^|[^\d])0 ventas/.test(String(t || ""));
     }
+    /* v17.43 · F5: el «0 ventas» de una sonda del Retar también puede
+       venir confinado («0 ventas donde pagó alguien distinto»): el
+       cero confinado no es una declaración de cero ventas. */
+    function zeroVentasScoped(t) {
+      var m = /(?:^|[^\d])(0 ventas)/.exec(String(t || ""));
+      if (!m) return false;
+      var start = m.index + (m[0].length - m[1].length);
+      return zeroClauseIsScoped(t, start, start + m[1].length, start, start + m[1].length);
+    }
     /* Una sonda de Retar sin contestar cuya foto afirma 0 ventas. */
     function liveZeroProbeSnapshot() {
       if (!state || !state.followups) return null;
@@ -18099,7 +18328,7 @@
           if (!rec || !Array.isArray(rec.steps)) return;
           rec.steps.forEach(function (st) {
             if (found) return;
-            if (st && st.kind === "probe" && !st.answer && st.probeSnapshot && isRealZeroVentas(st.probeSnapshot)) found = { mid: mid, qi: parseInt(qi, 10), step: st };
+            if (st && st.kind === "probe" && !st.answer && st.probeSnapshot && isRealZeroVentas(st.probeSnapshot) && !zeroVentasScoped(st.probeSnapshot)) found = { mid: mid, qi: parseInt(qi, 10), step: st };
           });
         });
       });
@@ -24010,8 +24239,15 @@
           if (resTxt) refBits = (refBits ? refBits + " — " : "") + "«" + resTxt + "»";
           if (!refBits) return;
           var clarKey = r.key + "|" + refBits;
-          if (seenClar[clarKey]) return;
+          /* v17.43 · F5: la misma aclaración con el mismo texto en el
+             mismo componente es UNA sola, aunque viva bajo dos claves
+             (la del hueco real y la de un cero que ya no existe): antes
+             la resolución de C6 Q1 salía dos veces («Ingresos» y
+             «Ventas») con el texto idéntico. */
+          var clarKey2 = (r.resolvedModule || "") + "|" + resTxt;
+          if (seenClar[clarKey] || (resTxt && seenClar[clarKey2])) return;
           seenClar[clarKey] = true;
+          if (resTxt) seenClar[clarKey2] = true;
           var refMod = r.resolvedModule ? codeOf(r.resolvedModule) : codeOf((contradictionMods(r.key) || ["M0"])[0]);
           h += '<div class="qa"><div class="q">Aclaración registrada en ' + esc(refMod) + " · " + esc(clarificationKeyLabel(r.key)) + '</div><div class="a">' + esc(refBits) + "</div></div>";
         });
@@ -25041,6 +25277,24 @@
       var cloudWriteInFlight = false; /* v17.26 (WS5) · una escritura en curso: un cambio que llega en ese momento viaja en el reintento o en un guardado nuevo, nunca se pierde */
       var cloudWriteGen = 0; /* v17.26 (WS5) · generación de la escritura: cada intento de red lleva un número nuevo. El resultado de una escritura vieja (éxito o fallo) se ignora si ya arrancó una más reciente — sin esto, el fallo de una escritura vieja, que llega un turno de microtarea después por ir detrás de un .then, pisaba el «ok» de la escritura nueva y programaba un reintento fantasma. */
       var cloudDirty = false;
+      /* v17.43 · F8b: quien espera la confirmación de la nube (el
+         rehacer) se apunta aquí: el final de una escritura limpia
+         resuelve a los que esperan con true; un fallo o una negativa
+         los resuelve con false. Si no hay escritura en curso ni nada
+         pendiente, __cloudSaveWait resuelve de inmediato con true. */
+      var cloudSaveWaiters = [];
+      function cloudSaveWaitersFinish(ok) {
+        var list = cloudSaveWaiters; cloudSaveWaiters = [];
+        list.forEach(function (w) { try { w(ok); } catch (e) {} });
+      }
+      window.__cloudSaveWait = function (cb, timeoutMs) {
+        if (typeof cb !== "function") return;
+        var settled = false;
+        var done = function (ok) { if (settled) return; settled = true; clearTimeout(timer); try { cb(ok); } catch (e) {} };
+        var timer = setTimeout(function () { var i = cloudSaveWaiters.indexOf(done); if (i >= 0) cloudSaveWaiters.splice(i, 1); done(false); }, timeoutMs || 15000);
+        if (!cloudWriteInFlight && !cloudDirty && !Object.keys(cloudDirtyProjects).length && !cloudMetaDirty) { done(true); return; }
+        cloudSaveWaiters.push(done);
+      };
       /* v17.28 · Proyectos con cambios locales aún no subidos a su
          documento por proyecto (items/{id}): doCloudWrite solo sube
          estos, nunca la tienda completa. persist()/persistLocalOnly()
@@ -25082,7 +25336,7 @@
       window.__cloudLoginPending = false; /* v17.27 (WS4) · hay un inicio de sesión en curso cuya fusión de entrada aún no terminó */
       window.__cloudLoggedIn = false; /* v17.27 (WS4) · hay sesión con cuenta: la restauración confirma en la nube; sin sesión, la confirmación es solo local */
       window.__cloudConflict = false; /* v17.27 (WS1) · la última escritura se negó por conflicto: no se subió nada para no perder respuestas */
-      function markCloudMergeDone() { window.__cloudMergeDone = true; window.__cloudLoginPending = false; /* v17.27 (WS4) · la fusión de entrada terminó: la puerta de la restauración se abre */ }
+      function markCloudMergeDone() { window.__cloudMergeDone = true; window.__cloudLoginPending = false; /* v17.27 (WS4) · la fusión de entrada terminó: la puerta de la restauración se abre */ if ((cloudDirty || Object.keys(cloudDirtyProjects).length || cloudMetaDirty) && window.__cloudSave) { try { window.__cloudSave(); } catch (e) {} } }
       var CLOUD_RETRY_DELAYS = [2000, 5000, 15000];
       var CLOUD_MAX_BYTES = 950000; /* v17.26 (WS5) · cerca del límite de 1 MiB por documento de Firestore (1.048.576 bytes): por encima, la escritura no puede tener éxito y no se reintenta */
       window.__cloudStatus = function () { return cloudStatus; };
@@ -25509,7 +25763,7 @@
          su proyecto llega marcado como sucio por persist(), así que
          sube por este mismo camino. */
       function doCloudWrite() {
-        if (!me || (!state && !store)) { cloudWriteInFlight = false; return; }
+        if (!me || (!state && !store)) { cloudWriteInFlight = false; cloudSaveWaitersFinish(false); return; }
         var localShape = null;
         try { localShape = toStoreShape(store || state); } catch (e) {
           cloudRefuseUpload("cloud-merge-failed", "No pude preparar tu copia local para subirla: no subí nada para no perder respuestas.");
@@ -25661,6 +25915,7 @@
                 } catch (e) {}
               }
               delete cloudDirtyProjects[id];
+              try { clearStoredRedoKeysForProject(id, uploadProj); } catch (e) {}
               return nextProject();
             });
           }).catch(function (err) { return onProjectError(id, err); });
@@ -25675,6 +25930,7 @@
           if (myGen !== cloudWriteGen) return;
           if (networkFailed) {
             cloudWriteInFlight = false;
+            cloudSaveWaitersFinish(false);
             scheduleRetry();
             return;
           }
@@ -25692,6 +25948,7 @@
                  llamarlo conflicto confundía. */
               var onlyTooBig = refusals.every(function (rid) { return refusalCodes[rid] === "payload-too-large"; });
               if (!onlyTooBig) toast("Detecté un conflicto entre tus copias y no subí nada para no perder respuestas.");
+              cloudSaveWaitersFinish(false);
             } else {
               window.__cloudError = null;
               window.__cloudConflict = false;
@@ -25704,6 +25961,7 @@
                 window.__cloudSave();
               } else {
                 setCloudStatus("ok");
+                cloudSaveWaitersFinish(true);
               }
             }
           };
@@ -25718,6 +25976,7 @@
                  el meta se reintenta con el próximo cambio. */
               window.__cloudError = { code: (err && err.code) || "cloud-write-failed", message: String((err && err.message) || err || "") };
               cloudWriteInFlight = false;
+              cloudSaveWaitersFinish(false);
               scheduleRetry();
             });
           } else afterMeta();
@@ -25735,6 +25994,15 @@
            corriendo: la nube no se toca hasta que termine (ella
            misma dispara la subida aplazada al cerrar). */
         if (window.__cloudMigrationRunning) { cloudDirty = true; return; }
+        /* v17.43 · F8b: una escritura en vuelo es la dueña de la nube:
+           arrancar otra por encima sube la generación y aborta sus
+           retrollamadas antes de que emita su .set() — el rehacer con
+           recarga inmediata perdía la lápida así (la recarga llegaba
+           en mitad del .get() y el pagehide arrancaba una segunda
+           escritura que nunca completaba). Una escritura nueva solo
+           marca sucio: el final de la que vuela ya re-guarda cuando
+           queda algo pendiente. */
+        if (cloudWriteInFlight) { cloudDirty = true; return; }
         /* v17.32 (WS5) · Sin nada nuevo que subir no se arranca la escritura:
            un ciclo sin cambios ponía el indicador en «Guardando…» y luego
            en «Guardado en la nube» aunque no hubiera ninguna respuesta nueva
@@ -25838,6 +26106,10 @@
            ya quedó guardada por persist()/saveOnHide y la subida se
            aplaza hasta que la fusión termine. */
         if (!window.__cloudMergeDone) { cloudDirty = true; return; }
+        /* Si una escritura vuela, esta no arranca otra: solo marca
+           sucio y el final de la que vuela re-guarda. Ni el pagehide
+           aborta la escritura en curso. */
+        if (cloudWriteInFlight) { cloudDirty = true; return; }
         clearTimeout(saveTimer);
         saveTimer = null;
         clearTimeout(cloudRetryTimer);
@@ -25937,6 +26209,7 @@
            (nunca se fusiona en la cuenta de nadie). */
         storeOwnerUid = user.uid;
         window.__bootHeldProject = null; window.__bootHeldStore = null;
+        var stateAtMergeStart = state;
         /* v17.27 (WS1) · Mientras esta fusión no termine, ninguna
            escritura en la nube arranca (cloudMergeDone en false): un
            pagehide o un guardado que llegara antes no sube nada. */
@@ -26117,9 +26390,23 @@
                  proyecto y solo quedan las lápidas). Se adopta la tienda
                  tal cual —lápidas incluidas— sin aviso de conflicto. */
               try { store = toStoreShape(cloudShape); } catch (e) {}
-              state = null;
-              persist();
-              markCloudMergeDone();
+              /* v17.43 · F8b: la fusión leyó una nube vacía ANTES de que
+                 este proyecto existiera: si ya hay un proyecto con
+                 contenido en memoria creado mientras la fusión corría,
+                 no se borra — se conserva y se sube. La copia sin
+                 cuenta retenida al arrancar (stateAtMergeStart) nunca
+                 se conserva: descartarla es la regla v17.37. */
+              if (state && state !== stateAtMergeStart && projectHasContent(state)) {
+                try { ensureStore(); store.projects[state.id] = state; store.activeProjectId = state.id; } catch (e) {}
+                markStoreDirty(store);
+                persistLocalOnly(false, true);
+                markCloudMergeDone();
+                window.__cloudSaveNow();
+              } else {
+                state = null;
+                persist();
+                markCloudMergeDone();
+              }
             } else {
             var cloud = null;
             try { cloud = validProject(cloudShape); } catch (e) { cloud = null; }
@@ -26153,8 +26440,18 @@
             window.__cloudSaveNow();
             toast("Tu proyecto de este navegador se subió a tu cuenta: " + state.project.name + ".");
           } else {
-            state = null;
-            markCloudMergeDone();
+            /* Un proyecto con contenido creado mientras la fusión
+               corría no se borra: se conserva y se sube (ver arriba). */
+            if (state && state !== stateAtMergeStart && projectHasContent(state)) {
+              try { ensureStore(); store.projects[state.id] = state; store.activeProjectId = state.id; } catch (e) {}
+              markStoreDirty(store);
+              persistLocalOnly(false, true);
+              markCloudMergeDone();
+              window.__cloudSaveNow();
+            } else {
+              state = null;
+              markCloudMergeDone();
+            }
           }
           /* v17.37 (e) · Solo el administrador: si su nube ya trae todo
              lo de la clave sin cuenta, esa clave se borra para que no
