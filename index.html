@@ -7196,13 +7196,24 @@
     function figureIsPeriodTotal(clause) {
       var s = String(clause || "");
       if (/en\s+(los\s+)?(\u00faltimos\s+)?\d+\s+meses/i.test(s) && /\ben total\b/i.test(s)) return true;
-      /* v17.35 (WS5) · F11: «en los últimos 3 meses» sin «en total»
-         también es un total de periodo («En los últimos 3 meses
-         entraron $25.500.000»): es la suma de 3 meses, nunca el total
-         mensual. Solo vale sin marcador mensual explícito en la misma
-         cláusula («facturé $9.000.000 al mes en los últimos 3 meses»
-         sí es mensual). */
-      if (/en\s+los\s+\u00faltimos\s+\d+\s+meses/i.test(s) && !/\b(al mes|por mes|mensual(?:es)?|cada mes)\b/i.test(s)) return true;
+      /* v17.44 · F8: un total de periodo NUNCA es el total mensual,
+         aunque la cláusula lleve «al mes» pegado a otra cifra o el
+         dueño lo repita con «al mes» en una repregunta («En los
+         últimos 3 meses las ventas fueron $21.600.000 al mes»): ese
+         «al mes» es el ritmo del periodo, no la mensualidad de la
+         cifra. El marco de periodo manda sobre el marcador mensual,
+         salvo que el marcador esté pegado a ESTA cifra con un verbo
+         de facturación mensual («facturé $9.000.000 al mes en los
+         últimos 3 meses» sí es mensual: la excepción v17.35 se
+         conserva, pero ahora exige el verbo junto a la cifra, no un
+         marcador cualquiera en la cláusula). El marco se reconoce en
+         más formas: «en los últimos 3 meses», «los últimos 3 meses»,
+         «de los últimos 3 meses», «en el último trimestre»,
+         «en 3 meses». */
+      if (/(\u00faltimos\s+\d+\s+meses|en\s+el\s+\u00faltimo\s+trimestre|del\s+trimestre|en\s+\d+\s+meses\b)/i.test(s)) {
+        if (/\b(factur[a-záéíóúñ]*|cobr[a-záéíóúñ]*|vend[a-záéíóúñ]*|gan[a-záéíóúñ]*)\b[^.!?;]{0,40}?\b(al mes|por mes|mensual(?:es)?|cada mes)\b/i.test(s)) return false;
+        return true;
+      }
       return false;
     }
     /* Elige una cifra de una lista: primero la que cumple etiqueta y
@@ -9799,13 +9810,18 @@
       try {
         var prefix = "analia.redo.";
         var keys = [];
-        for (var i = 0; i < window.localStorage.length; i++) { var k = window.localStorage.key(i); if (k && k.indexOf(prefix) === 0) keys.push(k); }
-        keys.forEach(function (k) {
+        /* v17.44 · F8b: la lápida diminuta también se busca en
+           sessionStorage (el espejo del rehacer, cuota aparte). */
+        [window.localStorage, window.sessionStorage].forEach(function (st) {
+          try { for (var i = 0; i < st.length; i++) { var k = st.key(i); if (k && k.indexOf(prefix) === 0) keys.push({ k: k, st: st }); } } catch (eSt44) {}
+        });
+        keys.forEach(function (entry) {
+          var k = entry.k, st = entry.st || window.localStorage;
           var parts = k.split(".");
           if (parts.length !== 5 || parts[3] !== proj.id) return;
           var mid = parts[4];
           var tomb = null;
-          try { tomb = JSON.parse(window.localStorage.getItem(k)); } catch (e) { tomb = null; }
+          try { tomb = JSON.parse(st.getItem(k)); } catch (e) { tomb = null; }
           if (!tomb || !tomb.at) return;
           if (!proj.redoTombstones) proj.redoTombstones = {};
           var cur = proj.redoTombstones[mid];
@@ -9832,11 +9848,16 @@
         var tombs = (proj && proj.redoTombstones) || {};
         Object.keys(tombs).forEach(function (mid) {
           var k = redoKeyFor(mid, pid);
-          var raw = window.localStorage.getItem(k);
+          /* v17.44 · F8b: la lápida diminuta vive en los dos
+             almacenes (localStorage y el espejo de sessionStorage):
+             se borra de los dos cuando la lápida queda confirmada. */
+          var raw = null;
+          try { raw = window.localStorage.getItem(k); } catch (e) {}
+          if (!raw) { try { raw = window.sessionStorage.getItem(k); } catch (e2) {} }
           if (!raw) return;
           var tomb = null;
           try { tomb = JSON.parse(raw); } catch (e) { tomb = null; }
-          if (!tomb || !tomb.at || String(tomb.at) <= String((tombs[mid] && tombs[mid].at) || "")) window.localStorage.removeItem(k);
+          if (!tomb || !tomb.at || String(tomb.at) <= String((tombs[mid] && tombs[mid].at) || "")) { window.localStorage.removeItem(k); try { window.sessionStorage.removeItem(k); } catch (e3) {} }
         });
       } catch (e) {}
     }
@@ -12361,8 +12382,9 @@
            persona — «Una alumna me contó que antes pagaba $70.000…»
            es lo que ella DIJO, no algo que se vio hacer: se quita
            todo lo que sigue a «me dijo/contó que» antes de buscar
-           la acción, la fecha o el ancla. Es la misma frontera que
-           la regla v17.38 pone al caso citado sin nombre. */
+           la acción, la fecha o el ancla. Lo citado no se pierde:
+           lo evalúa hasQuotedEpisodeCase (v17.44) como caso con
+           episodio concreto. */
         s = s.replace(/\bme\s+(dijo|dijeron|contó|contaron|pidió|pidieron|confirmó|confirmaron|preguntó|preguntaron|escribió|escribieron|comentó|comentaron|avisó|avisaron)\s+que\b[\s\S]*$/i, "me dijo");
         /* La persona tiene que venir identificada: artículo + papel
            («una mamá», «la vecina», «mi hermana») o papel + lugar
@@ -12438,6 +12460,79 @@
          volvería»): la persona es concreta y lo que dice también. */
       if (/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\b[^.!?;]{0,80}?\bme\s+(dijo|dijeron|contó|contaron|pidió|pidieron|confirmó|confirmaron|preguntó|preguntaron|escribió|escribieron)(?![a-záéíóúñ])/.test(t)) return true;
       return false;
+    }
+    /* v17.44 · F4b: un caso contado con discurso citado Y un episodio
+       concreto en lo citado SÍ es el ejemplo real que pide la pregunta.
+       La regla v17.38 decía que un caso citado sin nombre NO es el
+       ejemplo — y eso sigue valiendo para la cita sin episodio («un
+       cliente me dijo que me pagó $30.000», «un cliente me dijo que le
+       gustó»): un pago citado o una opinión vaga no es un caso. Pero
+       cuando lo citado trae un episodio concreto — un cambio de
+       conducta («antes… ahora solo viene»), una intención o acción de
+       una tercera persona («su mamá también quiere venir», «ahora
+       trae a su hermana»), un juicio sobre una cualidad concreta
+       («el helado es cremoso», «el precio le parece justo», «le quitó
+       el dolor de espalda»), una frecuencia («2 veces al mes», «cada
+       semana») o una fecha («hace 2 semanas», «en octubre») — el caso
+       está: la persona es concreta y lo que pasó también, aunque se
+       cuente con «me dijo/contó que». El detector mira el contenido
+       citado (después del verbo de habla), nunca el resto de la frase:
+       el P01d de hasRoleActionCase sigue quitando lo citado antes de
+       buscar la acción observada, y aquí se evalúa justo lo que él
+       quita. La negación del habla se borra antes, igual que en
+       hasQuotedPersonCase («ninguna alumna me dijo nada» no es caso).
+       El dinero SOLO no es episodio: un pago citado sin más sigue sin
+       contar (regla v17.38). */
+    function hasQuotedEpisodeCase(text) {
+      var t = String(text || "");
+      var found = false;
+      splitSentencesSafe(t).forEach(function (sent) {
+        if (found || !sent.trim()) return;
+        if (!hasQuotedPersonCase(sent)) return;
+        /* Contenido citado: todo lo que sigue al primer verbo de habla
+           con «que» (o al «:» que lo sigue, cuando la cita viene en
+           dos tiempos: «me contó que su mamá quiere venir: me dijo
+           que el helado es cremoso»). */
+        var qm = /\bme\s+(dijo|dijeron|contó|contaron|pidió|pidieron|confirmó|confirmaron|preguntó|preguntaron|escribió|escribieron|comentó|comentaron|avisó|avisaron)\s+que\b/i.exec(sent);
+        if (!qm) qm = /\b(le|les)\s+(dijo|dijeron|contó|contaron)\s+que\b/i.exec(sent);
+        if (!qm) return;
+        var quoted = sent.slice(qm.index + qm[0].length);
+        var colon = quoted.indexOf(":");
+        if (colon >= 0) {
+          var afterColon = quoted.slice(colon + 1);
+          var qm2 = /\bme\s+(dijo|dijeron|contó|contaron)\s+que\b/i.exec(afterColon);
+          if (qm2) quoted = quoted.slice(0, colon) + " " + afterColon.slice(qm2.index + qm2[0].length);
+        }
+        var EPISODE = [
+          /* Cambio de conducta: antes… ahora / dejó / ya no / ahora solo. */
+          /\bantes\b[^.!?;]{0,80}?\bahora\b/i,
+          /\bdej[oó](?![a-záéíóúñ])|\bdejaron\b|\bya no\b|\bahora solo\b/i,
+          /* Tercera persona con intención o acción: su mamá quiere venir,
+             ahora trae a su hermana, va a volver. (El cierre tras «ó»
+             no es \b — \b es ASCII y la ó no es carácter de palabra:
+             se usa el lookahead negativo de letras, como en el resto
+             del archivo. Eso vale también tras «mamá/papá»: el \b
+             después del papel fallaba con «su mamá también quiere». */
+          /\b(su|mi)\s+(mam[aá]|madre|pap[aá]|padre|herman[oa]s?|espos[oa]|hij[oa]s?|familia|vecin[oa]s?|amig[oa]s?)(?![a-záéíóúñ])[^.!?;]{0,60}?\b(quiere|quieren|va a|van a|viene|vienen|trae|traen|compr[oó]|compra|compran|pide|piden|pidi[oó]|vuelve|vuelven)(?![a-záéíóúñ])/i,
+          /* Tercera persona con el verbo antes: «ahora trae a su
+             hermana», «ya viene con su mamá». */
+          /\b(ahora|ya)\s+(trae|traen|viene|vienen|va|van)\b[^.!?;]{0,30}?\b(su|mi)\s+(herman[oa]s?|mam[aá]|madre|pap[aá]|padre|familia|espos[oa]|hij[oa]s?|vecin[oa]s?|amig[oa]s?)(?![a-záéíóúñ])/i,
+          /* Juicio sobre una cualidad concreta: es cremoso, le parece
+             justo, le quitó el dolor, es el mejor. */
+          /\b(es|est[aá]|son|est[aá]n|le parece|le pareci[oó]|le parecieron)(?![a-záéíóúñ])[^.!?;]{0,40}?\b(cremoso|cremosa|justo|justa|el mejor|la mejor|bueno|buena|rico|rica|perfecto|perfecta|tranquilo|tranquila|fresco|fresca|natural|delicioso|deliciosa|suave|fuerte|duradero|duradera|preciso|precisa|lindo|linda|bonito|bonita|excelente|buen[ií]simo|buen[ií]sima)\b/i,
+          /\ble\s+(quit[oó]|quita)(?![a-záéíóúñ])/i,
+          /* Frecuencia concreta. */
+          /\b\d+\s+veces?\s+(al mes|a la semana|por semana|al d[ií]a)\b/i,
+          /\bcada\s+(semana|mes|d[ií]a)\b/i,
+          /\b(una|dos|tres|cuatro|cinco)\s+veces?\s+(al mes|a la semana|por semana)\b/i,
+          /* Fecha o plazo dentro de lo citado. */
+          /\b(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \d+ (d[ií]as?|semanas?)|hace (una|dos|tres) semanas?|este mes|este fin de semana|en (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre))\b/i,
+          /* Pérdida o coste cuantificado dentro de lo citado. */
+          /\bperd[ií](?![a-záéíóúñ])|\bperdi[oó](?![a-záéíóúñ])|\bme cost[oó](?![a-záéíóúñ])|\bse quedaron sin\b|\bse qued[oó] sin\b/i
+        ];
+        for (var i = 0; i < EPISODE.length; i++) { if (EPISODE[i].test(quoted)) { found = true; break; } }
+      });
+      return found;
     }
     /* v17.40 · F4: un caso con número + sustantivo de cliente +
        acción + tiempo («2 vecinas pidieron cotización el lunes»)
@@ -12534,6 +12629,26 @@
       try { hasEx = hasExample(ev); } catch (e) { hasEx = false; }
       return !hasEx;
     }
+    /* v17.44 · S3: la fecha o el plazo que la pregunta exige sigue
+       faltando y la cadena estática se agotó: se pide explícitamente,
+       una sola vez, igual que el caso (caseReaskNeeded). Sin esto, la
+       fecha dicha en voz alta mientras la pregunta siguiente era la
+       pendiente se guardaba como respuesta de la siguiente (C11 Q2)
+       y el hueco quedaba para siempre. Solo la fecha: el número no
+       tiene repregunta propia. */
+    function dateReaskNeeded(m, qi) {
+      var q = questionFor(m, qi);
+      if (!q) return false;
+      var rec = null;
+      try { rec = fuRec(m.id, qi); } catch (e) { rec = null; }
+      if (rec && rec.dateReaskAsked) return false;
+      var ev = "";
+      try { ev = combinedAnswerEvidence(m.id, qi); } catch (e) { ev = ""; }
+      var gap = null;
+      try { gap = exigeGap(ev, q); } catch (e) { gap = null; }
+      if (!gap) return false;
+      return /la fecha o el plazo que pide esta pregunta/.test(gap.text);
+    }
     function hasExample(text) {
       var t = stripNegatedCase(String(text || ""));
       if (/(por ejemplo|ejemplo|un caso|el caso)/i.test(t)) return true;
@@ -12544,7 +12659,11 @@
       /* v17.38 · Un caso CITADO sin nombre («un cliente me dijo…») NO
          es el ejemplo real: el seguimiento que pide el caso con nombre
          nunca se disparaba y la evidencia quedaba sin verificar. Solo
-         el caso con nombre, o una medida real, vale. */
+         el caso con nombre, o una medida real, vale.
+         v17.44 · F4b: esa regla queda acotada — la cita SIN episodio
+         concreto sigue sin valer (un pago citado, una opinión vaga),
+         pero la cita CON episodio concreto sí es el ejemplo real: ver
+         hasQuotedEpisodeCase. */
       /* v17.32 (WS4b) · G8: las palabras sueltas («cliente», «cuando»,
          «la semana»…) solo cuentan como ejemplo si la respuesta trae
          además una cifra concreta: «Mi cliente viene cada semana cuando
@@ -12577,6 +12696,10 @@
       if (hasLossIncidentCase(t)) return true;
       /* v17.43 · F4b: el caso con persona identificada por su papel y acción concreta también es el ejemplo real. */
       if (hasRoleActionCase(t)) return true;
+      /* v17.44 · F4b: el caso contado con discurso citado y episodio
+         concreto también es el ejemplo real (ver hasQuotedEpisodeCase).
+         La regla v17.38 sigue valiendo para la cita sin episodio. */
+      if (hasQuotedEpisodeCase(t)) return true;
       return false;
     }
     /* v17.32 (WS4b) · G8: la fecha de algo declarado INEXISTENTE no se
@@ -13407,6 +13530,27 @@
        en «ventas» genéricas: el sustantivo es el mismo que usa KR2
        (volumen declarado o, si no lo hay, el plural del sustantivo
        por venta del valor de vida). */
+    /* v17.44 · S4: el sustantivo por venta, temprano: antes de C6 Q6
+       (donde lo lee extractLtvInfo) el precio y el margen ya dicen la
+       unidad («Cobro $30.000 por corte», «me quedan $22.000 por
+       corte», «Cobro $8.000 por helado»): se lee de C0 Q7, C0 Q8,
+       C6 Q1, C6 Q2 y C10 Q2. «venta», «cliente», «mes»… no son unidad:
+       la lista de exclusión deja fuera las palabras que no nombran lo
+       que se vende. */
+    var PER_SALE_NOUN_STOP = /^(venta|ventas|cliente|clienta|clientes|clientas|mes|meses|semana|semanas|d[ií]a|d[ií]as|año|años|hora|horas|persona|personas|vez|veces|unidad|unidades|servicio|servicios)$/i;
+    function perSaleNounEarly() {
+      var texts = [];
+      [["M0", 6], ["M0", 7], ["M6", 0], ["M6", 1], ["M10", 1]].forEach(function (c) {
+        try { var t = combinedAnswer(c[0], c[1]); if (t) texts.push(t); } catch (e) {}
+      });
+      for (var i = 0; i < texts.length; i++) {
+        var re = /\$\s*[\d.,]+\s*por\s+([a-záéíóúñ]+)/gi, mm;
+        while ((mm = re.exec(texts[i])) !== null) {
+          if (!PER_SALE_NOUN_STOP.test(mm[1])) return mm[1].toLowerCase();
+        }
+      }
+      return null;
+    }
     function breakEvenLine() {
       var be = breakEvenInputs();
       if (be.computed == null) return "";
@@ -13417,6 +13561,9 @@
         else {
           var beLtv = extractLtvInfo();
           if (beLtv && beLtv.perSaleNoun) { beNounSg = beLtv.perSaleNoun; beNoun = okrPluralNoun(beNounSg); }
+          /* v17.44 · S4: antes de C6 Q6 no hay sustantivo por venta del
+             valor de vida: el precio ya lo dice («$8.000 por helado»). */
+          else { var beEarly = perSaleNounEarly(); if (beEarly) { beNounSg = beEarly; beNoun = okrPluralNoun(beEarly); } }
         }
       } catch (e) {}
       var s = "Tu punto de equilibrio es " + be.computed + " " + beNoun + " al mes: costos fijos de $" + be.fixed.toLocaleString("es-CO") + " al mes divididos entre $" + be.margin.toLocaleString("es-CO") + " de margen por " + beNounSg + ".";
@@ -13508,6 +13655,10 @@
          cabezas, no ventas — y «450 helados» no casaba en absoluto. */
       var ltvUnitPlural = null;
       try { var _li0 = extractLtvInfo(); if (_li0 && _li0.perSaleNoun) ltvUnitPlural = okrPluralNoun(_li0.perSaleNoun); } catch (e) { ltvUnitPlural = null; }
+      /* Sin sustantivo del valor de vida, el precio ya dice la unidad
+         («$8.000 por helado»): sin esto, «450 helados» no casaba y el
+         volumen caía en «ventas». */
+      if (!ltvUnitPlural) { try { var _en44 = perSaleNounEarly(); if (_en44) ltvUnitPlural = okrPluralNoun(_en44); } catch (e) {} }
       var NOUNS = "prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas|alumnos|consultas|noches|panes|membresías|membresias|clases|sesiones|tazas|platos|piezas" + (ltvUnitPlural ? "|" + ltvUnitPlural : "");
       var VERBS = "vendo|atiendo|hago|entrego|sirvo|realizo|completo|muevo|tengo";
       function scanVol(t) {
@@ -17562,6 +17713,15 @@
              se rehízo, aunque el guardado local falle y la subida no
              haya terminado. */
           try { window.localStorage.setItem(redoKeyFor(m.id), JSON.stringify({ at: state.redoTombstones[m.id].at, answered: redoPrevN })); } catch (eRedo43) {}
+          /* v17.44 · F8b: la misma lápida diminuta se espeja en
+             sessionStorage (cuota aparte del localStorage: si el
+             almacenamiento local está lleno, el espejo sobrevive a la
+             recarga en la misma pestaña) y sube a la nube en escritura
+             directa (ver __cloudRedoFastWrite): con la cadena
+             leer→fusionar→subir, una recarga a 1–2 s llegaba antes de
+             que la subida aterrizara y el módulo resucitaba
+             (prueba 20 B, 3 veces). */
+          try { window.sessionStorage.setItem(redoKeyFor(m.id), JSON.stringify({ at: state.redoTombstones[m.id].at, answered: redoPrevN })); } catch (eRedo44ss) {}
           if (Array.isArray(state.contradictions)) state.contradictions = state.contradictions.filter(function (rc) { return !rc || rc.resolvedModule !== m.id; });
           if (state.diagnosis) delete state.diagnosis;
           if (state.coachNotes) Object.keys(state.coachNotes).forEach(function (ck) { if (ck.indexOf(m.id + ":") === 0) delete state.coachNotes[ck]; });
@@ -17595,13 +17755,14 @@
           if (window.__cloudMarkDirty) window.__cloudMarkDirty(m.id);
           if (window.__cloudMarkMetaDirty) window.__cloudMarkMetaDirty();
           if (window.__cloudSaveNow) window.__cloudSaveNow();
+          if (window.__cloudRedoFastWrite) window.__cloudRedoFastWrite(m.id);
           /* v17.42 · F8b: si el guardado local no dejó la lápida (el
              almacenamiento lleno o una pestaña vieja), se dice en voz
              alta: el reinicio vive solo en esta pestaña hasta que la
              nube lo reciba, y recargar ahora lo resucitaría. */
           var redoSaved42 = false;
           try { var rawRedo42 = window.localStorage.getItem(lsKey()); if (rawRedo42) { var parsedRedo42 = JSON.parse(rawRedo42); var prRedo42 = parsedRedo42 && parsedRedo42.projects && parsedRedo42.projects[state.id]; redoSaved42 = !!(prRedo42 && prRedo42.redoTombstones && prRedo42.redoTombstones[m.id]); } } catch (eRedo42) {}
-          if (redoSaved42) { try { window.localStorage.removeItem(redoKeyFor(m.id)); } catch (eRedo43b) {} }
+          if (redoSaved42) { try { window.localStorage.removeItem(redoKeyFor(m.id)); } catch (eRedo43b) {} try { window.sessionStorage.removeItem(redoKeyFor(m.id)); } catch (eRedo44ss2) {} }
           if (!redoSaved42) toast("El reinicio no quedó guardado en este navegador: no recargues todavía, se está subiendo a la nube.");
           renderSidebar(); renderChat();
           /* El «reiniciado» solo se afirma cuando la nube lo confirma
@@ -19913,6 +20074,14 @@
         rec.caseReaskAsked = true;
         return true;
       }
+      /* v17.44 · S3: la cadena estática se agotó y la fecha o el plazo
+         que la pregunta exige sigue faltando: se pide explícitamente,
+         una sola vez, en lugar de avanzar con el hueco abierto. */
+      if (!rec.chainSkipped && dateReaskNeeded(m, qi)) {
+        rec.steps.push({ probe: "Todavía me falta la fecha o el plazo que pide esta pregunta: ¿para cuándo?", answer: "", kind: "chain", dateReask: true });
+        rec.dateReaskAsked = true;
+        return true;
+      }
       return false;
     }
 
@@ -20278,7 +20447,22 @@
       if (m.id === "M6" && step === 0 && !incomeGapResolved()) {
         try {
           var gapAfterM6 = incomeGapCheck();
-          if (gapBeforeCommit && gapAfterM6 && gapBeforeCommit.sourcesTotal === gapAfterM6.sourcesTotal && gapBeforeCommit.declaredTotal === gapAfterM6.declaredTotal && gapBeforeCommit.gap === gapAfterM6.gap) {
+          /* v17.44 · F8: la brecha también se cierra cuando aparece
+             por primera vez en esta misma respuesta (las fuentes
+             vivían solo en C6 Q1 y antes no había brecha que
+             comparar): vale si la respuesta trae las fuentes y el
+             total mensual, y las dos cifras son las de la brecha de
+             ahora. Si las cifras cambiaron, la brecha sigue abierta
+             (regla v17.41). */
+          var gapFirstSeen44 = false;
+          try {
+            if (!gapBeforeCommit && gapAfterM6 && gapAfterM6.sources && gapAfterM6.sources.length >= 2) {
+              var m6Src44 = extractIncomeSources();
+              var m6Tot44 = monthlyTotalFromText(text, true);
+              gapFirstSeen44 = !!(m6Src44 && m6Src44.sources && m6Src44.sources.length >= 2 && m6Src44.sum === gapAfterM6.sourcesTotal && m6Tot44 != null && m6Tot44 === gapAfterM6.declaredTotal);
+            }
+          } catch (e44) { gapFirstSeen44 = false; }
+          if ((gapBeforeCommit && gapAfterM6 && gapBeforeCommit.sourcesTotal === gapAfterM6.sourcesTotal && gapBeforeCommit.declaredTotal === gapAfterM6.declaredTotal && gapBeforeCommit.gap === gapAfterM6.gap) || gapFirstSeen44) {
             if (!state.contradictions) state.contradictions = [];
             var gapRec41 = null;
             state.contradictions.forEach(function (r) { if (r.key === "ingresos-fuentes-vs-total") gapRec41 = r; });
@@ -20322,7 +20506,10 @@
       /* v17.41 · F4b: sin cadena estática, la repregunta del caso tampoco
          llegaba: pushNextStep también corre cuando falta el caso que la
          pregunta exige, aunque la cadena esté vacía. */
-      if ((faltaDato && (q.chain && q.chain.length || caseReaskNeeded(m, step))) || ui.activeMode === "investigar" || ui.activeMode === "retar") {
+      /* v17.44 · S3: la repregunta de la fecha también abre la cadena:
+         sin ella, una pregunta que pide fecha y no tiene cadena se
+         quedaba con el hueco abierto para siempre (C11 Q2). */
+      if ((faltaDato && (q.chain && q.chain.length || caseReaskNeeded(m, step) || dateReaskNeeded(m, step))) || ui.activeMode === "investigar" || ui.activeMode === "retar") {
         var r = fuRec(m.id, step);
         if (!faltaDato) r.chainSkipped = true;
         if (ui.activeMode === "investigar" || ui.activeMode === "retar") consumeModeInto(r, m.id, step);
@@ -26118,6 +26305,35 @@
         cloudRetries = 0; /* escritura inmediata y deliberada: abre una cadena nueva */
         window.__cloudRetries = 0;
         writeCloudNow(closing);
+      };
+      /* v17.44 · F8b: escritura directa del rehacer — UN solo set del
+         documento items/{pid} con la lápida ya puesta, sin la cadena
+         leer→fusionar→subir. Es el mismo documento que doCloudWrite
+         subiría (mismo payload de cloudPayloadJson), así que cuando
+         la cadena normal llega, fusiona sobre un documento ya
+         rehecho y el resultado es el mismo. No se escribe si la
+         pestaña quedó vieja (tabStale): una pestaña vieja no escribe
+         en la nube. Tampoco si la fusión de entrada no terminó: la
+         subida normal la cubre al terminar. Si el set directo falla
+         (red), no se reintenta aquí: la cadena normal con sus
+         reintentos sigue siendo la dueña de la subida. */
+      window.__cloudRedoFastWrite = function (mid) {
+        if (!me || !state || !state.id || tabStale) return;
+        if (!window.__cloudMergeDone) return;
+        try {
+          var shape = toStoreShape(store || state);
+          var localProj = shape && shape.projects ? shape.projects[state.id] : null;
+          if (!localProj) return;
+          var payload = cloudPayloadJson(localProj);
+          if (!payload || !payload.json || payload.tooBig) return;
+          cloudItemsRef().doc(state.id).set({
+            email: me.email,
+            data: payload.json,
+            actualizadoEn: firebase.firestore.FieldValue.serverTimestamp()
+          }).then(function () {
+            try { clearStoredRedoKeysForProject(state.id, localProj); } catch (e) {}
+          }).catch(function () {});
+        } catch (e) {}
       };
       /* v17.28 (WS2) · Borrar la nube de esta cuenta borra TODOS los
          documentos por proyecto (items/{id}) además del meta: antes solo
