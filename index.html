@@ -4007,7 +4007,13 @@
                     "why": "La calidad que nadie puede comprobar antes de comprar no vende: solo vende la que se puede mostrar. Esta brecha decide cuánto tienes que empujar cada venta a pulso.",
                     "obj": 4,
                     "entrega": "Valor · Brecha de prueba social",
-                    "exige": "Número de reseñas públicas por plataforma hoy, dónde están y qué parte de tu reputación no puede ver un cliente nuevo.",
+                    /* v17.45 · F4c: la pregunta pide «casos con nombre» en su
+                       texto, pero su exige solo pedía el número de reseñas:
+                       una cita pelada rodeada de cifras pasaba limpia
+                       porque ningún camino pedía el caso. La exige ahora
+                       pide también el caso o el testimonio que respalde
+                       la promesa. */
+                    "exige": "Número de reseñas públicas por plataforma hoy, dónde están, un caso con nombre o un testimonio escrito que respalde tu promesa, y qué parte de tu reputación no puede ver un cliente nuevo.",
                     "chain": [
                         "¿Cuántas reseñas públicas tienes hoy, por plataforma? Dame el número por cada una.",
                         "¿Qué parte de tu reputación existe solo en conversaciones privadas que un cliente nuevo no puede ver?"
@@ -12267,8 +12273,18 @@
       /* v17.38 · Un lugar no es una persona: «Ciénaga me dijo» no es
          un caso con nombre. Los patrones de nombre + verbo y de nombre
          + coma + oficio se prueban sin los topónimos. */
+      /* v17.45 · F4c: una plataforma tampoco es una persona: «por
+         Instagram, que ningún cliente…» no es un caso con nombre.
+         hasNamedActionCase ya excluye las plataformas en su NOT_A_NAME;
+         aquí se quitan del texto como los topónimos. */
       var PLACE_NAMES = "Ciénaga|Santa Marta|Barranquilla|Cartagena|Bogotá|Medellín|Cali|Bucaramanga|Manizales|Pereira|Armenia|Ibagué|Neiva|Pasto|Popayán|Tunja|Villavicencio|Montería|Sincelejo|Valledupar|Riohacha|Maicao|Fundación|Aracataca|Zona Bananera|Pueblo Viejo|Ciénaga Grande|Nueva Venecia|Buenavista|Minca|Taganga|Gaira|Mamatoco";
-      var tNoPlaces = t.replace(new RegExp("\\b(" + PLACE_NAMES + ")\\b", "g"), " ");
+      var PLATFORM_NAMES = "Instagram|Facebook|WhatsApp|Google|TikTok|YouTube|Nequi|Daviplata|Bancolombia|Davivienda|Rappi|Uber|DiDi|Amazon|Zoom|Meet|Teams|Telegram|Pinterest|LinkedIn|Kwai|Mercado Libre";
+      var tNoPlaces = t.replace(new RegExp("\\b(" + PLACE_NAMES + ")\\b", "g"), " ").replace(new RegExp("\\b(" + PLATFORM_NAMES + ")\\b", "g"), " ");
+      /* Palabras que van en mayúscula por ir a principio de oración y
+         no son nombres («Por Facebook, un cliente…» no es «Por, el
+         cliente»): se usan también en la rama nombre + coma + oficio
+         (v17.45 · F4c). */
+      var NOT_A_NAME = /^(un|una|unos|unas|el|la|los|las|mi|mis|su|sus|tu|tus|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|cada|ning[úu]n(?:a|o|os|as)?|alg[úu]n(?:a|o|os|as)?|otro|otra|otros|otras|todo|toda|todos|todas|nadie|alguien|también|además|pero|cuando|como|porque|desde|hasta|entre|sobre|con|por|para|en|de|y|o|si|no|me|yo|se|lo|le|nos|ella|él|ellos|ellas|usted|ustedes|eso|esto|aquello|hoy|ayer|mañana|ahora|después|antes|luego|siempre|nunca|jamás|muchos|muchas|pocos|pocas|varios|varias|cierto|cierta|mismo|misma|propio|propia)$/i;
       /* Tratamiento + nombre: «doña Rosa», «don Rafael».
          v17.34 (WS4) · F5c: el tratamiento también vale a principio de
          oración («Doña Rosa…», «Don Rafael…»): antes, sin la mayúscula
@@ -12283,7 +12299,8 @@
       if (/\b(un|una|el|la)\s+grupo\s+de\b/i.test(t)) return true;
       /* Nombre + coma + oficio o papel: «Carlos, empleado de la
          alcaldía», «María Fernanda, 34 años, enfermera del hospital». */
-      if (/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?\s*,[^.!?;]{0,45}?\b(vecin[oa]|emplead[oa]|client[ea]|dueñ[oa]|enfermer[oa]|comerciante|tender[oa]|profesor[a]?|m[eé]dic[oa]|abogad[oa]|cocinero|cociner[oa]|mesero|mesera|pescador[a]?|conductor[a]?)\b/.test(tNoPlaces)) return true;
+      var _mcrRe = /\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)\s*,[^.!?;]{0,45}?\b(vecin[oa]|emplead[oa]|client[ea]|dueñ[oa]|enfermer[oa]|comerciante|tender[oa]|profesor[a]?|m[eé]dic[oa]|abogad[oa]|cocinero|cociner[oa]|mesero|mesera|pescador[a]?|conductor[a]?)\b/g, _mcr;
+      while ((_mcr = _mcrRe.exec(tNoPlaces)) !== null) { if (!NOT_A_NAME.test(_mcr[1].split(/\s+/)[0])) return true; }
       /* Nombre + «me dijo/pidió/confirmó/contó»: «Rosa me dijo». */
       /* v17.36 (WS6) · D1(b): el cierre no es «\b» (ASCII: tras «contó»
          nunca hay límite de palabra) sino «no sigue letra». */
@@ -12300,7 +12317,7 @@
          borra antes de buscar, igual que en hasQuotedPersonCase. */
       var tNoNegSpeech = tNoPlaces.replace(/\b(no|nunca|jam[aá]s|nadie|ning[uú]n(?:a|o|os|as)?)\b[^.!?;,]{0,12}?\b(dijo|contó|pidió|confirmó|preguntó|escribió|comentó|avisó)(?![a-záéíóúñ])/gi, " ");
       var NAME_DIST_RE = /\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b[^.!?;]{0,80}?\bme\s+(dijo|contó|pidió|confirmó|preguntó|escribió)(?![a-záéíóúñ])/g;
-      var NOT_A_NAME = /^(un|una|unos|unas|el|la|los|las|mi|mis|su|sus|tu|tus|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|cada|ning[úu]n(?:a|o|os|as)?|alg[úu]n(?:a|o|os|as)?|otro|otra|otros|otras|todo|toda|todos|todas|nadie|alguien|también|además|pero|cuando|como|porque|desde|hasta|entre|sobre|con|por|para|en|de|y|o|si|no|me|yo|se|lo|le|nos|ella|él|ellos|ellas|usted|ustedes|eso|esto|aquello|hoy|ayer|mañana|ahora|después|antes|luego|siempre|nunca|jamás|muchos|muchas|pocos|pocas|varios|varias|cierto|cierta|mismo|misma|propio|propia)$/i;
+      /* NOT_A_NAME se define arriba, junto a tNoPlaces. */
       var _mnd;
       while ((_mnd = NAME_DIST_RE.exec(tNoNegSpeech)) !== null) {
         if (!NOT_A_NAME.test(_mnd[1])) return true;
@@ -12433,6 +12450,36 @@
       }
       return false;
     }
+    /* v17.45 · F4c: una cantidad de clientes SUELTA («tengo 150 clientes
+       fijos», «tengo 12 clientes fijos») NO es el ejemplo real: es un
+       inventario, no un episodio. La cantidad solo cuenta cuando viene
+       pegada a una acción de los clientes en la misma frase («150
+       clientes al mes vuelven y recomiendan», «250 clientes al mes …
+       6 de cada 10 … ya no vuelven»): la persona es concreta y lo que
+       hizo también. Sin acción, la cita pelada que la acompaña («un
+       cliente me dijo que le gustó») tampoco es el caso — la regla
+       v17.38 sigue, y la cita con episodio sigue valiendo por el
+       detector de episodio citado. La cantidad sin acción no es el
+       caso. Las formas que también son sustantivos («prueba»,
+       «reserva», «dejo», «quedan») NO van en la lista: «Mi prueba
+       pública es que tengo 150 clientes fijos» no es un episodio.
+       Regla general (v17.45): el caso
+       exige un episodio real, no una cita y no unos números. */
+    function hasClientCountWithAction(text) {
+      var t = String(text || "");
+      var CLIENTS = "(clientes?|clientas?|alumnos?|alumnas?|personas?|compradores?|usuarios?|familias?)";
+      var ACTION = "(vuelven|vuelve|volvieron|compran|compra|compraron|pagan|paga|pagaron|repiten|repite|recomendaron|recomienda|recomiendan|dejaron|deja|dejan|se fueron|se fue|vinieron|viene|vienen|llegaron|llega|llegan|reservaron|reservan|probaron|prueban|pidieron|pide|piden|buscan|busca|buscaron|se quedaron|se qued[oó]|quedaron|no volvieron|no vuelven)";
+      var found = false;
+      splitSentencesSafe(t).forEach(function (sent) {
+        if (found || !sent.trim()) return;
+        var m = new RegExp("(\\d[\\d.,]*)\\s*" + CLIENTS + "\\b", "gi").exec(sent);
+        if (!m) return;
+        var v = parseInt(m[1].replace(/[.,]/g, ""), 10);
+        if (isNaN(v) || v <= 0) return;
+        if (new RegExp("\\b" + ACTION + "(?![a-záéíóúñ])", "i").test(sent)) found = true;
+      });
+      return found;
+    }
     /* v17.36 (WS6) · D1(b): un caso contado con discurso citado y sujeto
        de persona («una vecina me dijo…», «un cliente de siempre me contó…»,
        «una alumna me contó que su mamá…») ES un caso real aunque no lleve
@@ -12561,24 +12608,30 @@
       });
       return found;
     }
-    /* v17.42 · F4b: una pérdida en primera persona con tiempo y
-       mercancía cuantificada («la semana pasada se fue la luz dos
-       horas y perdí una tanda de 30 helados», «la semana pasada se me
-       cayó la navaja y perdí 3 cortes») ES el caso real: qué pasó,
-       cuándo y cuánto se perdió. El sustantivo perdido tiene que ser
-       mercancía o unidades (tanda, cortes, helados, panes, pedidos…),
-       nunca un cliente: «eso me costó 2 alumnas en octubre» sigue sin
-       contar (regla v17.38 / ws6 S3b). El dinero solo («perdí
-       $40.000») tampoco es la pérdida: sin mercancía no hay caso. */
+    /* v17.45 · F4c (caso de recurso): una pérdida en primera persona
+       con tiempo y mercancía cuantificada («la semana pasada se fue la
+       luz dos horas y perdí una tanda de 30 helados», «la semana pasada
+       se me cayó la navaja y perdí 3 cortes») ES el caso real: qué pasó,
+       cuándo y cuánto se perdió. La mercancía ya no es una lista
+       cerrada (v17.45): cualquier unidad que no sea una persona, ni
+       tiempo, ni dinero, es mercancía («20 jugos», «5 galones»,
+       «15 arepas»). Un cliente perdido («eso me costó 2 alumnas en
+       octubre») sigue sin contar (regla v17.38 / ws6 S3b), y el dinero
+       solo («perdí $40.000») tampoco es la pérdida: sin mercancía no
+       hay caso. La causa puede ser externa (se fue la luz) y la
+       pérdida en unidades, no en dinero: el episodio ya está completo
+       sin persona (v17.45). */
     function hasLossIncidentCase(text) {
       var t = String(text || "");
-      var GOODS = "(tanda|tandas|cortes?|helados?|panes?|pedidos?|reservas?|unidades?|ventas?|platos?|tazas?|piezas?|sesiones?|clases?|membres[ií]as?|productos?|art[ií]culos?)";
+      var NOT_GOODS = /^(clientes?|clientas?|alumn[oa]s?|personas?|vecin[oa]s?|comprador[ea]s?|usuari[oa]s?|familias?|emplead[oa]s?|herman[oa]s?|niñ[oa]s?|mam[aá]s?|pap[aá]s?|señor[ea]s?|abuel[oa]s?|espos[oa]s?|hij[oa]s?|trabajador[ea]s?|vendedor[ea]s?|socios?|aliados?|horas?|d[ií]as?|semanas?|meses?|minutos?|pesos?|d[oó]lares?|miles?|millones?|euros?|en|de|del|la|el|los|las|un|una|unos|unas|con|por|para|a|al|y|o|que|se|su|sus|mi|mis|tu|tus|es|son|fue|fueron)$/i;
       var TIME = "(la semana pasada|el mes pasado|ayer|hoy|esta semana|este mes|el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|hace \\d+ (d[ií]as?|semanas?))";
       var found = false;
       splitSentencesSafe(t).forEach(function (sent) {
         if (found || !sent.trim()) return;
         if (!/\b(perd[ií]|perdimos|se me (cay[oó]|dañ[oó]|rompi[oó])|me qued[eé] sin)(?![a-záéíóúñ])/i.test(sent)) return;
-        if (!new RegExp("\\b\\d+\\s*" + GOODS + "\\b", "i").test(sent)) return;
+        var re = /\b\d[\d.,]*\s+([a-záéíóúñ]+)\b/gi, mm, hasGoods = false;
+        while ((mm = re.exec(sent)) !== null) { if (!NOT_GOODS.test(mm[1])) { hasGoods = true; break; } }
+        if (!hasGoods) return;
         if (new RegExp("\\b" + TIME + "\\b", "i").test(sent)) found = true;
       });
       return found;
@@ -12686,7 +12739,11 @@
          de artículo («este mes», «al mes») y con «semana(s)»: una
          cantidad positiva de clientes o un caso con nombre no se
          bloquea por cómo se dice el mes o la semana. */
-      if (/(cliente|cuando|vez que|la vez|pasada|pasado|ayer|la semana|el mes|este mes|al mes|semanas?)/i.test(t) && (hasNamedCase(t) || hasPositiveClientCount(t))) return true;
+      /* v17.45 · F4c: la cantidad de clientes solo vale pegada a una
+         acción (hasClientCountWithAction, v17.45): «tengo 150 clientes
+         fijos» a secas ya no limpia el aviso de caso, y la cita pelada
+         que la acompaña tampoco. */
+      if (/(cliente|cuando|vez que|la vez|pasada|pasado|ayer|la semana|el mes|este mes|al mes|semanas?)/i.test(t) && (hasNamedCase(t) || hasClientCountWithAction(t))) return true;
       /* v17.41 · F4b: el incidente en primera persona con desenlace
          también es el ejemplo real. */
       if (hasFirstPersonIncidentCase(t)) return true;
@@ -14631,21 +14688,29 @@
       if (!label) return "";
       return label === "propio" ? "tu precio propio" : label === "costo" ? "tu costo" : label === "alternativa" ? "lo que cobra la alternativa" : label === "objetivo" ? "tu meta" : (label === "neto" || label === "margen") ? "lo que te queda neto" : label === "cac" ? "tu costo de adquirir un cliente" : label === "techo" ? "tu tope" : label === "ltv" ? "tu valor de vida" : "";
     }
-    /* v17.40 · F2: ancla la etiqueta de una cifra citada a los
-       valores declarados (precio propio, alternativa, costo, neto,
-       CAC, valor de vida): si la cifra es el valor declarado de
-       otro rol, se usa ese rol; si no es el valor declarado del rol
-       que se le daba, la etiqueta se retira y la cifra se cita sin
-       rol. Sin canónico para ese rol, la etiqueta se respeta. */
+    /* v17.45 · F3: la etiqueta la decide el CONTEXTO de la frase, no la
+       identidad de la cifra. Una misma cifra puede ser dos roles a la
+       vez (el precio de la alternativa y mi precio especial: $15.000
+       en los dos): el valor no puede re-etiquetar lo que la frase ya
+       atribuyó («subo el jugo especial a $15.000» es propio aunque
+       $15.000 sea también lo que cobra la alternativa). Solo cuando la
+       frase no da etiqueta («ninguna») se ancla por valor, y
+       solo si un ÚNICO rol coincide: si dos roles comparten el valor,
+       es ambiguo y la cifra se cita sin rol. */
     function fixCitedLabel(value, label) {
-      if (!label) return label;
-      try {
-        var f = contradictionFigures();
-        var canon = { propio: f.cobrado ? f.cobrado.v : null, alternativa: f.alternativa ? f.alternativa.v : null, costo: f.costo ? f.costo.v : null, neto: f.neto ? f.neto.v : null, cac: (f.cac && f.cac.length) ? f.cac[0].v : null, ltv: f.ltv ? f.ltv.v : null };
-        var roles = ["propio", "alternativa", "costo", "neto", "cac", "ltv"];
-        for (var i = 0; i < roles.length; i++) { if (canon[roles[i]] != null && canon[roles[i]] === value) return roles[i]; }
-        if (canon[label] != null && canon[label] !== value) return "";
-      } catch (e) {}
+      if (!label || label === "ninguna") {
+        try {
+          var f = contradictionFigures();
+          var canon = { propio: f.cobrado ? f.cobrado.v : null, alternativa: f.alternativa ? f.alternativa.v : null, costo: f.costo ? f.costo.v : null, neto: f.neto ? f.neto.v : null, cac: (f.cac && f.cac.length) ? f.cac[0].v : null, ltv: f.ltv ? f.ltv.v : null };
+          var roles = ["propio", "alternativa", "costo", "neto", "cac", "ltv"];
+          var match = null, n = 0;
+          for (var i = 0; i < roles.length; i++) { if (canon[roles[i]] != null && canon[roles[i]] === value) { match = roles[i]; n++; } }
+          /* v17.45: un solo rol coincide -> ese rol; dos o ninguno ->
+             sin rol (la cifra se cita sin etiqueta). */
+          return n === 1 ? match : "";
+        } catch (e) { return ""; }
+      }
+      /* v17.45: la etiqueta contextual manda — el valor no la toca. */
       return label;
     }
     function evidenceFoundText(text, q) {
@@ -15889,23 +15954,58 @@
       found.sort(function (a, b) { return a.i - b.i; });
       return found;
     }
-    /* v17.40 · F1: un precio ligado a otra unidad (litro, paquete,
-       docena, kilo, caja, botella…) NUNCA es el precio propio
-       unitario ni el de la alternativa. La unidad propia del negocio
-       (sus palabras de producto) no se descalifica: quien vende por
-       litro, cobra por litro. */
+    /* v17.45 · F3: la unidad tiene que calificar ESTA cifra, no otro
+       producto de la misma frase. La unidad se busca solo en el
+       subtramo de la cifra (entre conjunciones «y/e/o/pero»): «subo el
+       jugo especial a $15.000 y dejo de vender jugo de caja» no
+       descalifica el $15.000, porque «caja» pertenece a la otra
+       decisión. Y un «<producto> de <unidad>» es el NOMBRE del
+       producto, no su unidad («jugo de caja», no «$X por caja»): la
+       unidad va con «por/cada/la/una» o encabeza la cantidad («caja
+       de jugo», «docena de huevos»). La regla v17.40 sigue: «cobro
+       $18.000 por caja» sigue sin ser precio propio unitario. */
     var PACK_UNIT_RE = /\b(litros?|paquetes?|docenas?|kilos?|kilogramos?|cajas?|botellas?|galones?|bultos?|sacos?|canastas?|combos?|libras?|gramos?)\b/i;
     function figureHasOtherUnit(text, sp) {
       try {
-        var clause = figureClause(text, sp.i, sp.len);
-        var m = clause.match(PACK_UNIT_RE);
-        if (!m) return false;
-        var pk = productKeywords(5) || [];
-        var stem = m[0].toLowerCase().replace(/s$/, "");
-        for (var i = 0; i < pk.length; i++) {
-          if (pk[i] && pk[i].toLowerCase().replace(/s$/, "") === stem) return false;
+        var s = String(text || "");
+        var clause = figureClause(s, sp.i, sp.len);
+        /* Inicio de la cláusula (misma regla de corte que
+           figureClause) para situar la cifra dentro de ella. */
+        var start = sp.i;
+        function isBreak(p) {
+          var ch = s[p];
+          if (ch === "!" || ch === "?" || ch === "," || ch === ";" || ch === ":") return true;
+          if (ch === ".") {
+            var prev = p > 0 ? s[p - 1] : "", next = p + 1 < s.length ? s[p + 1] : "";
+            if (/\d/.test(prev) && /\d/.test(next)) return false;
+            return true;
+          }
+          return false;
         }
-        return true;
+        while (start > 0 && !isBreak(start - 1)) start--;
+        var figOff = sp.i - start;
+        /* Subtramo de la cifra: la parte de la cláusula entre
+           conjunciones que contiene a la cifra. */
+        var seg = clause, bounds = [], last = 0, sm;
+        var segRe = /\s+(?:y|e|o|pero)\s+/gi;
+        while ((sm = segRe.exec(clause)) !== null) { bounds.push([last, sm.index]); last = sm.index + sm[0].length; }
+        bounds.push([last, clause.length]);
+        for (var k = 0; k < bounds.length; k++) {
+          if (figOff >= bounds[k][0] && figOff <= bounds[k][1]) { seg = clause.slice(bounds[k][0], bounds[k][1]); break; }
+        }
+        var re = new RegExp(PACK_UNIT_RE.source, "gi"), m;
+        var pk = productKeywords(5) || [];
+        while ((m = re.exec(seg)) !== null) {
+          /* «<producto> de <unidad>» es nombre de producto, no unidad. */
+          if (/\bde\s+$/i.test(seg.slice(0, m.index))) continue;
+          var stem = m[0].toLowerCase().replace(/s$/, "");
+          var exempt = false;
+          for (var i = 0; i < pk.length; i++) {
+            if (pk[i] && pk[i].toLowerCase().replace(/s$/, "") === stem) { exempt = true; break; }
+          }
+          if (!exempt) return true;
+        }
+        return false;
       } catch (e) { return false; }
     }
     /* v17.40 · F1: el precio propio puede venir pelado, sin $
@@ -16001,7 +16101,12 @@
          pagarme $25.000» es el precio propio dicho en condicional —
          sin ella, ningún $25.000 de la lavandería se etiquetaba como
          propio y la ficha no tenía con qué contrastar la alternativa. */
-      var propioBeforePat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|el\\s+precio\\s+es|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar)";
+      /* v17.45 · F3: «subo/subir el precio a $X» es ancla propia: quien
+         sube su precio es el dueño («subo el jugo especial a $15.000»,
+         «subir la pintura premium a $95.000»). Sin ella, la cifra
+         quedaba sin etiqueta y fixCitedLabel la re-etiquetaba
+         por valor. */
+      var propioBeforePat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|el\\s+precio\\s+es|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar|subo|subir)";
       var o = lastIdx(before, propioBeforePat);
       /* v17.30 (WS6) · El ancla «el precio es» es DEBIL: un «yo cobro /
          mi precio / me pagan» atribuye en firme, pero un «el precio
@@ -16010,7 +16115,7 @@
          si hay un ancla en primera persona; sin ella, el antes no
          decide todavia y el despues puede reclamar la cifra como
          techo o alternativa (ver weakOwn abajo). */
-      var propioStrongPat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar)";
+      var propioStrongPat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar|subo|subir)";
       var oStrong = lastIdx(before, propioStrongPat);
       /* v17.32 (WS3) · «Me paga» con sujeto rival: en «la competencia
          me paga $X» quien paga es la competencia, no el cliente del
