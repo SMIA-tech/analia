@@ -7057,7 +7057,9 @@
       return best;
     }
     /* Todas las cifras de un texto, cada una con su unidad y su clase,
-       en el orden en que aparecen. Reutiliza moneySpans (v17.24 WS1). */
+       en el orden en que aparecen. Reutiliza moneySpans (v17.24 WS1).
+       v17.46 · F2b: las etiquetas que devuelve ya reconocen el pago en
+       plural («mis clientes pagan», «N pagos de»). */
     function moneyFigures(text) {
       var s = String(text || "");
       var spans = moneySpans(s);
@@ -12385,9 +12387,15 @@
        tampoco cuenta: es la misma forma que el pago sin nombre que la
        regla v17.38 deja fuera. Lo habitual («cada semana», «siempre»)
        no es un episodio: sin fecha que lo ancle, no cuenta. */
+    /* v17.46 · F4b: la lista de papeles crece — un caso con rol definido
+       («un novio», «la dueña de una casa», «un vecino») + acción
+       concreta + pago/decisión basta, con o sin nombre, con o sin
+       fecha. «Cliente» NO entra: «un cliente me pagó $X» es la forma
+       canónica de la cita pelada (v17.38/F4c) y debe seguir sin
+       contar. La cita pelada sigue sin contar (v17.38/v17.44). */
     function hasRoleActionCase(text) {
       var t = stripNegatedCase(String(text || ""));
-      var ROLES = "(mam[aá]|madre|pap[aá]|padre|vecin[oa]s?|señor[a]?s?|señora|tender[oa]s?|dueñ[oa]s?|alumn[oa]s?|herman[oa]s?|abuel[oa]s?|niñ[oa]s?|comprador[a]?s?|usuari[oa]s?|familia|espos[oa]|mototaxista|jefe|jefa)";
+      var ROLES = "(mam[aá]|madre|pap[aá]|padre|vecin[oa]s?|señor[a]?s?|señora|tender[oa]s?|dueñ[oa]s?|alumn[oa]s?|herman[oa]s?|abuel[oa]s?|niñ[oa]s?|comprador[a]?s?|usuari[oa]s?|familia|espos[oa]|mototaxista|jefe|jefa|novi[oa]s?|amig[oa]s?|compañer[oa]s?|prim[oa]s?|tí[oa]s?|estudiant[ea]s?|profesor[a]?s?|turist[oa]s?|visitant[ea]s?|hu[ée]sped[ea]s?|conocid[oa]s?|coleg[oa]s?|soci[oa]s?|parient[ea]s?|suegr[oa]s?|cuñad[oa]s?|sobrin[oa]s?|pasajer[oa]s?|pacient[ea]s?)";
       var ACTION = "(paga|pagan|pag[oó]|pagaron|pidi[oó]|pidieron|pide|piden|compr[oó]|compraron|compra|compran|vin[oi]|vino|vinieron|viene|vienen|lleg[oó]|llegaron|llega|llegan|volvi[oó]|volvieron|vuelve|vuelven|prob[oó]|probaron|prueba|prueban|reserv[oó]|reservaron|reserva|reservan|dej[oó]|dejaron|deja|dejan|busc[oó]|buscaron|busca|buscan|escribi[oó]|escribieron|escribe|escriben|llam[oó]|llamaron|llama|llaman|visit[oó]|visitaron|visita|visitan|me recomend[oó]|me recomienda|me eligi[oó]|me elige|me pidi[oó]|me pide)";
       var TIME = "(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \\d+ (d[ií]as?|semanas?)|este mes|el \\w+ pasado)";
       var HABITUAL = "(cada (semana|mes|d[ií]a|vez)|siempre|todos los d[ií]as|por lo general|suele|suelen|a menudo|cada vez que)";
@@ -12751,7 +12759,8 @@
       if (hasNamedActionCase(t)) return true;
       /* v17.42 · F4b: la pérdida con mercancía cuantificada también es el ejemplo real. */
       if (hasLossIncidentCase(t)) return true;
-      /* v17.43 · F4b: el caso con persona identificada por su papel y acción concreta también es el ejemplo real. */
+      /* v17.43 · F4b: el caso con persona identificada por su papel y acción concreta también es el ejemplo real.
+         v17.46 · F4b: la lista de papeles crece (novio, cliente, amigo…) — un caso con rol definido + acción + pago/decisión basta, con o sin nombre. */
       if (hasRoleActionCase(t)) return true;
       /* v17.44 · F4b: el caso contado con discurso citado y episodio
          concreto también es el ejemplo real (ver hasQuotedEpisodeCase).
@@ -14673,7 +14682,13 @@
         if (f.v === cited.v) return;
         if (seen[f.v]) return;
         seen[f.v] = true; extra++;
-        if (f.label && f.label !== "ninguna" && extraLabels.indexOf(f.label) < 0) extraLabels.push(f.label);
+        /* F2b: la etiqueta de una cifra «más» pasa por la misma regla
+           que la cifra citada (fixCitedLabel): antes, una cifra propia
+           sin ancla contextual («Lavo ropa a $4.000») quedaba «ninguna»
+           y el «y 1 cifra más» salía sin rol, aunque el valor la
+           anclara a «tu precio propio». */
+        var fixedLab = fixCitedLabel(f.v, f.label);
+        if (fixedLab && extraLabels.indexOf(fixedLab) < 0) extraLabels.push(fixedLab);
       });
       return { value: cited.v, label: cited.label, unit: cited.unit, kind: cited.kind, extraCount: extra, extraLabels: extraLabels };
     }
@@ -14688,6 +14703,10 @@
       if (!label) return "";
       return label === "propio" ? "tu precio propio" : label === "costo" ? "tu costo" : label === "alternativa" ? "lo que cobra la alternativa" : label === "objetivo" ? "tu meta" : (label === "neto" || label === "margen") ? "lo que te queda neto" : label === "cac" ? "tu costo de adquirir un cliente" : label === "techo" ? "tu tope" : label === "ltv" ? "tu valor de vida" : "";
     }
+    /* v17.46 · F2b: con las anclas plurales, la cita de un pago propio
+       («mis clientes ya pagan $30.000», «12 pagos de $30.000») ya no
+       cae en el anclaje por valor: el contexto manda y el valor solo
+       decide cuando la frase no da etiqueta. */
     /* v17.45 · F3: la etiqueta la decide el CONTEXTO de la frase, no la
        identidad de la cifra. Una misma cifra puede ser dos roles a la
        vez (el precio de la alternativa y mi precio especial: $15.000
@@ -16106,7 +16125,16 @@
          «subir la pintura premium a $95.000»). Sin ella, la cifra
          quedaba sin etiqueta y fixCitedLabel la re-etiquetaba
          por valor. */
-      var propioBeforePat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|el\\s+precio\\s+es|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar|subo|subir)";
+      /* v17.46 · F2b: el pago en tercera persona o plural también es
+         precio propio: «mis clientes (ya) pagan $X», «las vecinas
+         pagan $X» y «N pagos de $X» — el sujeto y el verbo muestran
+         que el precio es del dueño, aunque el valor coincida con el
+         de la alternativa. */
+      var propioBeforePat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|el\\s+precio\\s+es|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar|subo|subir|(mis\\s+)?clientes?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?clientas?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?vecin[oa]s?\\s+(ya\\s+)?pagan\\b|((\\d+|los|las|un|el)\\s+pagos?\\s+de\\b))";
+      /* v17.46 · F2b: las anclas plurales de propioBeforePat y
+         propioStrongPat se leen aquí (y la guarda de rival como
+         destinatario, abajo, las anula cuando el pago va a la
+         alternativa). */
       var o = lastIdx(before, propioBeforePat);
       /* v17.30 (WS6) · El ancla «el precio es» es DEBIL: un «yo cobro /
          mi precio / me pagan» atribuye en firme, pero un «el precio
@@ -16115,7 +16143,9 @@
          si hay un ancla en primera persona; sin ella, el antes no
          decide todavia y el despues puede reclamar la cifra como
          techo o alternativa (ver weakOwn abajo). */
-      var propioStrongPat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar|subo|subir)";
+      /* v17.46 · F2b: la lista fuerte lleva las mismas anclas plurales
+         que propioBeforePat (sin «el precio es», que sigue siendo débil). */
+      var propioStrongPat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar|subo|subir|(mis\\s+)?clientes?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?clientas?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?vecin[oa]s?\\s+(ya\\s+)?pagan\\b|((\\d+|los|las|un|el)\\s+pagos?\\s+de\\b))";
       var oStrong = lastIdx(before, propioStrongPat);
       /* v17.32 (WS3) · «Me paga» con sujeto rival: en «la competencia
          me paga $X» quien paga es la competencia, no el cliente del
@@ -16135,6 +16165,19 @@
         var negRe = new RegExp(propioBeforePat, "gi"), negM, negEnd = -1;
         while ((negM = negRe.exec(before)) !== null) { if (negM.index === o) negEnd = negM.index + negM[0].length; if (negM.index === negRe.lastIndex) negRe.lastIndex++; }
         if (negEnd >= 0 && /\bno\s+es\b/i.test(before.slice(negEnd))) { o = -1; oStrong = -1; }
+      }
+      /* v17.46 · F2b: el ancla de pago en plural («mis clientes pagan»,
+         «12 pagos de») atribuye precio propio — pero solo cuando el
+         pago es AL dueño: si la frase dice que pagan POR la
+         alternativa («mis clientes pagan $30.000 por la alternativa»),
+         el pago es de la alternativa, no propio. El rival como
+         destinatario, pegado detrás de la cifra, anula el ancla plural
+         y la frase decide. */
+      if (o >= 0) {
+        var oTxt46 = before.slice(o);
+        if (/^(mis\s+)?(clientes?|clientas?|vecin[oa]s?)\s+(ya\s+)?pagan\b/i.test(oTxt46) || /^((\d+|los|las|un|el)\s+pagos?\s+de\b)/i.test(oTxt46)) {
+          if (/^\s*(por|a)\s+(la\s+)?(alternativa|competencia|otro\s+negocio|la\s+cadena)\b/i.test(after)) { o = -1; oStrong = -1; }
+        }
       }
       var weakOwn = false;
       var a = lastIdx(before, "(alternativa|competencia|convencional|empanada|la\\s+otra\\s+opci[oó]n|lo\\s+que\\s+paga\\s+hoy|paga\\s+hoy\\s+por|otro\\s+negocio|en\\s+la\\s+calle)");
@@ -16277,10 +16320,15 @@
            cuando la frase mezcla dos cifras con etiquetas distintas
            (precio propio y alternativa en la misma frase): la marca de
            alternativa de la frase no es de ESTA cifra. Sin ancla propia
-           en la frase, la atribución por frase sigue valiendo. */
+           en la frase, la atribución por frase sigue valiendo.
+           v17.46 · F2b: la guarda dispara también con una atribución explícita de la alternativa a SU cifra («la alternativa cobra $X»), y la lista de anclas propias es la fuerte completa, no un subconjunto. */
         var ws6Sent = figureSentence(s, idx, spanLen);
         if (/(alternativa|competencia|convencional)/i.test(ws6Sent)) {
-          if (moneySpans(ws6Sent).length >= 2 && /(yo\s+cobro|cobro|mi\s+precio|\bvendo\b|\bdoy\b|\bofrezco\b|me\s+pagan|me\s+paga\b)/i.test(ws6Sent)) return "ninguna";
+          /* v17.46 · F2b: la guarda ya no usa un subconjunto de anclas
+             propias: usa la lista fuerte completa (con «clientes
+             pagan» y «pagos de») y dispara también cuando la frase
+             atribuye explícitamente una cifra a la alternativa. */
+          if (moneySpans(ws6Sent).length >= 2 && (new RegExp(propioStrongPat, "i").test(ws6Sent) || /(alternativa|competencia|convencional|otro\s+negocio|la\s+cadena)\s+(cobra|cobran|vende|venden|pide|piden|ofrece|ofrecen)\b/i.test(ws6Sent) || /(cobra|cobran|vende|venden|pide|piden|ofrece|ofrecen)\s+(la\s+)?(alternativa|competencia|convencional|otro\s+negocio|la\s+cadena)\b/i.test(ws6Sent))) return "ninguna";
           return "alternativa";
         }
         return "ninguna";
@@ -17600,6 +17648,8 @@
         freezeDiagnosis();
         buildOkrsIfNeeded();
         var idx = MODULES.indexOf(m);
+        /* v17.46 · UX: «next» alimenta el botón de continuar, que ahora va
+           después de «Lo que yo veo», al final del diálogo (ver abajo). */
         var next = MODULES[idx + 1];
         var gaps = [];
         /* v17.24 · Un hueco es hueco por el VEREDICTO, no solo por la
@@ -17672,6 +17722,10 @@
            también se responde donde se muestra — el mismo botón que en
            el chat del componente abierto. */
         if (contraDone && contraDoneMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contraDone.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(clarResponderTarget(contraDone)) + '" data-contra-key="' + esc(contraDone.key) + '">Responder esta aclaración</button>', "micro"); /* v17.42 · F8: el destino se calcula al pintar */
+        /* v17.46 · UX: el botón de continuar se guarda para después de
+           «Lo que yo veo» (nextBtnHtml46); en C13 sin cerrar no hay
+           botón de continuar, solo «Rehacer componente». */
+        var nextBtnHtml46 = "";
         if (m.id === "M13" && !taskComplete13()) {
           /* Cierre de C13 con la tarea del Coach: las preguntas están
              completas, pero el componente NO queda completado en su
@@ -17728,13 +17782,21 @@
           }
           if (m.id === "M13" && taskReported()) t += taskDoneBubbles() + okrMeasurementBubble("C13");
           if (m.id === "M14") t += okrMeasurementBubble("C14");
+          /* v17.46 · UX: el botón de continuar ya no va aquí arriba: se
+             guarda en nextBtnHtml46 y se pinta DESPUÉS de «Lo que yo
+             veo», al final del diálogo. «Rehacer componente» queda en
+             la burbuja de completado. */
           t += systemBubble("✓ <strong>" + esc(m.name) + " completado.</strong> Tus informes de este bloque ya están en la sección Informes." +
-            (next ? ' &nbsp;<button class="btn small primary" id="btnNextMod">Seguir con ' + codeOf(next.id) + " · " + esc(next.name) + "</button>" : ' &nbsp;<button class="btn small primary" id="btnGoPlan">Ver mi plan de negocio</button>') +
             ' &nbsp;<button class="btn small" id="btnRedo">' + (ui.redoConfirmFor === m.id ? "¿Seguro? Se borran las respuestas de este componente — toca de nuevo para confirmar" : "Rehacer componente") + "</button>" );
+          nextBtnHtml46 = (next ? '<button class="btn small primary" id="btnNextMod">Seguir con ' + codeOf(next.id) + " · " + esc(next.name) + "</button>" : '<button class="btn small primary" id="btnGoPlan">Ver mi plan de negocio</button>');
         }
         /* v17.34 (WS4) · F5b: el texto completo de «Lo que yo veo» queda
            en la revisión de cierre, como segunda superficie. */
         t += microDiagFullRecordBubble(m);
+        /* v17.46 · UX: continuar va al final del diálogo, después de
+           «Lo que yo veo». Los IDs no cambian y los listeners de abajo
+           siguen valiendo. */
+        if (nextBtnHtml46) t += systemBubble(nextBtnHtml46);
       }
       /* v17.20 · Investigar en el chat actual: la última búsqueda sin
          mostrar aparece aquí mismo, aunque ya hayas avanzado de
@@ -17788,6 +17850,8 @@
       applySearch(ui.searchQuery || "");
       var bg = $("btnGoBlocker");
       if (bg && blocker) bg.addEventListener("click", function () { clearActiveMode(); ui.module = blocker.id; ui.awaitingProbe = null; ui.pendingShort = null; hideNudge(); renderChat(); });
+      /* v17.46 · UX: los botones se movieron al final del diálogo, pero
+         los IDs no cambian y estos listeners siguen valiendo. */
       var bn = $("btnNextMod");
       if (bn) bn.addEventListener("click", function () { clearActiveMode(); ui.module = MODULES[MODULES.indexOf(m) + 1].id; renderChat(); });
       var bp = $("btnGoPlan");
