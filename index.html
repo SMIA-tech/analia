@@ -290,7 +290,7 @@
       #view-chat { max-width: none; padding: 0; display: none; height: 100dvh; flex-direction: column; }
       #view-chat.active { display: flex; }
       .chat-top { padding: 20px 30px 0; max-width: 1440px; width: 100%; margin: 0 auto; }
-      .module-select-row { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }
+      .module-select-row { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; flex-wrap: wrap; }
       .module-select-row label { font-size: 13px; font-weight: 700; color: var(--muted); white-space: nowrap; }
       .module-select { flex: 1; min-width: 0; max-width: 480px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 700; font-family: inherit; }
       .chip:disabled { opacity: .45; cursor: not-allowed; }
@@ -860,8 +860,14 @@
       @keyframes blinkc { 50% { opacity: 0; } }
       .typing-indicator .bubble { font-style: italic; color: var(--muted); }
       .typing-indicator .dots::after { content: "…"; animation: blinkc 1s steps(1) infinite; }
-      .chat-search { display: flex; gap: 8px; margin: 10px 0 2px; }
-      .chat-search input { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); padding: 8px 12px; font: inherit; font-size: 14px; }
+      /* v17.48 · La búsqueda vive EN la fila del Componente (a la
+         derecha, corta): su fila propia desaparece y el hilo gana
+         ese espacio. margin-left auto la empuja a la derecha; el
+         input, con tope de 280 px, ya no ocupa todo el ancho. En
+         pantallas angostas la fila envuelve y la búsqueda cae debajo
+         sin desbordar. */
+      .chat-search { display: flex; gap: 8px; margin: 0 0 0 auto; flex: 0 1 auto; }
+      .chat-search input { flex: 1 1 180px; min-width: 120px; max-width: 280px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); padding: 8px 12px; font: inherit; font-size: 14px; }
       .chat-search input:focus { outline: 2px solid var(--accent); border-color: transparent; }
       .msg.dim { opacity: .32; }
       .msg.hit .bubble { outline: 2px solid var(--gold-bright); }
@@ -1245,8 +1251,7 @@
               <button class="btn small" id="btnCanvasSide" type="button" aria-expanded="false" title="Mostrar u ocultar el bloque del lienzo junto al chat">Lienzo <span class="chev">▾</span></button>
             </div>
             <div class="save-status" id="saveStatusChat" role="status"></div>
-            <div class="module-select-row"><label for="moduleTabs">Componente</label><select class="module-select" id="moduleTabs" aria-label="Elegir componente"></select></div>
-            <div class="chat-search"><input id="chatSearch" type="search" placeholder="Buscar en esta conversación…" aria-label="Buscar en la conversación" /><button class="btn small" id="chatSearchClear" type="button">Limpiar</button></div>
+            <div class="module-select-row"><label for="moduleTabs">Componente</label><select class="module-select" id="moduleTabs" aria-label="Elegir componente"></select><div class="chat-search"><input id="chatSearch" type="search" placeholder="Buscar en esta conversación…" aria-label="Buscar en la conversación" /><button class="btn small" id="chatSearchClear" type="button">Limpiar</button></div></div>
           </div>
           <div class="chat-grid" id="chatGrid">
             <div class="chat-col">
@@ -8032,7 +8037,9 @@
                $1.500.000 al mes en membresías») también. La etiqueta
                «por la membresía» es unidad del precio, no fuente. */
             var ws5IsCobro = /^\s*cobr[oa]\s*$/i.test(ws5Before);
-            if (/factur|en total|mis ingresos son/i.test(ws5Before) || ws5IsCobro) {
+            /* v17.48 F6: «vendo» pelado, igual que «cobro» pelado. */
+            var ws5IsVendo48 = /^\s*vend\w*\s*$/i.test(ws5Before);
+            if (/factur|en total|mis ingresos son/i.test(ws5Before) || ws5IsCobro || ws5IsVendo48) {
               var ws5NextStart = (mi + 1 < mfigs.length) ? mfigs[mi + 1].i : ch.length;
               var ws5After = ch.slice(mf.i + (mf.len || 0), ws5NextStart);
               var ws5Term = ws5After.search(/[.!?]/);
@@ -8044,8 +8051,16 @@
             /* v17.35 (WS5) · F11: la etiqueta sale de la cláusula de
                ESTA fuente, no del trozo entero: antes, todas las
                fuentes de un trozo heredaban la primera etiqueta
-               («en el local» para las tres). */
-            sources.push({ v: mf.v, label: incomeSourceLabel(mclause, sources.length) });
+               («en el local» para las tres).
+               v17.48 F6: la misma fuente repetida dentro de un texto
+               («cocadas $2.400.000… y las cocadas $2.400.000») no se
+               suma dos veces: mismo valor + misma etiqueta = una sola
+               fuente. Dos fuentes distintas con el mismo valor sí
+               cuentan (etiquetas distintas). */
+            var ws5Lab48 = incomeSourceLabel(mclause, sources.length);
+            var ws5Dup48 = sources.some(function (s0) { return s0.v === mf.v && (s0.label === ws5Lab48 || /^fuente \d+$/i.test(ws5Lab48)); });
+            if (ws5Dup48) continue;
+            sources.push({ v: mf.v, label: ws5Lab48 });
           }
           return;
         }
@@ -10284,11 +10299,21 @@
       if (stableStringify(contraArr) !== stableStringify(a.contradictions || [])) { changed = true; adoptedFromB = true; }
       /* v17.36 (WS6) · (h): una aclaración resuelta EN el módulo rehecho
          (ancla resolvedModule) y anterior a su lápida no resucita: su
-         evidencia se borró con el módulo. */
+         evidencia se borró con el módulo.
+         v17.48 · F1: esa regla borraba también las CORRECCIONES reales
+         (una aclaración resuelta —p. ej. el CAC contestado desde el
+         Resumen con «Responder», que aterriza en C0 y se ancla en C0):
+         al rehacer C0 la fusión las tiraba y la aclaración reabría.
+         Espejo del filtro del rehacer (v17.47 P03): una corrección
+         resuelta sobrevive al rehacer de su módulo; solo las
+         aclaraciones de precio («precio-aclarado») y de reto
+         («reto-usado») —cuya evidencia sí se borró— siguen cayendo,
+         y un registro SIN resolver sigue la regla vieja. */
       contraArr = contraArr.filter(function (rec) {
         if (!rec || !rec.resolvedModule) return true;
         var T3 = rtMerged[rec.resolvedModule]; if (!T3 || !T3.at) return true;
         var rat = rec.resolvedAt || rec.at || "";
+        if (rec.status === "resolved" && rec.key !== "precio-aclarado" && rec.key !== "reto-usado") return true;
         return rat ? rat > T3.at : false;
       });
       out.contradictions = contraArr;
@@ -12542,8 +12567,13 @@
         if (!hasDetail) return;
         /* Un pago al dueño sin más no es el caso: «una vecina me pagó
            $30.000» sin fecha, sin objeto y sin segunda cláusula es la
-           forma que la regla v17.38 deja fuera. */
-        if (/\bme\s+(pag[oó]|paga|pagaron|pagan)(?![a-záéíóúñ])/i.test(s) && !hasTime && !/(?:\b(el|la|los|las|un|una|unos|unas)\s+\w+\s+de\s+(sus|su|mi|los|las)\s+\w+|\bpor (instagram|facebook|whatsapp)|\bpara (una )?(boda|fiesta|entrevista|evento)|\bcotizaci[oó]n)/i.test(s) && !/[:;]/.test(s)) return;
+           forma que la regla v17.38 deja fuera.
+           v17.48 F3: pagar POR una cosa nombrada («por una cocada»)
+           y la comparación («en otro lado le cobraban $5.000») son
+           el detalle concreto que salva el caso, igual que «por
+           Instagram» y «cotización»: una paráfrasis que suelta el
+           «por Instagram» ya no mata el caso. */
+        if (/\bme\s+(pag[oó]|paga|pagaron|pagan)(?![a-záéíóúñ])/i.test(s) && !hasTime && !/(?:\b(el|la|los|las|un|una|unos|unas)\s+\w+\s+de\s+(sus|su|mi|los|las)\s+\w+|\bpor (instagram|facebook|whatsapp)|\bpor (un|una|el|la|unos|unas)\s+\w+|\ben otro (lado|sitio|lugar)|\bpara (una )?(boda|fiesta|entrevista|evento)|\bcotizaci[oó]n)/i.test(s) && !/[:;]/.test(s)) return;
         found = true;
       });
       return found;
@@ -12760,7 +12790,7 @@
       splitSentencesSafe(t).forEach(function (s) {
         /* v17.42 · F4b: el caso con nombre + acción de cliente también cuenta. */
         /* v17.42 · F4b: la pérdida con mercancía cuantificada también cuenta. */
-        if (hasNumberedClientCase(s) || hasNamedCase(s) || hasQuotedPersonCase(s) || hasFirstPersonIncidentCase(s) || hasNamedActionCase(s) || hasLossIncidentCase(s) || hasRoleActionCase(s)) n++;
+        if (hasNumberedClientCase(s) || hasNamedCase(s) || hasQuotedPersonCase(s) || hasFirstPersonIncidentCase(s) || hasNamedActionCase(s) || hasLossIncidentCase(s) || hasRoleActionCase(s) || hasDefectionCase(s)) n++;
       });
       return n;
     }
@@ -12775,6 +12805,41 @@
        exigeGap mide (con la dispensa del cero honesto): si la pregunta
        no pide caso, o el caso ya está, o el dueño declaró un cero
        honesto, no hay nada que volver a pedir. */
+    /* v17.48 F4: un cero honesto DE CASO — el dueño declara que no
+       tiene casos/clientes/personas («no tengo casos», «0 clientes»,
+       «nunca he tenido un caso») — dispensa la repregunta del caso.
+       Un cero de OTRA cosa («0 reseñas», «no tengo ventas») NO
+       dispensa: el caso que falta es de cliente, no de reseñas.
+       Antes, honestZero (cualquier cero) dispensaba la repregunta y
+       la cita pelada de reseñas dejaba el hueco abierto sin aviso. */
+    function caseZeroDeclared(ev) {
+      var t = String(ev || "");
+      /* El cero tiene que cuantificar AL CASO, no a otra cosa: «0
+         reseñas: un cliente me dijo…» no es un cero de clientes — el
+         «0» es de las reseñas y el «cliente» viene después. Y
+         «ningún cliente» a secas NO es una declaración de cero:
+         «ningún cliente nuevo puede ver» (visibilidad) y «ningún
+         cliente me paga lo mismo que la alternativa» (cero acotado
+         al precio, con un caso real detrás: Carlos paga $12.000)
+         dispensaban la repregunta y el caso nunca se pedía. La
+         negación tiene que regir al sustantivo como posesión o
+         existencia («no tengo casos», «no hay clientes», «nunca he
+         tenido un caso», «sin clientes»), y entre la negación y el
+         sustantivo solo caben artículos, cuantificadores y el verbo
+         de posesión: cualquier otro verbo («pero tengo», «me dijo»,
+         «me paga», «viene») rompe la dispensa. Equivocarse por no
+         dispensar solo pregunta una vez más; equivocarse por
+         dispensar esconde el hueco. */
+      var re48 = /(no\s+(tengo|tenemos|hay)|no\s+(he|hemos)\s+tenido|nunca|sin)([^.!?;]{0,50}?)\b(casos?|clientes?|clientas?|personas?)\b/gi, mm48;
+      var OK48 = /^(el|la|los|las|un|una|unos|unas|ning[uú]n(a|o|os|as)?|de|del|mis|sus|su|mi|he|hemos|hab[ií]a|tenido|tuve|tuvimos|ni|siquiera|todav[ií]a|a[uú]n|m[aá]s|solo|sola|tampoco)$/i;
+      while ((mm48 = re48.exec(t)) !== null) {
+        var between48 = (mm48[4] || "").toLowerCase().replace(/[.,;:]/g, " ").split(/\s+/).filter(function (w) { return !!w; });
+        if (between48.every(function (w) { return OK48.test(w); })) return true;
+      }
+      if (/(?:^|[^\d])0\s+(de\s+)?(mis\s+|sus\s+)?(casos?|clientes?|clientas?|personas?)\b/i.test(t)) return true;
+      if (/\bcero\s+(de\s+)?(mis\s+|sus\s+)?(casos?|clientes?|clientas?|personas?)\b/i.test(t)) return true;
+      return false;
+    }
     function caseReaskNeeded(m, qi) {
       var q = questionFor(m, qi);
       if (!q) return false;
@@ -12786,7 +12851,7 @@
       var needs = null;
       try { needs = exigeNeeds(q); } catch (e) { needs = null; }
       if (!needs || !needs.example) return false;
-      try { if (honestZero(ev, q)) return false; } catch (e) {}
+      try { if (caseZeroDeclared(ev)) return false; } catch (e) {}
       if (exigeNeedsTwoCases(q)) {
         var cc = 0;
         try { cc = countCases(ev); } catch (e) { cc = 0; }
@@ -12815,6 +12880,23 @@
       try { gap = exigeGap(ev, q); } catch (e) { gap = null; }
       if (!gap) return false;
       return /la fecha o el plazo que pide esta pregunta/.test(gap.text);
+    }
+    /* v17.48 F3: el caso de deserción también es el ejemplo real:
+       una persona que DEJÓ a la competencia y vino por una razón.
+       Exige la deserción explícita + la competencia + una razón; una
+       cita pelada no tiene «dejó» y no entra. No toca ROLES. */
+    function hasDefectionCase(text) {
+      var t = stripNegatedCase(String(text || ""));
+      var found = false;
+      splitSentencesSafe(t).forEach(function (sent) {
+        if (found || !sent.trim()) return;
+        if (!/\b(clienta|cliente|clientas|clientes|vecin[oa]s?|señor[a]?s?|usuari[oa]s?|comprador[a]?s?|personas?|familia|mam[aá]|pap[aá]|herman[oa]s?|amig[oa]s?)\b/i.test(sent)) return;
+        if (!/\b(dej[oó]|dejaron|dejaba|dejaban|abandon[oó]|abandonaron)\b/i.test(sent)) return;
+        if (!/\b(otra|otro|la competencia|el otro negocio|la otra tienda|la otra dulcer[ií]a)\b/i.test(sent)) return;
+        if (!/\b(porque|ya no|faltaba|faltaban|cerr[oó]|cerraron)\b/i.test(sent)) return;
+        found = true;
+      });
+      return found;
     }
     function hasExample(text) {
       var t = stripNegatedCase(String(text || ""));
@@ -12868,6 +12950,8 @@
       /* v17.43 · F4b: el caso con persona identificada por su papel y acción concreta también es el ejemplo real.
          v17.46 · F4b: la lista de papeles crece (novio, cliente, amigo…) — un caso con rol definido + acción + pago/decisión basta, con o sin nombre. */
       if (hasRoleActionCase(t)) return true;
+      /* v17.48 · F3: el caso de deserción también es el ejemplo real. */
+      if (hasDefectionCase(t)) return true;
       /* v17.44 · F4b: el caso contado con discurso citado y episodio
          concreto también es el ejemplo real (ver hasQuotedEpisodeCase).
          La regla v17.38 sigue valiendo para la cita sin episodio. */
@@ -13094,12 +13178,20 @@
       var NUM = "(\\d+|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cincuenta|cien)";
       var BASE = new RegExp("\\b" + NUM + "\\s*(horas?|minutos?|d[ií]as?|semanas?|meses?)\\b|\\b(unos|unas)?\\s*" + NUM + "\\s*(al mes|al d[ií]a|a la semana|por mes|por d[ií]a)\\b", "i");
       var FUTURE = /(voy a|pienso|creo|supongo|espero|quiero|planeo|voy a probar|lo voy a)/i;
+      /* v17.48 F5: un plazo pelado («en los últimos dos meses», «hace
+         3 meses», «cada mes») dice CUÁNDO, no QUÉ se midió: no es una
+         base observada. La base exige un marcador de fenómeno en la
+         cláusula: una espera, un conteo observado, una demora en
+         responder («espera unas 2 horas», «se fueron 3», «conté 5»).
+         Un «lo vi» pelado («Lo vi en mis ventas») tampoco es base:
+         no dice qué se vio. */
+      var PHENOM48 = /(espera|esperan|tarda|tardan|demora|demoran|sin respuesta|sin contestar|se fue|se fueron|se van|dej[oó]|dejaron|perd[ií]|perdi[oó]|cont[eé]|contamos|med[ií]|medimos|viene|vienen|llegan|lleg[oó]|vi que|not[eé]|noto|respondo|responden|contest[oó]|contest[eé]|atiendo|atienden)/i;
       var found = false;
       t.split(/[.;!?\n]+/).forEach(function (cl) {
         if (found || !cl.trim()) return;
         if (HYPO.test(cl)) return;
         if (FUTURE.test(cl)) return;
-        if (BASE.test(cl)) found = true;
+        if (BASE.test(cl) && PHENOM48.test(cl)) found = true;
       });
       return found;
     }
@@ -14793,10 +14885,15 @@
            sin ancla contextual («Lavo ropa a $4.000») quedaba «ninguna»
            y el «y 1 cifra más» salía sin rol, aunque el valor la
            anclara a «tu precio propio». */
-        var fixedLab = fixCitedLabel(f.v, f.label);
+        var fixedLab = fixCitedLabel(f.v, f.label, t, f.i, f.len);
         if (fixedLab && extraLabels.indexOf(fixedLab) < 0) extraLabels.push(fixedLab);
       });
-      return { value: cited.v, label: cited.label, unit: cited.unit, kind: cited.kind, extraCount: extra, extraLabels: extraLabels };
+      /* v17.48 F2: la misma cifra con dos roles contextuales distintos
+         («$5.000» propio en una frase y de la alternativa en otra) no
+         se cita con rol: el valor no decide entre los dos. */
+      var clash48 = figs.some(function (f) { return f.v === cited.v && f.label && f.label !== "ninguna" && f.label !== cited.label; });
+      if (clash48) cited = { v: cited.v, label: "ninguna", unit: cited.unit, kind: cited.kind, i: cited.i, len: cited.len };
+      return { value: cited.v, label: cited.label, unit: cited.unit, kind: cited.kind, extraCount: extra, extraLabels: extraLabels, idx: cited.i, len: cited.len };
     }
     /* v17.38 · El tipo de una cifra («tu precio», «lo que cobra la
        alternativa»...) va junto a la cifra que describe, dentro del
@@ -14822,11 +14919,39 @@
        frase no da etiqueta («ninguna») se ancla por valor, y
        solo si un ÚNICO rol coincide: si dos roles comparten el valor,
        es ambiguo y la cifra se cita sin rol. */
-    function fixCitedLabel(value, label) {
+    function fixCitedLabel(value, label, text, figureIdx, figureLen) {
       if (!label || label === "ninguna") {
         try {
           var f = contradictionFigures();
           var canon = { propio: f.cobrado ? f.cobrado.v : null, alternativa: f.alternativa ? f.alternativa.v : null, costo: f.costo ? f.costo.v : null, neto: f.neto ? f.neto.v : null, cac: (f.cac && f.cac.length) ? f.cac[0].v : null, ltv: f.ltv ? f.ltv.v : null };
+          /* v17.48 F2: el anclaje por valor lo gobierna la CLÁUSULA
+             donde está la cifra, no el valor solo (la frase entera
+             puede traer dos cifras con dos roles: «La alternativa
+             cobra $5.000 por café, y $18.000 por un desayuno completo;
+             yo cobro $5.000 por café» — la cláusula de cada cifra es
+             la que dice de quién es). Sin frase (llamada vieja) vale
+             la regla de siempre; con frase, el rol de la cláusula
+             manda: rival («La alternativa pone…», «en otro lado»)
+             solo admite la alternativa; propio («me paga», «tengo»,
+             «compran», «el especial»…) solo admite el precio propio;
+             y una cifra mensual sin marca por unidad es un total, no
+             un precio — no admite ningún rol. */
+          if (text != null && figureIdx != null) {
+            /* v17.48 F2: el tramo de la cifra («$5.000,») se traga la
+               coma que sigue (el dígito con separador de miles la
+               incluye): la cláusula se calcula hasta el último dígito,
+               o se comería la cláusula siguiente y su marca de rival. */
+            var effLen48 = figureLen || 0;
+            while (effLen48 > 0 && /[^0-9]/.test(String(text).charAt(figureIdx + effLen48 - 1))) effLen48--;
+            var sent48 = figureClause(String(text), figureIdx, effLen48);
+            var RIVAL48 = /(alternativa|competencia|otro\s+negocio|otra\s+tienda|otro\s+local|la\s+otra|en\s+otro\s+lado|en\s+la\s+calle|lo\s+que\s+paga\s+hoy|paga\s+hoy\s+por|la\s+cadena)/i;
+            var OWN48 = /(yo|mi|mis|me|nosotros|nuestro|clientes?|clientas?|vecin[oa]s?|compran|compro|tengo|vendo|vendemos|cobro|cobramos|ofrezco|dejo|pongo|fijo|sirvo|cuesta|vale|especial|cocada|caf[eé]|arepa|dulce|plato|almuerzo|empanada|jugo|postre|pan|torta|ropa|prenda|servicio|producto|men[úu])/i;
+            var MONTHLY48 = /\b(al mes|por mes|mensual(?:es)?|cada mes)\b/i;
+            var PERUNIT48 = /\bpor\s+(cocada|caf[eé]|venta|plato|almuerzo|noche|habitaci[oó]n|unidad|pieza|producto|servicio|cliente|persona|clase|sesi[oó]n|consulta|pedido|reserva|hora|d[ií]a|semana)\b/i;
+            if (MONTHLY48.test(sent48) && !PERUNIT48.test(sent48)) return "";
+            if (RIVAL48.test(sent48)) return canon.alternativa === value ? "alternativa" : "";
+            if (OWN48.test(sent48)) return canon.propio === value ? "propio" : "";
+          }
           var roles = ["propio", "alternativa", "costo", "neto", "cac", "ltv"];
           var match = null, n = 0;
           for (var i = 0; i < roles.length; i++) { if (canon[roles[i]] != null && canon[roles[i]] === value) { match = roles[i]; n++; } }
@@ -14846,8 +14971,8 @@
          TODAS las demás cifras distintas del texto citado. */
       var cf = citedFigure(t, q);
       if (cf) {
-        var fixedLab = fixCitedLabel(cf.value, cf.label);
-        if (fixedLab !== cf.label) cf = { value: cf.value, label: fixedLab, unit: cf.unit, kind: cf.kind, extraCount: cf.extraCount, extraLabels: cf.extraLabels };
+        var fixedLab = fixCitedLabel(cf.value, cf.label, t, cf.idx, cf.len);
+        if (fixedLab !== cf.label) cf = { value: cf.value, label: fixedLab, unit: cf.unit, kind: cf.kind, extraCount: cf.extraCount, extraLabels: cf.extraLabels, idx: cf.idx, len: cf.len };
         var cfKind = citedKindNoun(cf.label);
         var extrasKind = "";
         if (cf.extraCount > 0 && cf.extraLabels && cf.extraLabels.length === 1) { var ek = citedKindNoun(cf.extraLabels[0]); if (ek) extrasKind = " (" + ek + ")"; }
@@ -16297,6 +16422,29 @@
         var oTxt46 = before.slice(o);
         if (/^(mis\s+)?(clientes?|clientas?|vecin[oa]s?)\s+(ya\s+)?pagan\b/i.test(oTxt46) || /^((\d+|los|las|un|el)\s+pagos?\s+de\b)/i.test(oTxt46)) {
           if (/^\s*(por|a)\s+(la\s+)?(alternativa|competencia|otro\s+negocio|la\s+cadena)\b/i.test(after)) { o = -1; oStrong = -1; }
+        }
+      }
+      /* v17.48 F2: un total mensual no es un precio unitario. Un verbo
+         de venta pelado («vendo $3.200.000 al mes», «me pagan
+         $3.200.000 al mes», «mis clientes pagan $3.200.000 al mes»)
+         no etiqueta el total como precio propio: la cifra es el total
+         del mes, no lo que cobra por unidad. Solo vale cuando la
+         cláusula de la cifra es mensual («al mes», «mensual»…) y no
+         trae marca por unidad («por cocada», «por cliente»…): con
+         marca por unidad («Cobro $4.000 por cocada al mes») el ancla
+         sigue valiendo. Los verbos de fijar precio (poner/dejar/
+         fijar) no pasan por aquí: fijan una unidad, nunca un total. */
+      if (o >= 0) {
+        var oTxt48 = before.slice(o);
+        if (/^(yo\s+|lo\s+|la\s+)?(vendo|vendemos|cobro|cobramos|facturo|facturamos)\b|^(me\s+)?(paga|pagan)\b|^(mis\s+)?(clientes?|clientas?|vecin[oa]s?)\s+(ya\s+)?pagan\b|^((\d+|los|las|un|el)\s+pagos?\s+de\b)/i.test(oTxt48)) {
+          /* v17.48 F2: el tramo de la cifra («$5.000,») se traga la
+             coma que sigue (el dígito con separador de miles la
+             incluye): la cláusula se calcula hasta el último dígito,
+             o se comería la cláusula siguiente y su «al mes». */
+          var effLen48 = spanLen || 0;
+          while (effLen48 > 0 && /[^0-9]/.test(s.charAt(idx + effLen48 - 1))) effLen48--;
+          var cl48 = figureClause(s, idx, effLen48);
+          if (/\b(al mes|por mes|mensual(?:es)?|cada mes)\b/i.test(cl48) && !/\bpor\s+(cocada|caf[eé]|venta|plato|almuerzo|noche|habitaci[oó]n|unidad|pieza|producto|servicio|cliente|persona|clase|sesi[oó]n|consulta|pedido|reserva|hora|d[ií]a|semana)\b/i.test(cl48)) { o = -1; oStrong = -1; }
         }
       }
       var weakOwn = false;
@@ -18541,6 +18689,9 @@
       var sentences = splitSentencesSafe(s);
       for (var si = 0; si < sentences.length; si++) {
         var cl = sentences[si];
+        /* v17.48 F6: una cifra de $0 dentro de un ESCENARIO es una
+           proyección, no una medida de cero ventas. */
+        if (/\b(pesimista|optimista|escenario)\b/i.test(cl)) continue;
         var markers = [];
         var markerStarts = [];
         var reM = /(\btodav[ií]a\s+no\s+(tengo|tenemos|hay)\b|\bno\s+(tengo|tenemos|hay)\b|\bning[uú]n(a|o|os|as)?\b|\b(0|cero|sin)\b)/gi, mm;
@@ -18830,6 +18981,10 @@
       for (var i = 0; i < sentences.length; i++) {
         var cl = sentences[i].trim();
         if (!cl) continue;
+        /* v17.48 F6: una frase de escenario nunca es la declaración
+           de cero del dueño (ver tightZeroSales): ni se cita por el
+           camino estricto ni por el camino suelto. */
+        if (/\b(pesimista|optimista|escenario)\b/i.test(cl)) continue;
         if (tightZeroSales(cl)) return cl.slice(0, 160);
         if (/(?:\$0\b|\b0\b|\bcero\b)/i.test(cl) && /\b(ventas?|clientes?|ingresos?|pedidos?|reservas?|facturaci[oó]n)\b/i.test(cl)) return cl.slice(0, 160);
       }
@@ -20381,6 +20536,26 @@
         rec.steps.push({ probe: probe41, answer: "", kind: "chain", caseReask: true });
         rec.caseReaskAsked = true;
         return true;
+      }
+      /* v17.48 F4: red de seguridad — si el veredicto CONGELADO (el
+         que la auditoría de cierre muestra) todavía trae el hueco del
+         caso y la repregunta del caso nunca se hizo, se pide aunque
+         caseReaskNeeded diga que no (por ejemplo, un cero honesto de
+         reseñas que no es un cero de caso). La auditoría y la
+         repregunta no pueden discrepar: si la auditoría dice que
+         falta el caso, la pregunta se hace. Una sola vez; un cero
+         honesto DE CASO («no tengo casos») sí dispensa. */
+      if (!rec.chainSkipped && !rec.caseReaskAsked) {
+        var vf48 = null;
+        try { vf48 = verdictFor(m.id, qi); } catch (e) { vf48 = null; }
+        var miss48 = vf48 && vf48.miss ? vf48.miss.join(" ") : "";
+        var ev48 = "";
+        try { ev48 = combinedAnswerEvidence(m.id, qi); } catch (e) { ev48 = ""; }
+        if (/el caso o ejemplo real que pide esta pregunta/i.test(miss48) && !caseZeroDeclared(ev48)) {
+          rec.steps.push({ probe: "Todavía me falta el caso o ejemplo real que pide esta pregunta: dame un caso real, ¿quién fue y qué pasó?", answer: "", kind: "chain", caseReask: true });
+          rec.caseReaskAsked = true;
+          return true;
+        }
       }
       /* v17.44 · S3: la cadena estática se agotó y la fecha o el plazo
          que la pregunta exige sigue faltando: se pide explícitamente,
