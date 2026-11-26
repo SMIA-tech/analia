@@ -6784,13 +6784,23 @@
        aclaración). Antes el botón llevaba siempre el ancla o el
        primer módulo (C0 para la brecha) y, si la re-resolución del
        clic fallaba, se navegaba a C0 con el compositor deshabilitado. */
+    /* v17.47 · F3: el destino del «Responder» nunca es un módulo
+       BLOQUEADO: la casilla está deshabilitada por el candado
+       aunque la marca de aclaración esté puesta, así que un
+       destino bloqueado es un callejón sin salida. Se salta el
+       módulo incompleto que no se puede ejecutar (a las 7/15
+       el CAC llevaba a C10, bloqueado por C7–C9) y, si no hay
+       incompleto ejecutable, el ancla solo vale si es
+       ejecutable; C0 nunca está bloqueado. */
     function clarResponderTarget(contra) {
       if (!contra) return "M0";
       var mods = contra.mods || contradictionMods(contra.key) || [];
       var anchor = contra.anchorModule || null;
-      if (anchor && !moduleComplete(anchor)) return anchor;
-      for (var i = 0; i < mods.length; i++) { if (!moduleComplete(mods[i])) return mods[i]; }
-      return anchor || mods[0] || "M0";
+      if (anchor && !moduleComplete(anchor) && canExecuteModule(anchor)) return anchor;
+      for (var i = 0; i < mods.length; i++) { if (!moduleComplete(mods[i]) && canExecuteModule(mods[i])) return mods[i]; }
+      if (anchor && canExecuteModule(anchor)) return anchor;
+      for (var j = 0; j < mods.length; j++) { if (canExecuteModule(mods[j])) return mods[j]; }
+      return "M0";
     }
     document.addEventListener("click", function (e) {
       var b = e.target && e.target.closest ? e.target.closest("[data-answer-contra]") : null;
@@ -6816,11 +6826,18 @@
           var mods41 = oc41.mods || contradictionMods(oc41.key) || [];
           var anchor41 = oc41.resolvedModule || null;
           if (!anchor41) { try { var note41 = openContradiction(); if (note41 && note41.key === oc41.key) anchor41 = note41.anchorModule || null; } catch (e41) { anchor41 = null; } }
+          /* v17.47 · F3: la re-resolución del clic salta también
+             los módulos bloqueados (ver clarResponderTarget):
+             aterrizar en uno con la marca puesta seguiría
+             dejando la casilla deshabilitada. Si no hay
+             incompleto ejecutable, el destino es el ancla solo
+             si es ejecutable; si no, el primer módulo
+             ejecutable de la clave, con la marca puesta. */
           var tgt41 = null;
-          if (anchor41 && !moduleComplete(anchor41)) tgt41 = anchor41;
-          if (!tgt41) { for (var j41 = 0; j41 < mods41.length; j41++) { if (!moduleComplete(mods41[j41])) { tgt41 = mods41[j41]; break; } } }
+          if (anchor41 && !moduleComplete(anchor41) && canExecuteModule(anchor41)) tgt41 = anchor41;
+          if (!tgt41) { for (var j41 = 0; j41 < mods41.length; j41++) { if (!moduleComplete(mods41[j41]) && canExecuteModule(mods41[j41])) { tgt41 = mods41[j41]; break; } } }
           if (tgt41) { mid = tgt41; ui.clarAnswerKey = null; ui.clarAnswerModule = null; }
-          else { mid = anchor41 || mods41[0] || mid; ui.clarAnswerKey = oc41.key; ui.clarAnswerModule = mid; }
+          else { var land47 = null; if (anchor41 && canExecuteModule(anchor41)) land47 = anchor41; if (!land47) { for (var k41 = 0; k41 < mods41.length; k41++) { if (canExecuteModule(mods41[k41])) { land47 = mods41[k41]; break; } } } mid = land47 || mods41[0] || mid; ui.clarAnswerKey = oc41.key; ui.clarAnswerModule = mid; }
         }
       } catch (err41) {}
       /* v17.42 · F8: nunca se navega a un módulo completo sin la marca
@@ -7059,7 +7076,9 @@
     /* Todas las cifras de un texto, cada una con su unidad y su clase,
        en el orden en que aparecen. Reutiliza moneySpans (v17.24 WS1).
        v17.46 · F2b: las etiquetas que devuelve ya reconocen el pago en
-       plural («mis clientes pagan», «N pagos de»). */
+       plural («mis clientes pagan», «N pagos de»).
+       v17.47 · F1: y los verbos de fijar precio («poner/dejar/
+       fijar en/a $X»). */
     function moneyFigures(text) {
       var s = String(text || "");
       var spans = moneySpans(s);
@@ -7562,10 +7581,35 @@
            mes» / «una vez al mes» no casaban (solo «veces» valía), así
            que el valor de vida quedaba sin frecuencia y la fórmula no
            se armaba. Vale «N vez/veces al mes» con número o palabra. */
-        var m = t.match(/\b(\d[\d.,]*|una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s*(?:almuerzos?|veces|vez|visitas|compras|ventas|pedidos?)\s+al mes/i);
-        if (m) {
+        /* v17.47 · F2a: un VOLUMEN no es una frecuencia. «Mi punto
+           de equilibrio es 500 almuerzos al mes» y «Pesimista:
+           500 almuerzos al mes» casaban con «N almuerzos al
+           mes» y la frecuencia quedaba en 500: el Retar retaba
+           con 37.500 ventas y el total canónico validaba su
+           propio error ($262.500.000), así que la corrección
+           del Retar nunca se registraba. Ahora se recorren
+           TODAS las coincidencias mensuales y se saltan las de
+           volumen: la cláusula dice equilibrio / escenario /
+           pesimista / vendo / sirvo / facturo, o el sustantivo
+           es de volumen (almuerzos, visitas, ventas, pedidos,
+           compras) sin ancla de cliente o de compra en la
+           cláusula. «Veces/vez» es frecuencia por definición
+           y no necesita ancla. */
+        var re47 = /\b(\d[\d.,]*|una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s*(almuerzos?|veces|vez|visitas|compras|ventas|pedidos?)\s+al mes/gi;
+        var m;
+        while ((m = re47.exec(t)) !== null) {
           var n = wordNum(m[1]);
-          if (n != null && n > 0 && n < 1000) return n;
+          if (n == null || n <= 0 || n >= 1000) continue;
+          var noun47 = (m[2] || "").toLowerCase();
+          var cs47 = m.index, ce47 = m.index + m[0].length;
+          var s047 = -1;
+          [".", "!", "?", ";", ":"].forEach(function (ch) { var p = t.lastIndexOf(ch, cs47); if (p > s047) s047 = p; });
+          var e047 = t.length;
+          [".", "!", "?", ";", ":"].forEach(function (ch) { var p = t.indexOf(ch, ce47); if (p >= 0 && p < e047) e047 = p; });
+          var clause47 = t.slice(s047 + 1, e047);
+          if (/\b(punto de equilibrio|equilibrio|pesimista|optimista|escenario|vendo|vendemos|sirvo|servimos|facturo|facturamos)\b/i.test(clause47)) continue;
+          if (/^(almuerzos?|visitas|compras|ventas|pedidos?)$/.test(noun47) && !/\b(cliente|clienta|clientes|clientas|habitual|compra|compran|viene|vienen|vuelve|vuelven|pide|piden|repite|repiten|consume|consumen)\b/i.test(clause47)) continue;
+          return n;
         }
         /* v17.32.1 · Frecuencia semanal y diaria: «1 vez por semana»
            (singular «vez», no «veces») no casaba con la regex anterior
@@ -8566,21 +8610,37 @@
         var s = snap[roles[i]];
         if (roles[i] === "ltv") {
           var li = extractLtvInfo();
-          if (!li || li.v !== s.v) return false;
+          /* v17.47 · F2c: una cifra que FALTA no es una cifra que
+             cambió: tras rehacer C0, el valor de vida puede no
+             estar a la vista, pero eso no levanta la supresión
+             de una aclaración ya resuelta. Solo una cifra
+             presente y distinta la levanta (regla v17.29). */
+          if (li && li.v !== s.v) return false;
           continue;
         }
         if (roles[i] === "cac") {
           var curVals = (f.cac || []).map(function (c) { return c.v; }).sort(function (a, b) { return a - b; });
-          if (JSON.stringify(curVals) !== JSON.stringify(s.values || [])) return false;
+          /* Como arriba (F2c) — sin CAC a la vista no hay
+             cambio de valor, así que la supresión se mantiene. */
+          if (curVals.length && JSON.stringify(curVals) !== JSON.stringify(s.values || [])) return false;
           continue;
         }
         if (roles[i] === "income") {
           var ii = extractIncomeSources(), dd = extractDeclaredMonthlyTotal();
-          if (!ii || dd == null || ii.sum !== s.sourcesTotal || dd !== s.declaredTotal) return false;
+          /* Como arriba (F2c) — si el total declarado no
+             está a la vista (C0 rehecho), no hay cambio de
+             valor; la brecha aclarada sigue resuelta. */
+          if (ii && dd != null && (ii.sum !== s.sourcesTotal || dd !== s.declaredTotal)) return false;
           continue;
         }
         var cur = f[roles[i]];
-        if (!cur || !s || cur.v !== s.v) return false;
+        /* v17.47 · F2c: una cifra que FALTA (por ejemplo lo neto
+           de C0 Q7 tras rehacer C0) no rompe la foto: la
+           supresión solo se levanta si la cifra está presente
+           y vale distinto. */
+        if (!s) return false;
+        if (!cur) continue;
+        if (cur.v !== s.v) return false;
       }
       return true;
     }
@@ -8902,6 +8962,20 @@
         return { role: w === "costo" ? "costo" : w === "precio" ? "cobrado" : (w === "valor" || w === "total") ? "ltv" : w === "margen" ? "neto" : "cac" };
       }
       if (/^\s*[,;:—-]?\s*(no|tampoco)\s*[,.;]/i.test(afterFig)) return { any: true };
+      /* v17.47 · F2b: la refutación puede vivir en la cláusula
+         siguiente a la cifra («los $1.050.000 son mis costos
+         fijos al mes, no el costo de adquirir un cliente»): un
+         «no (es|son) (el|un) (costo|precio|margen|cac)» entre
+         la cifra y la cifra siguiente niega ese rol para ESTA
+         cifra. La ventana llega hasta la cifra siguiente (y
+         nunca más de 120 caracteres), así que la refutación de
+         otra cifra no contamina a esta. */
+      var afterAll47 = s.slice(f.i + (f.len || 0), Math.min(nextStart, f.i + (f.len || 0) + 120));
+      var rm47 = afterAll47.match(/(no|tampoco)\s+(?:(es|son|ser[aá]|era|eran|fue|fueron)\s+)?(?:(el|un|una)\s+)?(costo|precio|valor|total|margen|cac)\b/i);
+      if (rm47) {
+        var w47 = (rm47[4] || "").toLowerCase();
+        return { role: w47 === "costo" ? "costo" : w47 === "precio" ? "cobrado" : (w47 === "valor" || w47 === "total") ? "ltv" : w47 === "margen" ? "neto" : "cac" };
+      }
       return null;
     }
     /* v17.32 (WS1b) · Mensualidad pegada a la cifra: un marcador mensual
@@ -8927,6 +9001,13 @@
            total descarta la cifra; la de rol se resuelve abajo. */
         var figNeg = figureNegation(text, f, figs, k);
         if (figNeg && figNeg.any) return;
+        /* v17.47 · F2b: una cifra de costos FIJOS es un total
+           mensual, nunca una corrección por venta ni por
+           cliente («los $1.050.000 son mis costos fijos al
+           mes» no corrige el CAC ni el costo por venta). La
+           cifra se descarta bajo cualquier rol: no hay
+           casillero de costos fijos en una aclaración. */
+        if (/\bcostos?\s+fijos?\b/i.test(figureClause(String(text || ""), f.i, f.len || 0))) return;
         /* v17.25 · La ventana de cada cifra termina donde empieza la
            siguiente: antes, la ventana de $2.000 llegaba hasta «el
            costo» de $1.200 y la guardaba como costo. La etiqueta de la
@@ -8994,6 +9075,31 @@
           });
           role = bestRole;
           }
+        }
+        /* v17.47 · F2b: la frase de adquisición manda sobre la
+           adivinanza por cercanía. En «Adquirir un cliente me
+           cuesta $5.000 por cliente», la palabra «cuesta» está
+           pegada a la cifra y «adquirir» lejos, así que la
+           adivinanza guardaba el CAC como margen de cliente.
+           Cuando la cifra es la primera de su cláusula y la
+           cláusula dice adquirir/conseguir un cliente (o costo
+           de adquisición, o CAC), la cifra ES el costo de
+           adquirir un cliente, diga lo que diga la etiqueta o
+           la palabra más cercana. La condición de primera en
+           su cláusula es la que protege a la cifra siguiente
+           («…y el margen es $3.500 por arepa» no es CAC). */
+        if (role !== "cac") {
+          var clStart47 = f.i;
+          var _t47 = String(text || "");
+          while (clStart47 > 0) {
+            var _ch47 = _t47[clStart47 - 1];
+            if (_ch47 === "!" || _ch47 === "?" || _ch47 === "," || _ch47 === ";" || _ch47 === ":") break;
+            if (_ch47 === ".") { var _pv47 = clStart47 > 1 ? _t47[clStart47 - 2] : "", _nx47 = _t47[clStart47] || ""; if (!(/\d/.test(_pv47) && /\d/.test(_nx47))) break; }
+            clStart47--;
+          }
+          var firstInClause47 = _t47.slice(clStart47, f.i).indexOf("$") < 0;
+          var clause47b = figureClause(_t47, f.i, f.len || 0);
+          if (firstInClause47 && /\b(adquir[a-záéíóúñ]*|consegu[a-záéíóúñ]*)\s+(un\s+)?cliente\b|\bcosto de adquisici[oó]n\b|\bCAC\b/i.test(clause47b)) role = "cac";
         }
         /* v17.32 (WS1) · Una cifra del tramo del valor de vida nunca
            es un costo: con la guarda de negación, el «no $96.000» ya
@@ -16130,11 +16236,22 @@
          pagan $X» y «N pagos de $X» — el sujeto y el verbo muestran
          que el precio es del dueño, aunque el valor coincida con el
          de la alternativa. */
-      var propioBeforePat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|el\\s+precio\\s+es|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar|subo|subir|(mis\\s+)?clientes?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?clientas?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?vecin[oa]s?\\s+(ya\\s+)?pagan\\b|((\\d+|los|las|un|el)\\s+pagos?\\s+de\\b))";
+      /* v17.47 · F1: los verbos de fijar precio también son
+         ancla propia: «poner/dejar/fijar (el producto) en/a
+         $X» — solo en primera persona (poner/pongo/pondré/
+         pondría/poniendo…), nunca «pone»/«pondrá» (la
+         alternativa). La preposición pegada a la cifra es la
+         que distingue el precio de una inversión («Voy a
+         poner $18.000 en publicidad» no casa). */
+      var propioBeforePat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|el\\s+precio\\s+es|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar|subo|subir|(mis\\s+)?clientes?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?clientas?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?vecin[oa]s?\\s+(ya\\s+)?pagan\\b|((\\d+|los|las|un|el)\\s+pagos?\\s+de\\b)|pon(?:er|go|dr[ée]|dría|iendo)(?![a-záéíóúñ])[^$]{0,40}(?:en|a)\\s*$|dej(?:ar|o|ar[ée]|aría|ando)(?![a-záéíóúñ])[^$]{0,40}(?:en|a)\\s*$|fij(?:ar|o|ar[ée]|aría|ando)(?![a-záéíóúñ])[^$]{0,40}(?:en|a)\\s*$)";
       /* v17.46 · F2b: las anclas plurales de propioBeforePat y
          propioStrongPat se leen aquí (y la guarda de rival como
          destinatario, abajo, las anula cuando el pago va a la
          alternativa). */
+      /* v17.47 · F1: los verbos de fijar precio de propioBeforePat
+         y propioStrongPat se leen aquí (y la guarda de rival
+         como destinatario, abajo, los anula cuando el pago va
+         a la alternativa). */
       var o = lastIdx(before, propioBeforePat);
       /* v17.30 (WS6) · El ancla «el precio es» es DEBIL: un «yo cobro /
          mi precio / me pagan» atribuye en firme, pero un «el precio
@@ -16145,7 +16262,10 @@
          techo o alternativa (ver weakOwn abajo). */
       /* v17.46 · F2b: la lista fuerte lleva las mismas anclas plurales
          que propioBeforePat (sin «el precio es», que sigue siendo débil). */
-      var propioStrongPat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar|subo|subir|(mis\\s+)?clientes?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?clientas?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?vecin[oa]s?\\s+(ya\\s+)?pagan\\b|((\\d+|los|las|un|el)\\s+pagos?\\s+de\\b))";
+      /* v17.47 · F1: la lista fuerte lleva los mismos verbos de
+         fijar precio que propioBeforePat (poner/dejar/fijar
+         en/a $X, primera persona). */
+      var propioStrongPat = "(yo\\s+cobro|cobro|doy|ofrezco|vendo|yo\\s+vendo|lo\\s+vendo|la\\s+vendo|mi\\s+precio|precio\\s+m[ií]o|me\\s+pagan|me\\s+paga\\b|me\\s+pagó(?![a-záéíóúñ])|me\\s+pagaron\\b|pagarme\\b|paga\\s+mis\\b|lo\\s+que\\s+cobro|yo\\s+pido|yo\\s+cobrar[ií]a|cobrar[ií]a|cobrar[eé]|voy\\s+a\\s+cobrar|pienso\\s+cobrar|subo|subir|(mis\\s+)?clientes?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?clientas?\\s+(ya\\s+)?pagan\\b|(mis\\s+)?vecin[oa]s?\\s+(ya\\s+)?pagan\\b|((\\d+|los|las|un|el)\\s+pagos?\\s+de\\b)|pon(?:er|go|dr[ée]|dría|iendo)(?![a-záéíóúñ])[^$]{0,40}(?:en|a)\\s*$|dej(?:ar|o|ar[ée]|aría|ando)(?![a-záéíóúñ])[^$]{0,40}(?:en|a)\\s*$|fij(?:ar|o|ar[ée]|aría|ando)(?![a-záéíóúñ])[^$]{0,40}(?:en|a)\\s*$)";
       var oStrong = lastIdx(before, propioStrongPat);
       /* v17.32 (WS3) · «Me paga» con sujeto rival: en «la competencia
          me paga $X» quien paga es la competencia, no el cliente del
@@ -17891,7 +18011,17 @@
              que la subida aterrizara y el módulo resucitaba
              (prueba 20 B, 3 veces). */
           try { window.sessionStorage.setItem(redoKeyFor(m.id), JSON.stringify({ at: state.redoTombstones[m.id].at, answered: redoPrevN })); } catch (eRedo44ss) {}
-          if (Array.isArray(state.contradictions)) state.contradictions = state.contradictions.filter(function (rc) { return !rc || rc.resolvedModule !== m.id; });
+          /* v17.47 · F2c: rehacer un componente ya no borra las
+             aclaraciones resueltas de varios componentes. Una
+             corrección del CAC o de los ingresos se apoya en
+             cifras de C0, C4, C6 y C10, así que rehacer solo
+             C0 no la invalida: antes la aclaración reaparecía
+             abierta y el Plan perdía la entrada. Solo se
+             borran la corrección de precio (su cifra vive en
+             el componente rehecho) y el registro de uso del
+             Retar (el intercambio vive en ese componente); las
+             demás aclaraciones resueltas sobreviven al rehacer. */
+          if (Array.isArray(state.contradictions)) state.contradictions = state.contradictions.filter(function (rc) { if (!rc || rc.resolvedModule !== m.id) return true; if (rc.status !== "resolved") return false; if (rc.key === "precio-aclarado" || rc.key === "reto-usado") return false; return true; });
           if (state.diagnosis) delete state.diagnosis;
           if (state.coachNotes) Object.keys(state.coachNotes).forEach(function (ck) { if (ck.indexOf(m.id + ":") === 0) delete state.coachNotes[ck]; });
           if (m.id === "M0" && state.research) state.research = { searches: [], seenAt: "", attempts: [] };
@@ -19213,7 +19343,11 @@
       /* v17.40 · F5(b): la aclaración registrada guarda las cifras
          corregidas DEL USUARIO con sus unidades (por venta vs al
          mes), tomadas de las cifras verdaderas que el usuario
-         confirmó al corregir la sonda. */
+         confirmó al corregir la sonda.
+         v17.47 · F2a: este registro solo existe cuando la sonda
+         distorsionó de verdad (la canónica, ya sin contaminar,
+         no coincide con la sonda): si la sonda está bien no hay
+         corrección que registrar ni entrada de Retar en el Plan. */
       var correctedFromMisquotes = null;
       if (figureMisquotes && figureMisquotes.length) {
         correctedFromMisquotes = {};
@@ -19409,7 +19543,12 @@
     /* El total mensual DE MARGEN canónico: ventas al mes × margen por
        venta, leído de las respuestas declaradas. Es la cifra verdadera
        de la cláusula volumen×margen del Retar («te quedan $3.500.000
-       al mes»), distinta de la facturación bruta mensual. */
+       al mes»), distinta de la facturación bruta mensual.
+       (F2a) La frecuencia que alimenta las ventas es la
+       declarada por el dueño (12), nunca el volumen de
+       equilibrio (500): antes la canónica validaba el error
+       de la propia sonda y la corrección del Retar no se
+       registraba. */
     function canonicalVolumeMarginMonthly() {
       var rf = null;
       try { rf = retarFigures(); } catch (e) { return null; }
@@ -20613,6 +20752,14 @@
          Resumen ni en el chat. Solo vale con las cifras sin cambiar (si
          cambian y cuadran, la brecha se cierra sola; si cambian y sigue
          habiendo brecha, sigue abierta). */
+      /* v17.47 · F2a: la aclaración de la brecha se registra AQUÍ,
+         en C6 Q1, una sola vez («Aclaración registrada en C6 ·
+         Ingresos»), aunque la brecha se detecte antes en C1 Q7:
+         el registro sobrevive al rehacer de C0 por la guarda
+         P03a (es una aclaración de varios componentes, anclada
+         en C6). En la prueba 24 el Plan la mostraba bien con
+         las respuestas guionadas; el fallo en vivo fue la
+         variante Responder-en-C0 + rehacer. */
       if (m.id === "M6" && step === 0 && !incomeGapResolved()) {
         try {
           var gapAfterM6 = incomeGapCheck();
