@@ -2228,6 +2228,7 @@
             "questions": [
                 {
                     "block": "Arranque · La ventaja real",
+                    "caso": true,
                     "q": "Arrancamos por lo más importante: ¿cuál es la ventaja real de tu negocio hoy? No lo que crees que te diferencia: aquello por lo que un cliente pagaría por encima de cualquier alternativa disponible.",
                     "sq": {
                         "En reestructuración": {
@@ -11006,7 +11007,9 @@
     function moduleAnsweredFor(p, id) { var m = mod(id); return m ? answeredCountFor(p, id) === m.questions.length : false; }
     function moduleComplete(id) { return moduleAnsweredFor(state, id); }
     /* v17.35 (WS6) · N3: una repregunta saltada (skipped) no es un paso
-       pendiente: ni es el turno, ni bloquea, ni se vuelve a pedir. */
+       pendiente: ni es el turno, ni bloquea, ni se vuelve a pedir.
+       v17.49: el salto ya no existe como acción; esto solo cubre
+       estados viejos que lo traen marcado. */
     function pendingStepFor(p, mid) {
       if (!p || !mod(mid)) return null;
       var n = answeredCountFor(p, mid);
@@ -12110,6 +12113,8 @@
       var sentences = splitSentencesSafe(low);
       var zeroNouns = [];
       sentences.forEach(function (cl) {
+        /* v17.49 · F4: una frase de mercado nunca es un cero del dueño (ver isMarketStatement). */
+        if (isMarketStatement(cl)) return;
         /* Posiciones (fin) de los marcadores de cero en esta oración. */
         var markers = [];
         var markerStarts = [];
@@ -12473,10 +12478,10 @@
       var t = stripNegatedCase(String(text || ""));
       var PLACE_NAMES = "Ciénaga|Santa Marta|Barranquilla|Cartagena|Bogotá|Medellín|Cali|Bucaramanga|Manizales|Pereira|Armenia|Ibagué|Neiva|Pasto|Popayán|Tunja|Villavicencio|Montería|Sincelejo|Valledupar|Riohacha|Maicao|Fundación|Aracataca|Zona Bananera|Pueblo Viejo|Ciénaga Grande|Nueva Venecia|Buenavista|Minca|Taganga|Gaira|Mamatoco";
       var tNoPlaces = t.replace(new RegExp("\\b(" + PLACE_NAMES + ")\\b", "g"), " ");
-      var NOT_A_NAME = /^(un|una|unos|unas|el|la|los|las|mi|mis|su|sus|tu|tus|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|cada|ning[úu]n(?:a|o|os|as)?|alg[úu]n(?:a|o|os|as)?|otro|otra|otros|otras|todo|toda|todos|todas|nadie|alguien|también|además|pero|cuando|como|porque|desde|hasta|entre|sobre|con|por|para|en|de|y|o|si|no|me|yo|se|lo|le|nos|ella|él|ellos|ellas|usted|ustedes|eso|esto|aquello|hoy|ayer|mañana|ahora|después|antes|luego|siempre|nunca|jamás|muchos|muchas|pocos|pocas|varios|varias|cierto|cierta|mismo|misma|propio|propia|sin|doña|don|instagram|facebook|whatsapp|tiktok|youtube|google|nequi|daviplata|bancolombia|davivienda|rappi|uber|didi|amazon|zoom|meet|teams|telegram|pinterest|linkedin|kwai|mercado|libre)$/i;
-      /* Verbos que abren oración («Tengo…», «Vendo…», «Cobro…»): van en
-         mayúscula por ir al principio y no son nombres. */
-      var VERB_START = /^(tengo|vendo|cobro|hago|pago|compro|atiendo|sirvo|entrego|trabajo|vivo|soy|estoy|voy|puedo|quiero|llevo|pongo|dejo|digo|creo|sé|veo|gano|pierdo|empiezo|termino|abro|cierro|salgo|entro|llego|vuelvo|quedo|cuento|mido|busco|ofrezco|preparo|uso|tomo|doy|pido|conozco|entiendo|manejo|dirijo|aporto|invierto|gasto|ahorro|facturo|recibo|mando|sigo|traigo|paso|digo|dejo|pongo|salgo|vengo|ando|debo|suelo|acabo)$/i;
+      var NOT_A_NAME = /^(un|una|unos|unas|el|la|los|las|mi|mis|su|sus|tu|tus|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|cada|ning[úu]n(?:a|o|os|as)?|alg[úu]n(?:a|o|os|as)?|otro|otra|otros|otras|todo|toda|todos|todas|nadie|alguien|también|además|pero|cuando|como|porque|desde|hasta|entre|sobre|con|por|para|en|de|y|o|si|no|me|yo|se|lo|le|nos|ella|él|ellos|ellas|usted|ustedes|eso|esto|aquello|hoy|ayer|mañana|ahora|después|antes|luego|siempre|nunca|jamás|muchos|muchas|pocos|pocas|varios|varias|cierto|cierta|mismo|misma|propio|propia|sin|al|del|doña|don|instagram|facebook|whatsapp|tiktok|youtube|google|nequi|daviplata|bancolombia|davivienda|rappi|uber|didi|amazon|zoom|meet|teams|telegram|pinterest|linkedin|kwai|mercado|libre)$/i;
+      /* Verbos que abren oración («Tengo…», «Vendo…», «Cobro…», «Perdí…», «Vino…»): van en
+         mayúscula por ir al principio y no son nombres. v17.49 · F1: «Al crecer perdí el contacto… muchos piden por WhatsApp» contaba como caso con nombre porque «Al» (contracción a+el, nunca un nombre) pasaba por nombre; lo mismo valía para «Del» y para verbos en pretérito o tercera persona («Perdí…», «Vino…») que abren oración. Un verbo no es un nombre en ningún tiempo. */
+      var VERB_START = /^(tengo|vendo|cobro|hago|pago|compro|atiendo|sirvo|entrego|trabajo|vivo|soy|estoy|voy|puedo|quiero|llevo|pongo|dejo|digo|creo|sé|veo|gano|pierdo|empiezo|termino|abro|cierro|salgo|entro|llego|vuelvo|quedo|cuento|mido|busco|ofrezco|preparo|uso|tomo|doy|pido|conozco|entiendo|manejo|dirijo|aporto|invierto|gasto|ahorro|facturo|recibo|mando|sigo|traigo|paso|digo|dejo|pongo|salgo|vengo|ando|debo|suelo|acabo|vino|vinieron|viene|vienen|llegó|llegaron|llega|llegan|pasó|pasaron|pasa|pasan|pidió|pidieron|pide|piden|compró|compraron|compra|compran|pagó|pagaron|paga|pagan|reservó|reservaron|reserva|reservan|volvió|volvieron|vuelve|vuelven|buscó|buscaron|busca|buscan|escribió|escribieron|escribe|escriben|llamó|llamaron|llama|llaman|visitó|visitaron|visita|visitan|probó|probaron|prueba|prueban|preguntó|preguntaron|pregunta|preguntan|contó|contaron|cuenta|cuentan|dejó|dejaron|deja|dejan|trajo|trajeron|trae|traen|encargó|encargaron|encarga|encargan|apartó|apartaron|aparta|apartan|perdí|perdió|perdimos|perdieron|quedé|quedó|quedamos|quedaron|elegí|eligió|recomendé|recomendó)$/i;
       var ACTION_RE = "(vino|vinieron|viene|vienen|lleg[oó]|llegaron|llega|llegan|pas[oó]|pasaron|pasa|pasan|pidi[oó]|pidieron|pide|piden|compr[oó]|compraron|compra|compran|pag[oó]|pagaron|paga|pagan|reserv[oó]|reservaron|reserva|reservan|volvi[oó]|volvieron|vuelve|vuelven|busc[oó]|buscaron|busca|buscan|escribi[oó]|escribieron|escribe|escriben|llam[oó]|llamaron|llama|llaman|visit[oó]|visitaron|visita|visitan|prob[oó]|probaron|prueba|prueban|pregunt[oó]|preguntaron|pregunta|preguntan|cont[oó]|contaron|cuenta|cuentan|dej[oó]|dejaron|deja|dejan|trajo|trajeron|trae|traen|encarg[oó]|encargaron|encarga|encargan|apart[oó]|apartaron|aparta|apartan|me eligi[oó]|me elige|me recomend[oó]|me recomienda|me pidi[oó]|me pide|me pag[oó]|me paga|me busc[oó]|me busca|me escribi[oó]|me escribe|me llam[oó]|me llama|me visit[oó]|me visita|me pregunt[oó]|me pregunta|me cont[oó]|me cuenta)";
       var TIME_RE = "(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \\d+ (d[ií]as?|semanas?)|este mes|el \\w+ pasado)";
       /* v17.43 · F4b: el detalle concreto también ancla el episodio
@@ -12494,8 +12499,11 @@
         if (!new RegExp("\\b" + ACTION_RE + "(?![a-záéíóúñ])", "i").test(sent)) return;
         if (!new RegExp("\\b" + TIME_RE + "\\b", "i").test(sent) && !new RegExp("\\b" + OUTCOME_RE + "(?![a-záéíóúñ])", "i").test(sent) && !new RegExp(DETAIL_RE, "i").test(sent)) return;
         if (new RegExp("\\b" + HABITUAL_RE + "\\b", "i").test(sent) && !new RegExp("\\b" + TIME_RE + "\\b", "i").test(sent)) return;
-        var NAME_RE = /\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b/g, mName;
-        while ((mName = NAME_RE.exec(sent)) !== null) {
+        /* v17.49 · F1: una marca camelCase («WhatsApp», «TikTok», «YouTube», «LinkedIn», «DiDi») se parte en dos «nombres» («Whats»+«App»): «Perdí el contacto… muchos piden por WhatsApp» contaba como caso con nombre por el fragmento «Whats». Para buscar el nombre se quitan enteras; la acción, la fecha y el detalle siguen mirando la frase intacta («por WhatsApp» sigue anclando el episodio). */
+        var sentNoBrands = sent.replace(/\b(WhatsApp|TikTok|YouTube|LinkedIn|DiDi)\b/gi, " ");
+        /* v17.49 · F1: el \b final de NAME_RE corta las palabras que terminan en vocal acentuada (\b es ASCII y la í no es carácter de palabra): «Perdí» se leía «Perd» y «Perd» no está en VERB_START, así que contaba como nombre de persona. El lookahead negativo es el patrón del archivo (v17.36 D1b y ss.): la palabra se lee entera y entonces VERB_START sí la excluye. */
+        var NAME_RE = /\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)(?![a-záéíóúñ])/g, mName;
+        while ((mName = NAME_RE.exec(sentNoBrands)) !== null) {
           if (NOT_A_NAME.test(mName[1]) || VERB_START.test(mName[1])) continue;
           found = true;
           break;
@@ -12526,7 +12534,7 @@
        contar. La cita pelada sigue sin contar (v17.38/v17.44). */
     function hasRoleActionCase(text) {
       var t = stripNegatedCase(String(text || ""));
-      var ROLES = "(mam[aá]|madre|pap[aá]|padre|vecin[oa]s?|señor[a]?s?|señora|tender[oa]s?|dueñ[oa]s?|alumn[oa]s?|herman[oa]s?|abuel[oa]s?|niñ[oa]s?|comprador[a]?s?|usuari[oa]s?|familia|espos[oa]|mototaxista|jefe|jefa|novi[oa]s?|amig[oa]s?|compañer[oa]s?|prim[oa]s?|tí[oa]s?|estudiant[ea]s?|profesor[a]?s?|turist[oa]s?|visitant[ea]s?|hu[ée]sped[ea]s?|conocid[oa]s?|coleg[oa]s?|soci[oa]s?|parient[ea]s?|suegr[oa]s?|cuñad[oa]s?|sobrin[oa]s?|pasajer[oa]s?|pacient[ea]s?)";
+      var ROLES = "(mam[aá]s?|madres?|pap[aá]s?|padres?|vecin[oa]s?|señor[a]?s?|señora|tender[oa]s?|dueñ[oa]s?|alumn[oa]s?|herman[oa]s?|abuel[oa]s?|niñ[oa]s?|comprador[a]?s?|usuari[oa]s?|familias?|espos[oa]s?|mototaxistas?|jefes?|jefas?|novi[oa]s?|amig[oa]s?|compañer[oa]s?|prim[oa]s?|tí[oa]s?|estudiant[ea]s?|profesor[a]?s?|turist[oa]s?|visitant[ea]s?|hu[ée]sped[ea]?s?|conocid[oa]s?|coleg[oa]s?|soci[oa]s?|parient[ea]s?|suegr[oa]s?|cuñad[oa]s?|sobrin[oa]s?|pasajer[oa]s?|pacient[ea]s?)";
       var ACTION = "(paga|pagan|pag[oó]|pagaron|pidi[oó]|pidieron|pide|piden|compr[oó]|compraron|compra|compran|vin[oi]|vino|vinieron|viene|vienen|lleg[oó]|llegaron|llega|llegan|volvi[oó]|volvieron|vuelve|vuelven|prob[oó]|probaron|prueba|prueban|reserv[oó]|reservaron|reserva|reservan|dej[oó]|dejaron|deja|dejan|busc[oó]|buscaron|busca|buscan|escribi[oó]|escribieron|escribe|escriben|llam[oó]|llamaron|llama|llaman|visit[oó]|visitaron|visita|visitan|me recomend[oó]|me recomienda|me eligi[oó]|me elige|me pidi[oó]|me pide)";
       var TIME = "(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \\d+ (d[ií]as?|semanas?)|este mes|el \\w+ pasado)";
       var HABITUAL = "(cada (semana|mes|d[ií]a|vez)|siempre|todos los d[ií]as|por lo general|suele|suelen|a menudo|cada vez que)";
@@ -12563,7 +12571,7 @@
            reparto («ellos lo usan y ella lo paga»). */
         var hasDetail = hasTime
           || /(?:\$\s*\d|\bpor (instagram|facebook|whatsapp|tel[eé]fono|correo)|\bpara (una )?(boda|fiesta|entrevista|evento|graduaci[oó]n|reuni[oó]n)|\bcon su (hermana|hermano|mam[aá]|pap[aá]|esposa|esposo|hija|hijo|familia)|\bcotizaci[oó]n|\bme recomend[oó]|\bvolvi[oó]|\bse qued[oó]|\bqued[oó] content[oa]|\b(el|la|los|las|un|una|unos|unas)\s+\w+\s+de\s+(sus|su|mi|los|las)\s+\w+)/i.test(s)
-          || /[:;]\s*\w+[^.!?;]{0,60}?\b(lo|la|los|las)\s+(usa|usan|paga|pagan|decide|deciden|compra|compran)\b/i.test(s);
+          || /[:;]\s*[^\s.!?;,]+[^.!?;]{0,60}?\b(lo|la|los|las)\s+(usa|usan|paga|pagan|decide|deciden|compra|compran)\b/i.test(s);
         if (!hasDetail) return;
         /* Un pago al dueño sin más no es el caso: «una vecina me pagó
            $30.000» sin fecha, sin objeto y sin segunda cláusula es la
@@ -12729,9 +12737,10 @@
        acción + tiempo («2 vecinas pidieron cotización el lunes»)
        CUENTA como caso, aunque el sustantivo sea plural y no esté
        en la lista de conteo de clientes. */
+    /* v17.49 · F3: un grupo de personas sin nombre + acción + día («4 mamás pidieron cuadernos para el regreso a clases el lunes») ES el caso que pide la pregunta: la lista solo conocía vecina/cliente/alumna/persona/comprador/usuario/familia. Se amplía con los papeles de familia, colegio y trato (mamá, papá, madre, padre, abuela, hermana, tía, niño, estudiante, profesor, turista, visitante, conocido, colega, amiga, prima, sobrina, pasajera, paciente, señora, esposa, novia, compañera, pariente, suegra, cuñada, jefe, huésped). El verbo de acción y el día/la fecha siguen siendo obligatorios: la forma sigue siendo un episodio, no un conteo pelado. */
     function hasNumberedClientCase(text) {
       var t = String(text || "").toLowerCase();
-      return /\b\d+\s+(vecin[oa]s?|client[ea]s?|alumn[oa]s?|personas?|comprador[ea]s?|usuari[oa]s?|familias?)\b[^.!?;]{0,60}?\b(pidieron|pidi[oó]|compraron|compr[oó]|reservaron|reserv[oó]|llegaron|lleg[oó]|vinieron|vin[oi]|probaron|prob[oó]|preguntaron|pregunt[oó]|escribieron|escribi[oó]|llamaron|llam[oó]|visitaron|visit[oó]|pagaron|pag[oó])\b[^.!?;]{0,60}?\b(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \d+ d[ií]as?|hace (una|dos|tres) semanas?|este mes|este fin de semana)\b/i.test(t);
+      return /\b\d+\s+(vecin[oa]s?|client[ea]s?|alumn[oa]s?|personas?|comprador[ea]s?|usuari[oa]s?|familias?|mam[aá]s?|pap[aá]s?|madres?|padres?|abuel[oa]s?|herman[oa]s?|t[ií][oa]s?|niñ[oa]s?|estudiantes?|profesor[ea]s?|turistas?|visitantes?|conocid[oa]s?|coleg[oa]s?|amig[oa]s?|prim[oa]s?|sobrin[oa]s?|pasajer[oa]s?|pacientes?|señor[ea]s?|espos[oa]s?|novi[oa]s?|compañer[oa]s?|parient[ea]s?|suegr[oa]s?|cuñad[oa]s?|jef[ea]s?|hu[ée]sped[ea]?s?)\b[^.!?;]{0,60}?\b(pidieron|pidi[oó]|compraron|compr[oó]|reservaron|reserv[oó]|llegaron|lleg[oó]|vinieron|vin[oi]|probaron|prob[oó]|preguntaron|pregunt[oó]|escribieron|escribi[oó]|llamaron|llam[oó]|visitaron|visit[oó]|pagaron|pag[oó])\b[^.!?;]{0,60}?\b(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \d+ d[ií]as?|hace (una|dos|tres) semanas?|este mes|este fin de semana)\b/i.test(t);
     }
     /* v17.41 · F4b: un incidente en primera persona con desenlace («me
        pasó con un corte que quedó disparejo y el cliente volvió», «me
@@ -13022,7 +13031,8 @@
          completas: «reemplazo» contiene «plazo» y marcaba fecha donde
          no la hay (M9 Q3/Q4: «reemplazo operativo»). */
       var date = /\b(fecha|plazo)\b/i.test(ex) || /para\s+cu[aá]ndo/i.test(qq);
-      var example = /(caso real|cliente real|un caso|ejemplo|hecho real|hecho concreto)/i.test(ex);
+      /* v17.49 · F1: el caso es propiedad de la PREGUNTA, no de la redacción de su exige: M1 Q1 pide un caso en todas las etapas, pero las variantes de «En crecimiento» y «Validando» no nombran el caso en su exige y el aviso nunca aparecía. Con "caso": true en la pregunta base, exigeNeeds lo ve en todas las etapas (questionFor copia los campos base; las variantes solo reescriben q/chain/exige/why). */
+      var example = /(caso real|cliente real|un caso|ejemplo|hecho real|hecho concreto)/i.test(ex) || !!(q && q.caso);
       var freq = /(frecuencia|cada\s+cu[aá]nto|con\s+qu[eé]\s+frecuencia|veces\s+por)/i.test(ex + " " + qq);
       return { number: number, date: date, example: example, freq: freq };
     }
@@ -14666,7 +14676,8 @@
       if (!state.answerMeta) state.answerMeta = {};
       var meta = state.answerMeta[key] || {};
       var q = qOverride || frozenVerdictQ(mid, qi) || questionFor(m, qi);
-      if (q) meta.verdictQ = { q: q.q || "", exige: q.exige || "", sinNumero: !!q.sinNumero };
+      /* v17.49 · F1: el veredicto congelado guardaba la pregunta reducida a {q, exige, sinNumero} y PERDÍA el «caso»: exigeNeeds(verdictQ) no veía el caso en M1 Q1 y la burbuja/auditoría nunca avisaban, aunque questionFor sí lo trajera. El flag viaja con la pregunta congelada (dpSnap.q ya lo trae; la reducción lo botaba). */
+      if (q) meta.verdictQ = { q: q.q || "", exige: q.exige || "", sinNumero: !!q.sinNumero, caso: !!q.caso };
       /* v17.32 (WS4) · Se puntúa principal + repreguntas contestadas
          (combinedAnswerEvidence): antes solo se puntuaba la principal
          y re-congelar tras una repregunta era no-op. */
@@ -17725,22 +17736,21 @@
             if (_rec && _rec.probeMode === "retar" && !st.probeSnapshot) { probeText = buildRetarProbe(m, i); st.probe = probeText; }
             else if (st.probeSnapshot) { probeText = st.probeSnapshot; }
           }
-          /* v17.35 (WS6) · N3: una repregunta saltada se VE como
-             saltada (con su botón para responderla después), nunca
-             como pendiente: si no, el hilo la volvería a pedir. */
+          /* v17.49 · La opción de saltar ya no existe (orden del dueño 26 Nov 2026): una repregunta marcada skipped en un estado viejo no se muestra ni se vuelve a pedir (pendingStepFor ya la salta). */
           if (st.skipped && !st.answer) {
-            t += analiaBubbleCls('<span class="qtag">Pregunta de seguimiento saltada</span> Saltaste esta repregunta: «' + esc(excerptOf(st.probe, 120)) + '». Si luego tienes el dato, puedes responderla aquí mismo. &nbsp;<button class="btn small" type="button" data-unskip-followup="' + m.id + ":" + i + ":" + sj + '">Responderla</button>', "micro");
             return;
           }
           /* v17.35 (WS6) · N3: el turno actual es ESTA repregunta: se
-             marca en el hilo (etiqueta + botón de salto) para que la
-             caja de abajo responda a ella y no a la siguiente pregunta
-             principal. Sin la marca, la respuesta principal siguiente
-             se tragaba en silencio como respuesta a la repregunta. */
+             marca en el hilo (etiqueta) para que la caja de abajo
+             responda a ella y no a la siguiente pregunta principal.
+             Sin la marca, la respuesta principal siguiente se tragaba
+             en silencio como respuesta a la repregunta. v17.49: el
+             botón de salto ya no existe. */
           var isTurn = pendTurn && pendTurn.qi === i && pendTurn.idx === sj;
           var turnTag = isTurn ? '<span class="qtag">Pregunta de seguimiento · responde aquí abajo</span>' : "";
-          var turnSkip = isTurn ? '<br><span class="why">Tu respuesta en la caja de abajo va a esta repregunta, no a la siguiente pregunta. Si no tienes el dato ahora, puedes saltarla y seguir: no bloquea el componente.</span> &nbsp;<button class="btn small" type="button" data-skip-followup="' + m.id + ":" + i + ":" + sj + '">Saltar esta repregunta</button>' : "";
-          t += analiaBubble(turnTag + "<strong>" + (st.kind === "probe" ? "Profundicemos antes de seguir." : "Sigamos, un dato a la vez.") + "</strong> " + esc(probeText) + turnSkip);
+          /* v17.49 · La opción de saltar ya no existe (orden del dueño 26 Nov 2026): el usuario responde todas las repreguntas; «No lo sé» en la caja es la respuesta cuando no tiene el dato. Solo queda la orientación de a dónde va la respuesta. */
+          var turnNote = isTurn ? '<br><span class="why">Tu respuesta en la caja de abajo va a esta repregunta, no a la siguiente pregunta.</span>' : "";
+          t += analiaBubble(turnTag + "<strong>" + (st.kind === "probe" ? "Profundicemos antes de seguir." : "Sigamos, un dato a la vez.") + "</strong> " + esc(probeText) + turnNote);
           if (st.answer) {
             /* v17.35 (WS6) · N4: la respuesta a la repregunta también se
                puede editar, igual que la principal (mismo botón, mismo
@@ -18670,6 +18680,9 @@
       var hi = Math.min(s.length, (nounEnd != null ? nounEnd : markerEnd) + 60);
       return ZERO_SCOPE_RE.test(s.slice(lo, hi));
     }
+    /* v17.49 · F4: una frase sobre EL MERCADO nunca es una declaración de cero del dueño. «La mayoría vende pescado del día sin reserva previa» habla de cómo venden los demás, no de las ventas del dueño — pero tightZeroSales leía «sin» + «reserva» y declaraba cero ventas, y la primera respuesta con cifras se registraba como «corrección» de ese cero inventado. La guarda salta la oración entera cuando su sujeto es un actor del mercado. */
+    var MARKET_SUBJECT_RE = /\b(la mayor[ií]a|los dem[aá]s|las dem[aá]s|la competencia|mi competencia|mis competidores|los competidores|las competidoras|otros negocios|otras tiendas|otros locales|otros vendedores|el mercado|la gente|mis rivales|los rivales|la otra (pescader[ií]a|papeler[ií]a|tienda|dulcer[ií]a|cafeter[ií]a|panader[ií]a|helader[ií]a|lavander[ií]a|florister[ií]a|ferreter[ií]a|juguer[ií]a|areper[ií]a|restaurante|taller|almac[eé]n|puesto|negocio|empresa|local|barber[ií]a|peluquer[ií]a)|el otro (negocio|local|puesto|taller|almac[eé]n|restaurante))\b/i;
+    function isMarketStatement(cl) { return MARKET_SUBJECT_RE.test(String(cl || "")); }
     function tightZeroSales(t) {
       var s = String(t || "");
       /* v17.35 (WS1) · F1: «no he vendido nada» / «todavía no vendo»
@@ -18681,9 +18694,13 @@
       var sentences0 = splitSentencesSafe(s);
       for (var si0 = 0; si0 < sentences0.length; si0++) {
         var cl0 = sentences0[si0];
+        /* v17.49 · F4: una frase de mercado nunca es un cero del dueño (ver isMarketStatement). */
+        if (isMarketStatement(cl0)) continue;
         var m0 = noSalesVerbRe.exec(cl0);
         if (!m0) continue;
         if (/\b(si|cuando)\b/i.test(cl0.slice(0, m0.index))) continue;
+        /* v17.49 · F4: «sin <insumo> no vendo nada» es una condicional sobre la falta de un insumo («sin pescado no vendo nada» = si no tuviera pescado, no vendería nada), no una medida de cero ventas hoy: M9 Q4 lo declaraba cero y M10 Q1 lo «corregía», inventando una aclaración de Ventas. La forma es «sin» + artículo opcional + sustantivo pegado al verbo. «Sin embargo» no es condicional («sin embargo, no vendo nada» sí es un cero) y «quedé sin X y no vendo» tampoco (la falta ya ocurrió: el cero es de hoy). */
+        if (/\bsin\s+(?:un|una|unos|unas|el|la|los|las|mi|tu|su|este|esta|ese|esa)?\s*(?!embargo\b)[a-záéíóúñ]+\s*$/i.test(cl0.slice(0, m0.index))) continue;
         if (!positiveCounterEvidence(s, ["ventas"])) return true;
       }
       var sentences = splitSentencesSafe(s);
@@ -18692,6 +18709,8 @@
         /* v17.48 F6: una cifra de $0 dentro de un ESCENARIO es una
            proyección, no una medida de cero ventas. */
         if (/\b(pesimista|optimista|escenario)\b/i.test(cl)) continue;
+        /* v17.49 · F4: una frase de mercado nunca es un cero del dueño (ver isMarketStatement). */
+        if (isMarketStatement(cl)) continue;
         var markers = [];
         var markerStarts = [];
         var reM = /(\btodav[ií]a\s+no\s+(tengo|tenemos|hay)\b|\bno\s+(tengo|tenemos|hay)\b|\bning[uú]n(a|o|os|as)?\b|\b(0|cero|sin)\b)/gi, mm;
@@ -18701,6 +18720,8 @@
              condicional («si yo no corto, no hay ingreso») es una
              hipótesis, no un cero medido: no marca. */
           if (/\bno\s+(tengo|tenemos|hay)\b/i.test(mm[0]) && /\b(si|cuando)\b/i.test(cl.slice(0, mm.index))) { if (mm.index === reM.lastIndex) reM.lastIndex++; continue; }
+          /* v17.49 · F4: el «sin» de una condicional («sin clientes no vendo nada», «sin pescado no vendo nada») no es un marcador de cero: la falta del insumo es la condición, no la medida. «Sin embargo» no es condicional («sin embargo, no vendo nada» sí es un cero) y «estoy sin clientes» tampoco (la falta es el estado actual, sin verbo de cero detrás). */
+          if (/^sin$/i.test(mm[0]) && /^\s*sin\s+(?:un|una|unos|unas|el|la|los|las|mi|tu|su|este|esta|ese|esa)?\s*(?!embargo\b)[a-záéíóúñ]+\s+no\s+(vendo|vendemos|vend[ií]|vendimos|he\s+vendido|hemos\s+vendido|tengo|tenemos|hay)\b/i.test(cl.slice(mm.index))) { if (mm.index === reM.lastIndex) reM.lastIndex++; continue; }
           markers.push(mm.index + mm[0].length); markerStarts.push(mm.index); if (mm.index === reM.lastIndex) reM.lastIndex++;
         }
         if (!markers.length) continue;
@@ -18733,6 +18754,8 @@
                  de esperar — o cuando el cero viene contado («0
                  reservas»). */
               if (/^reservas?$/.test(mu[0].toLowerCase()) && /\b(esperar|espera|esperando|llena|lleno|cola|turno)\b/i.test(cl) && !/(?:^|[^\d])0\b|\bcero\b/i.test(cl.slice(0, us))) break;
+              /* v17.49 · F4: «sin reserva previa» es una MANERA de vender (sin reserva anticipada), no un conteo de cero reservas: «la mayoría vende sin reserva previa» no dice que nadie reserve. */
+              if (/^reserva$/.test(mu[0].toLowerCase()) && /\bsin\s+reserva\s+previa\b/i.test(cl)) break;
               /* v17.43 · F5: un cero confinado a un subconjunto o a una comparación no es un cero de ventas. */
               if (zeroClauseIsScoped(cl, markerStarts[k], me, us, ue)) break;
               hitNouns.push(mu[0].toLowerCase()); break;
@@ -20362,63 +20385,7 @@
     function gradeStepQueued(rec) {
       return degreeClassQueued(rec, "grade");
     }
-    /* v17.34 (WS3) · F3: esta función ya NO se llama desde el flujo de
-       respuestas — borrar las sondas del grado en silencio era lo que
-       desplazaba cada grado al bloque siguiente. Se conserva solo para
-       un salto EXPLÍCITO del dueño («saltar el grado»), que todavía no
-       existe como acción: ningún camino automático la invoca. Solo se
-       retiran las sin contestar: un grado ya declarado no se toca. */
-    function skipGradeSteps(mid, qi) {
-      var rec = fuRec(mid, qi);
-      if (!rec || !Array.isArray(rec.steps)) return 0;
-      var before = rec.steps.length;
-      rec.steps = rec.steps.filter(function (s) { return !(isGradeStep(s) && !s.answer); });
-      return before - rec.steps.length;
-    }
-    /* v17.35 (WS6) · N3: saltar una repregunta es una decisión EXPLÍCITA
-       del dueño (botón «Saltar esta repregunta» en el turno actual):
-       la repregunta queda marcada como saltada (no se borra), no vuelve
-       a ser el turno ni a bloquear nada, y se puede responder después
-       con «Responderla». Saltar el grado también salta su evidencia
-       compañera (sin grado no hay qué sostener). Al saltar se empuja
-       el siguiente paso de la cadena, como al contestar: el flujo
-       sigue en orden. */
-    function skipFollowupStep(mid, qi, idx) {
-      if (!state) return false;
-      var rec = fuRec(mid, qi);
-      var st = rec.steps[idx];
-      if (!st || st.answer || st.skipped) return false;
-      st.skipped = true;
-      st.at = new Date().toISOString();
-      if (degreeClassOf(st.probe) === "grade") {
-        rec.steps.forEach(function (s) {
-          if (!s.answer && !s.skipped && degreeClassOf(s.probe) === "evidence") { s.skipped = true; s.at = new Date().toISOString(); }
-        });
-      }
-      pushNextStep(mod(mid), qi);
-      ensureGradeSteps(mid, qi);
-      persist(); renderSidebar(); renderChat();
-      toast("Pregunta de seguimiento saltada: seguimos con la siguiente pregunta. Si luego tienes el dato, puedes responderla desde el hilo.");
-      return true;
-    }
-    /* v17.35 (WS6) · N3: deshacer el salto — la repregunta vuelve a ser
-       el turno actual. Si se saltó el grado con su evidencia, vuelven
-       las dos juntas. */
-    function unskipFollowupStep(mid, qi, idx) {
-      if (!state) return false;
-      var rec = state.followups && state.followups[mid] && state.followups[mid][qi];
-      if (!rec || !Array.isArray(rec.steps)) return false;
-      var st = rec.steps[idx];
-      if (!st || st.answer || !st.skipped) return false;
-      delete st.skipped;
-      if (degreeClassOf(st.probe) === "grade") {
-        rec.steps.forEach(function (s) {
-          if (!s.answer && s.skipped && degreeClassOf(s.probe) === "evidence") delete s.skipped;
-        });
-      }
-      persist(); renderSidebar(); renderChat();
-      return true;
-    }
+    /* v17.49 · La opción de saltar una repregunta ya no existe (orden del dueño 26 Nov 2026: el usuario responde todas las preguntas para un diagnóstico acertado; «No lo sé» en la caja es la respuesta cuando no tiene el dato). Se retiran skipGradeSteps, skipFollowupStep y unskipFollowupStep: ningún camino las llamaba salvo el botón, ya retirado. Un paso marcado skipped en un estado viejo sigue sin bloquear nada (pendingStepFor lo salta) y ya no se muestra. */
     function ensureGradeSteps(mid, qi) {
       if (mid !== "M1" || qi < 2 || qi > 10) return;
       if (gradeWordOf(combinedAnswer(mid, qi))) return; /* v17.26 (WS4) · Solo un grado DECLARADO evita la pregunta de cierre: una prosa como «demanda alta» ya no la evita. */
@@ -20828,7 +20795,8 @@
             clearActiveMode();
             return false;
           }
-          saveAsNextMain = true;
+          /* v17.49 · «No lo sé» a la sonda de grado NO es contenido para la siguiente pregunta: es no saber el grado. Sin el botón de saltar, esta era la única salida y el texto se tragaba como principal siguiente mientras la sonda quedaba pendiente para siempre (el usuario no podía avanzar sin grado). Se guarda como respuesta de la sonda (sin grado declarado, honesto) y el paso se cierra. */
+          if (!isUncertain(text)) saveAsNextMain = true;
         }
       }
       if (pend && !saveAsNextMain) {
@@ -21443,18 +21411,7 @@
         if (ui.activeMode === "retar" && ui.activeModeScope && ui.activeModeScope.challengedQi != null && ui.activeModeScope.probeText) removeQueuedRetarProbe(ui.activeModeScope.module || ui.module, ui.activeModeScope.challengedQi, ui.activeModeScope.probeText);
         clearActiveMode(); renderChat(); toast("Modo quitado: seguimos con la pregunta normal."); return;
       }
-      var sk = e.target.closest ? e.target.closest("[data-skip-followup]") : null;
-      if (sk) {
-        var skk = sk.getAttribute("data-skip-followup").split(":");
-        skipFollowupStep(skk[0], parseInt(skk[1], 10), parseInt(skk[2], 10));
-        return;
-      }
-      var un = e.target.closest ? e.target.closest("[data-unskip-followup]") : null;
-      if (un) {
-        var unk = un.getAttribute("data-unskip-followup").split(":");
-        unskipFollowupStep(unk[0], parseInt(unk[1], 10), parseInt(unk[2], 10));
-        return;
-      }
+      /* v17.49 · Los botones de saltar / responder-la ya no existen: no hay nada que despachar aquí. */
       var b = e.target.closest ? e.target.closest("[data-edit]") : null;
       if (!b) return;
       var key = b.getAttribute("data-edit").split(":");
