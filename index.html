@@ -6841,6 +6841,8 @@
         if (ckey41 && state && state.contradictions) {
           for (var i41 = 0; i41 < state.contradictions.length; i41++) { if (state.contradictions[i41].key === ckey41) { oc41 = state.contradictions[i41]; break; } }
         }
+        /* v17.51 · F4: la tecla pulsada manda, no la primera nota abierta: antes, sin registro resuelto para la clave pulsada, el botón de la SEGUNDA aclaración resolvía el destino de la primera. */
+        if (!oc41) { var list51 = openContradictionList(); for (var i51 = 0; i51 < list51.length; i51++) { if (list51[i51].key === ckey41) { oc41 = list51[i51]; break; } } }
         if (!oc41) oc41 = openContradiction();
         if (oc41) {
           var mods41 = oc41.mods || contradictionMods(oc41.key) || [];
@@ -7102,6 +7104,24 @@
     function moneyFigures(text) {
       var s = String(text || "");
       var spans = moneySpans(s);
+      /* v17.51 · F1a (primer pase): la unidad en que se vende el
+         producto es la de la cifra propia de ESTE texto («yo cobro
+         $18.000 por libra»): «libra» es la unidad propia, no «otra
+         unidad». Antes, figureHasOtherUnit trataba toda unidad de
+         paquete («libra», «kilo», «docena») como ajena y borraba las
+         etiquetas propio/alternativa de TODAS las cifras del texto,
+         así que el canon de la alternativa quedaba en null y ninguna
+         lectura podía etiquetar «lo que cobra la alternativa». */
+      var labs0 = spans.map(function (sp, k) {
+        var prevEnd = k > 0 ? spans[k - 1].i + (spans[k - 1].len || 0) : 0;
+        var nextStart = k + 1 < spans.length ? spans[k + 1].i : s.length;
+        return nearestLabel(s, sp.i, sp.len, prevEnd, nextStart);
+      });
+      var ownNouns = [];
+      spans.forEach(function (sp, k) {
+        if (labs0[k] !== "propio") return;
+        packUnitStemsInSegment(s, sp).forEach(function (st) { if (ownNouns.indexOf(st) < 0) ownNouns.push(st); });
+      });
       return spans.map(function (sp, k) {
         var end = sp.i + (sp.len || 0);
         /* v17.25 · La CLASE (bruto/neto) solo se busca en el tramo de
@@ -7128,8 +7148,8 @@
         /* v17.40 · F1: ver figureHasOtherUnit — un precio de otra
            unidad (litro, paquete, docena…) no es propio ni
            alternativa. */
-        var lab0 = nearestLabel(s, sp.i, sp.len, prevEnd, nextStart);
-        if ((lab0 === "propio" || lab0 === "alternativa") && figureHasOtherUnit(s, sp)) lab0 = "ninguna";
+        var lab0 = labs0[k];
+        if ((lab0 === "propio" || lab0 === "alternativa") && figureHasOtherUnit(s, sp, ownNouns)) lab0 = "ninguna";
         return { v: sp.v, i: sp.i, len: sp.len || 0, unit: unit, kind: kind, monthly: monthlyNear, label: lab0 };
       });
     }
@@ -8534,6 +8554,30 @@
         if (ownUnit === "mensual" && isSingleUnitFigure(text, f, figs, i)) continue;
         return f;
       }
+      /* v17.51 · F1a (seguimiento): la alternativa declarada en la
+         misma unidad en que se vende el producto, en una cláusula que
+         la nombra («la alternativa cobra $22.000 por libra»), vale
+         aunque moneyFigures la deje sin etiqueta: cuando el propio
+         viene pelado («yo cobro $18.000», corrección de C0 Q6), la
+         exención F1a no se dispara y la cifra queda «ninguna» — los
+         dos pases etiquetados no la ven y el canon queda en null, así
+         que ninguna lectura puede decir «lo que cobra la alternativa».
+         Solo rescata figuras sin etiqueta, en la unidad propia o sin
+         unidad, nunca mensuales (la disciplina mensual se mantiene: un
+         total mensual etiquetado «alternativa» no pasa por aquí). La
+         cifra negada de la misma frase («…no $18.000») es segura: su
+         cláusula no nombra a la alternativa. */
+      for (i = 0; i < figs.length; i++) {
+        f = figs[i];
+        if (f.label && f.label !== "ninguna") continue;
+        if (f.monthly) continue;
+        if (f.unit !== ownUnit && f.unit !== "desconocida") continue;
+        if (ownUnit === "mensual" && isSingleUnitFigure(text, f, figs, i)) continue;
+        var cl51 = "";
+        try { cl51 = figureClause(text, f.i, f.len || 0); } catch (e) { cl51 = ""; }
+        if (!/(alternativa|competencia|otro\s+negocio|otra\s+tienda|otro\s+local|otro\s+taller|la\s+otra|en\s+otro\s+lado|en\s+la\s+calle|lo\s+que\s+paga\s+hoy|paga\s+hoy\s+por|la\s+cadena)/i.test(cl51)) continue;
+        return f;
+      }
       return null;
     }
     function contradictionFigures() {
@@ -8842,6 +8886,35 @@
         if (fam[n.key]) fam[n.key].forEach(function (k) { if (skip.indexOf(k) < 0) skip.push(k); });
       }
       return null;
+    }
+    /* v17.51 · F4: TODAS las aclaraciones abiertas, en el mismo orden
+       y con la misma supresión que openContradiction: antes solo se
+       veía la primera (el CAC tapaba la brecha de ingresos, que nunca
+       se mostraba antes de C6 Q1 aunque el cálculo fuera correcto).
+       El chat y el Resumen pintan una burbuja por nota; la lógica de
+       commitAnswer sigue usando openContradiction (la primera). */
+    function openContradictionList() {
+      if (!state) return [];
+      var list = state.contradictions || [];
+      var fam = { "cac-supera-margen": ["cac-supera-margen", "cac-supera-margen-ltv"], "cac-supera-margen-ltv": ["cac-supera-margen", "cac-supera-margen-ltv"] };
+      var skip = [];
+      var out = [];
+      for (var guard = 0; guard < 12; guard++) {
+        var n = contradictionNote(skip);
+        if (!n) break;
+        var suppressed = false;
+        for (var i = 0; i < list.length; i++) {
+          var rec = list[i];
+          if (rec.status !== "resolved") continue;
+          if (rec.key !== n.key && !(fam[n.key] && fam[n.key].indexOf(rec.key) >= 0)) continue;
+          if (rec.sourceHash === contradictionSourceHash()) { suppressed = true; break; }
+          if (rec.figures && figuresMatchSnapshot(rec.figures, n.key)) { suppressed = true; break; }
+        }
+        if (!suppressed) out.push(n);
+        if (skip.indexOf(n.key) < 0) skip.push(n.key);
+        if (fam[n.key]) fam[n.key].forEach(function (k) { if (skip.indexOf(k) < 0) skip.push(k); });
+      }
+      return out;
     }
     /* v17.30 (WS2) · Un CAC por canal ya aclarado no vuelve a
        preguntarse: la corrección guardada por canal manda sobre lo
@@ -12177,12 +12250,18 @@
              medido: no marca. Solo vale para no-tengo/hay; un 0, un
              «cero» o un «ningún» en la misma oración sigue contando. */
           if (/^no\s+(tengo|tenemos|hay)$/i.test(mm[0]) && /\b(si|cuando)\b/i.test(cl.slice(0, mm.index))) { if (mm.index === reM.lastIndex) reM.lastIndex++; continue; }
+          /* v17.51 · F3: mismo consecuente de «sin <insumo>» que en tightZeroSales («porque sin carne no hay venta»): la falta del insumo es la condición, no un cero medido. «Sin embargo» y «quedé sin X y…» siguen contando. */
+          if (/^no\s+(tengo|tenemos|hay)$/i.test(mm[0]) && /\bsin\s+(?:un|una|unos|unas|el|la|los|las|mi|tu|su|este|esta|ese|esa)?\s*(?!embargo\b)[a-záéíóúñ]+\s*$/i.test(cl.slice(0, mm.index))) { if (mm.index === reM.lastIndex) reM.lastIndex++; continue; }
           markers.push(mm.index + mm[0].length); markerStarts.push(mm.index);
           if (/^(?:\$?0|cero)$/.test(mm[0])) { hasBareZero = true; if (bareZeroStart == null) bareZeroStart = mm.index; }
           if (mm.index === reM.lastIndex) reM.lastIndex++;
         }
         var reS = new RegExp("\\bsin\\s+" + HONEST_ZERO_UNITS.source, "gi"), ms;
-        while ((ms = reS.exec(cl)) !== null) { markers.push(ms.index + ms[0].length); if (ms.index === reS.lastIndex) reS.lastIndex++; }
+        while ((ms = reS.exec(cl)) !== null) {
+          /* v17.51 · F3 (seguimiento): «sin <unidad>» seguido de inmediato por «no hay / no tengo» es el consecuente de la condicional («sin clientes no hay venta»), no un cero suelto: no se siembra el marcador. «Estoy sin clientes» (sin consecuente) sigue marcando. */
+          if (/^\s+no\s+(tengo|tenemos|hay)\b/i.test(cl.slice(ms.index + ms[0].length))) { if (ms.index === reS.lastIndex) reS.lastIndex++; continue; }
+          markers.push(ms.index + ms[0].length); if (ms.index === reS.lastIndex) reS.lastIndex++;
+        }
         if (!markers.length) return;
         /* La unidad tiene que estar pegada al marcador (a 20 caracteres
            como mucho): «no tengo tiempo para los clientes» no es cero
@@ -12583,7 +12662,15 @@
        contar. La cita pelada sigue sin contar (v17.38/v17.44). */
     function hasRoleActionCase(text) {
       var t = stripNegatedCase(String(text || ""));
-      var ROLES = "(mam[aá]s?|madres?|pap[aá]s?|padres?|vecin[oa]s?|señor[a]?s?|señora|tender[oa]s?|dueñ[oa]s?|alumn[oa]s?|herman[oa]s?|abuel[oa]s?|niñ[oa]s?|comprador[a]?s?|usuari[oa]s?|familias?|espos[oa]s?|mototaxistas?|jefes?|jefas?|novi[oa]s?|amig[oa]s?|compañer[oa]s?|prim[oa]s?|tí[oa]s?|estudiant[ea]s?|profesor[a]?s?|turist[oa]s?|visitant[ea]s?|hu[ée]sped[ea]?s?|conocid[oa]s?|coleg[oa]s?|soci[oa]s?|parient[ea]s?|suegr[oa]s?|cuñad[oa]s?|sobrin[oa]s?|pasajer[oa]s?|pacient[ea]s?)";
+      /* v17.51 · F2: los oficios definidos (abogado, enfermera,
+         médico, cocinero, mesero, pescador, conductor, comerciante,
+         empleado — los mismos de la rama nombre + coma + oficio de
+         hasNamedCase) también son papeles que identifican a la
+         persona: «Un abogado del barrio me escribió por WhatsApp y me
+         pagó $18.000…» es el caso real sin nombre ni fecha, igual que
+         «una mamá» o «un amigo». «Cliente» sigue FUERA (v17.46): «un
+         cliente me pagó $X» es la cita pelada canónica. */
+      var ROLES = "(mam[aá]s?|madres?|pap[aá]s?|padres?|vecin[oa]s?|señor[a]?s?|señora|tender[oa]s?|dueñ[oa]s?|alumn[oa]s?|herman[oa]s?|abuel[oa]s?|niñ[oa]s?|comprador[a]?s?|usuari[oa]s?|familias?|espos[oa]s?|mototaxistas?|jefes?|jefas?|novi[oa]s?|amig[oa]s?|compañer[oa]s?|prim[oa]s?|tí[oa]s?|estudiant[ea]s?|profesor[a]?s?|turist[oa]s?|visitant[ea]s?|hu[ée]sped[ea]?s?|conocid[oa]s?|coleg[oa]s?|soci[oa]s?|parient[ea]s?|suegr[oa]s?|cuñad[oa]s?|sobrin[oa]s?|pasajer[oa]s?|pacient[ea]s?|abogad[oa]s?|enfermer[oa]s?|m[eé]dic[oa]s?|cociner[oa]s?|meser[oa]s?|pescador[oa]s?|conductor[oa]s?|comerciantes?|emplead[oa]s?)";
       var ACTION = "(paga|pagan|pag[oó]|pagaron|pidi[oó]|pidieron|pide|piden|compr[oó]|compraron|compra|compran|vin[oi]|vino|vinieron|viene|vienen|lleg[oó]|llegaron|llega|llegan|volvi[oó]|volvieron|vuelve|vuelven|prob[oó]|probaron|prueba|prueban|reserv[oó]|reservaron|reserva|reservan|dej[oó]|dejaron|deja|dejan|busc[oó]|buscaron|busca|buscan|escribi[oó]|escribieron|escribe|escriben|llam[oó]|llamaron|llama|llaman|visit[oó]|visitaron|visita|visitan|me recomend[oó]|me recomienda|me eligi[oó]|me elige|me pidi[oó]|me pide)";
       var TIME = "(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \\d+ (d[ií]as?|semanas?)|este mes|el \\w+ pasado)";
       var HABITUAL = "(cada (semana|mes|d[ií]a|vez)|siempre|todos los d[ií]as|por lo general|suele|suelen|a menudo|cada vez que)";
@@ -12789,7 +12876,8 @@
     /* v17.49 · F3: un grupo de personas sin nombre + acción + día («4 mamás pidieron cuadernos para el regreso a clases el lunes») ES el caso que pide la pregunta: la lista solo conocía vecina/cliente/alumna/persona/comprador/usuario/familia. Se amplía con los papeles de familia, colegio y trato (mamá, papá, madre, padre, abuela, hermana, tía, niño, estudiante, profesor, turista, visitante, conocido, colega, amiga, prima, sobrina, pasajera, paciente, señora, esposa, novia, compañera, pariente, suegra, cuñada, jefe, huésped). El verbo de acción y el día/la fecha siguen siendo obligatorios: la forma sigue siendo un episodio, no un conteo pelado. */
     function hasNumberedClientCase(text) {
       var t = String(text || "").toLowerCase();
-      return /\b\d+\s+(vecin[oa]s?|client[ea]s?|alumn[oa]s?|personas?|comprador[ea]s?|usuari[oa]s?|familias?|mam[aá]s?|pap[aá]s?|madres?|padres?|abuel[oa]s?|herman[oa]s?|t[ií][oa]s?|niñ[oa]s?|estudiantes?|profesor[ea]s?|turistas?|visitantes?|conocid[oa]s?|coleg[oa]s?|amig[oa]s?|prim[oa]s?|sobrin[oa]s?|pasajer[oa]s?|pacientes?|señor[ea]s?|espos[oa]s?|novi[oa]s?|compañer[oa]s?|parient[ea]s?|suegr[oa]s?|cuñad[oa]s?|jef[ea]s?|hu[ée]sped[ea]?s?)\b[^.!?;]{0,60}?\b(pidieron|pidi[oó]|compraron|compr[oó]|reservaron|reserv[oó]|llegaron|lleg[oó]|vinieron|vin[oi]|probaron|prob[oó]|preguntaron|pregunt[oó]|escribieron|escribi[oó]|llamaron|llam[oó]|visitaron|visit[oó]|pagaron|pag[oó])\b[^.!?;]{0,60}?\b(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \d+ d[ií]as?|hace (una|dos|tres) semanas?|este mes|este fin de semana)\b/i.test(t);
+      /* v17.51 · F2: los mismos oficios definidos valen en grupo numerado («3 abogados pidieron…»). */
+      return /\b\d+\s+(vecin[oa]s?|client[ea]s?|alumn[oa]s?|personas?|comprador[ea]s?|usuari[oa]s?|familias?|mam[aá]s?|pap[aá]s?|madres?|padres?|abuel[oa]s?|herman[oa]s?|t[ií][oa]s?|niñ[oa]s?|estudiantes?|profesor[ea]s?|turistas?|visitantes?|conocid[oa]s?|coleg[oa]s?|amig[oa]s?|prim[oa]s?|sobrin[oa]s?|pasajer[oa]s?|pacientes?|señor[ea]s?|espos[oa]s?|novi[oa]s?|compañer[oa]s?|parient[ea]s?|suegr[oa]s?|cuñad[oa]s?|jef[ea]s?|hu[ée]sped[ea]?s?|abogad[oa]s?|enfermer[oa]s?|m[eé]dic[oa]s?|cociner[oa]s?|meser[oa]s?|pescador[oa]s?|conductor[oa]s?|comerciantes?|emplead[oa]s?)\b[^.!?;]{0,60}?\b(pidieron|pidi[oó]|compraron|compr[oó]|reservaron|reserv[oó]|llegaron|lleg[oó]|vinieron|vin[oi]|probaron|prob[oó]|preguntaron|pregunt[oó]|escribieron|escribi[oó]|llamaron|llam[oó]|visitaron|visit[oó]|pagaron|pag[oó])\b[^.!?;]{0,60}?\b(el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|ayer|hoy|esta semana|la semana pasada|el mes pasado|hace \d+ d[ií]as?|hace (una|dos|tres) semanas?|este mes|este fin de semana)\b/i.test(t);
     }
     /* v17.41 · F4b: un incidente en primera persona con desenlace («me
        pasó con un corte que quedó disparejo y el cliente volvió», «me
@@ -14410,7 +14498,10 @@
          cuentan nada — la cotización y la cita no son la unidad que
          mide el KR — y «3 reservas» tampoco. «N compraron» sigue
          contando pelado, como en la v17.36: comprar es vender. */
-      var wm1 = t.match(new RegExp(numAlt + "\\s+(compraron|reservaron|reservó|apartaron|pidieron|contrataron|agendaron|llevaron)\\b", "i"));
+      /* v17.51 · F5: el total de unidades DECLARADO («24 libras en total») manda sobre el conteo de compradores («3 compraron»): el «3» son personas, no libras. Sin frase de total explícita, «N compraron» sigue contando pelado, como en la v17.36. */
+      var wm0 = t.match(new RegExp(numAlt + "\\s*(" + nounRe + ")\\s+en total\\b", "i"));
+      if (wm0) units = okrWordNum(wm0[1]);
+      var wm1 = (units == null) ? t.match(new RegExp(numAlt + "\\s+(compraron|reservaron|reservó|apartaron|pidieron|contrataron|agendaron|llevaron)\\b", "i")) : null;
       if (wm1) {
         var verb1 = String(wm1[2] || "").toLowerCase();
         var objOk = (verb1 === "compraron");
@@ -15008,7 +15099,16 @@
             var OWN48 = /(yo|mi|mis|me|nosotros|nuestro|clientes?|clientas?|vecin[oa]s?|compran|compro|tengo|vendo|vendemos|cobro|cobramos|ofrezco|dejo|pongo|fijo|sirvo|cuesta|vale|especial|cocada|caf[eé]|arepa|dulce|plato|almuerzo|empanada|jugo|postre|pan|torta|ropa|prenda|servicio|producto|men[úu])/i;
             var MONTHLY48 = /\b(al mes|por mes|mensual(?:es)?|cada mes)\b/i;
             var PERUNIT48 = /\bpor\s+(cocada|caf[eé]|venta|plato|almuerzo|noche|habitaci[oó]n|unidad|pieza|producto|servicio|cliente|persona|clase|sesi[oó]n|consulta|pedido|reserva|hora|d[ií]a|semana)\b/i;
-            if (MONTHLY48.test(sent48) && !PERUNIT48.test(sent48)) return "";
+            /* v17.51 · F1b: el marcador mensual se mira en el SUBTRAMO de
+               esta cifra, no en toda la cláusula: «Hoy paga $22.000 por
+               la alternativa y $220.000 por un paquete familiar mensual»
+               trae el «mensual» del paquete, no del precio — la cláusula
+               entera lo marcaba como total mensual y la cifra perdía su
+               rol. Un total mensual de verdad («facturo $8.640.000 al
+               mes») sigue sin rol: el marcador está en su propio
+               subtramo. */
+            var seg48 = figureSegment(String(text), figureIdx, effLen48);
+            if (MONTHLY48.test(seg48) && !PERUNIT48.test(seg48)) return "";
             if (RIVAL48.test(sent48)) return canon.alternativa === value ? "alternativa" : "";
             if (OWN48.test(sent48)) return canon.propio === value ? "propio" : "";
             /* v17.50 · F4: la cláusula neutra hereda el marco de su
@@ -16298,7 +16398,51 @@
        de jugo», «docena de huevos»). La regla v17.40 sigue: «cobro
        $18.000 por caja» sigue sin ser precio propio unitario. */
     var PACK_UNIT_RE = /\b(litros?|paquetes?|docenas?|kilos?|kilogramos?|cajas?|botellas?|galones?|bultos?|sacos?|canastas?|combos?|libras?|gramos?)\b/i;
-    function figureHasOtherUnit(text, sp) {
+    /* v17.51 · F1b: el subtramo de la cifra dentro de su cláusula
+       (entre conjunciones «y/e/o/pero»): un marcador que pertenece a
+       OTRA cifra de la misma cláusula («…y $220.000 por un paquete
+       familiar mensual») no es de esta cifra. Misma segmentación que
+       figureHasOtherUnit. */
+    function figureSegment(text, idx, spanLen) {
+      var s = String(text || "");
+      var clause = figureClause(s, idx, spanLen);
+      var start = idx;
+      function isBreak(p) {
+        var ch = s[p];
+        if (ch === "!" || ch === "?" || ch === "," || ch === ";" || ch === ":") return true;
+        if (ch === ".") {
+          var prev = p > 0 ? s[p - 1] : "", next = p + 1 < s.length ? s[p + 1] : "";
+          if (/\d/.test(prev) && /\d/.test(next)) return false;
+          return true;
+        }
+        return false;
+      }
+      while (start > 0 && !isBreak(start - 1)) start--;
+      var figOff = idx - start;
+      var seg = clause, bounds = [], last = 0, sm;
+      var segRe = /\s+(?:y|e|o|pero)\s+/gi;
+      while ((sm = segRe.exec(clause)) !== null) { bounds.push([last, sm.index]); last = sm.index + sm[0].length; }
+      bounds.push([last, clause.length]);
+      for (var k = 0; k < bounds.length; k++) {
+        if (figOff >= bounds[k][0] && figOff <= bounds[k][1]) { seg = clause.slice(bounds[k][0], bounds[k][1]); break; }
+      }
+      return seg;
+    }
+    /* v17.51 · F1a: las unidades de paquete del subtramo de una cifra
+       («por libra» en «yo cobro $18.000 por libra»): la unidad en que
+       se vende el producto, que figureHasOtherUnit debe eximir. */
+    function packUnitStemsInSegment(text, sp) {
+      var seg = figureSegment(text, sp.i, sp.len);
+      var out = [], re = new RegExp(PACK_UNIT_RE.source, "gi"), m;
+      while ((m = re.exec(seg)) !== null) {
+        /* «<producto> de <unidad>» es nombre de producto, no unidad. */
+        if (/\bde\s+$/.test(seg.slice(0, m.index))) continue;
+        var stem = m[0].toLowerCase().replace(/s$/, "");
+        if (out.indexOf(stem) < 0) out.push(stem);
+      }
+      return out;
+    }
+    function figureHasOtherUnit(text, sp, extraExempt) {
       try {
         var s = String(text || "");
         var clause = figureClause(s, sp.i, sp.len);
@@ -16336,6 +16480,10 @@
           for (var i = 0; i < pk.length; i++) {
             if (pk[i] && pk[i].toLowerCase().replace(/s$/, "") === stem) { exempt = true; break; }
           }
+          /* v17.51 · F1a: la unidad en que se vende el producto no es
+             «otra unidad»: si la cifra propia de este texto se cobra
+             por esa unidad («por libra»), la unidad queda eximida. */
+          if (!exempt && extraExempt) { for (var j = 0; j < extraExempt.length; j++) { if (extraExempt[j] === stem) { exempt = true; break; } } }
           if (!exempt) return true;
         }
         return false;
@@ -18016,16 +18164,19 @@
         var cq = cqDisp.q;
         t += analiaBubble('<span class="qtag">Pregunta ' + (step + 1) + " de " + m.questions.length + (cq.block ? " · " + esc(blockLabel(cq.block)) : "") + "</span>" + esc(coachLead(step)) + " <strong>" + esc(cqDisp.text) + '</strong><span class="why">Por qué te lo pregunto: ' + esc(cq.why) + "</span>" + (cq.exige ? '<span class="why"><strong>Lo que yo busco con esto:</strong> ' + esc(cq.exige) + "</span>" : ""));
         coachNotesFor(m.id, step).forEach(function (nt) { t += analiaBubble(esc(nt.text), nt.at); });
-        var contra = openContradiction();
-        var contraMods = contra ? (contra.mods || contradictionMods(contra.key)) : [];
+        /* v17.51 · F4: TODAS las aclaraciones abiertas se ven, una burbuja por nota (antes solo la primera: el CAC tapaba la brecha). */
+        var contraList = openContradictionList();
         /* v17.26 (WS2) · La contradicción se ve en el chat del
            componente dueño de sus respuestas (C4 para el CAC, C0/C6/
            C10 para precio, costo y neto), no solo en C6/C10. */
         /* v17.40 · F6: la aclaración abierta se responde donde se
            muestra — el botón lleva al componente dueño y enfoca la
            casilla de respuesta. */
-        if (contra && contraMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contra.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(clarResponderTarget(contra)) + '" data-contra-key="' + esc(contra.key) + '">Responder esta aclaración</button>', "micro"); /* v17.42 · F8: el destino se calcula al pintar */
-        else if (!contra) {
+        contraList.forEach(function (contra) {
+          var contraMods = contra.mods || contradictionMods(contra.key) || [];
+          if (contraMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contra.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(clarResponderTarget(contra)) + '" data-contra-key="' + esc(contra.key) + '">Responder esta aclaración</button>', "micro"); /* v17.42 · F8: el destino se calcula al pintar */
+        });
+        if (!contraList.length) {
           /* La pregunta por unidades o por vías distintas también se
              ve en el chat del componente que la origina, no solo en
              el Resumen. */
@@ -18108,12 +18259,15 @@
            componente ya completo: si no, una contradicción de C4 nunca
            se podría aclarar desde su propio chat, porque la pregunta
            solo se mostraba mientras faltaban preguntas. */
-        var contraDone = openContradiction();
-        var contraDoneMods = contraDone ? (contraDone.mods || contradictionMods(contraDone.key)) : [];
+        /* v17.51 · F4: TODAS las aclaraciones abiertas se ven también con el componente ya completo, una burbuja por nota. */
+        var contraDoneList = openContradictionList();
         /* v17.40 · F6: con el componente ya completo la aclaración
            también se responde donde se muestra — el mismo botón que en
            el chat del componente abierto. */
-        if (contraDone && contraDoneMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contraDone.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(clarResponderTarget(contraDone)) + '" data-contra-key="' + esc(contraDone.key) + '">Responder esta aclaración</button>', "micro"); /* v17.42 · F8: el destino se calcula al pintar */
+        contraDoneList.forEach(function (contraDone) {
+          var contraDoneMods = contraDone.mods || contradictionMods(contraDone.key) || [];
+          if (contraDoneMods.indexOf(m.id) >= 0) t += analiaBubbleCls('<span class="qtag">Algo que yo quiero aclarar contigo</span>' + esc(contraDone.text) + '<br><button class="btn small" type="button" data-answer-contra="' + esc(clarResponderTarget(contraDone)) + '" data-contra-key="' + esc(contraDone.key) + '">Responder esta aclaración</button>', "micro"); /* v17.42 · F8: el destino se calcula al pintar */
+        });
         /* v17.46 · UX: el botón de continuar se guarda para después de
            «Lo que yo veo» (nextBtnHtml46); en C13 sin cerrar no hay
            botón de continuar, solo «Rehacer componente». */
@@ -18834,6 +18988,8 @@
              condicional («si yo no corto, no hay ingreso») es una
              hipótesis, no un cero medido: no marca. */
           if (/\bno\s+(tengo|tenemos|hay)\b/i.test(mm[0]) && /\b(si|cuando)\b/i.test(cl.slice(0, mm.index))) { if (mm.index === reM.lastIndex) reM.lastIndex++; continue; }
+          /* v17.51 · F3: el consecuente de «sin <insumo>» («porque sin carne no hay venta», «porque sin plantas no hay venta») no es un cero medido: la falta del insumo es la condición, no la medida. La guarda v17.49 cubría el «sin» mismo y la forma verbal, pero no el «no hay / no tengo» que sigue a «sin <insumo>» en la misma cláusula — ese marcador sembraba el cero que luego registraba la retractación. «Sin embargo» y «quedé sin X y…» siguen contando (la falta ya ocurrió o no es condicional). */
+          if (/\bno\s+(tengo|tenemos|hay)\b/i.test(mm[0]) && /\bsin\s+(?:un|una|unos|unas|el|la|los|las|mi|tu|su|este|esta|ese|esa)?\s*(?!embargo\b)[a-záéíóúñ]+\s*$/i.test(cl.slice(0, mm.index))) { if (mm.index === reM.lastIndex) reM.lastIndex++; continue; }
           /* v17.49 · F4: el «sin» de una condicional («sin clientes no vendo nada», «sin pescado no vendo nada») no es un marcador de cero: la falta del insumo es la condición, no la medida. «Sin embargo» no es condicional («sin embargo, no vendo nada» sí es un cero) y «estoy sin clientes» tampoco (la falta es el estado actual, sin verbo de cero detrás). */
           if (/^sin$/i.test(mm[0]) && /^\s*sin\s+(?:un|una|unos|unas|el|la|los|las|mi|tu|su|este|esta|ese|esa)?\s*(?!embargo\b)[a-záéíóúñ]+\s+no\s+(vendo|vendemos|vend[ií]|vendimos|he\s+vendido|hemos\s+vendido|tengo|tenemos|hay)\b/i.test(cl.slice(mm.index))) { if (mm.index === reM.lastIndex) reM.lastIndex++; continue; }
           markers.push(mm.index + mm[0].length); markerStarts.push(mm.index); if (mm.index === reM.lastIndex) reM.lastIndex++;
@@ -21778,8 +21934,8 @@
       if (state.task13 && state.task13.text && !state.task13.report && dl0 && dl0.days <= 2) {
         html += '<div class="na-note" style="border-color:var(--danger)"><strong>Recordatorio de tu tarea:</strong> vence el ' + esc(fmtTask13Due(state.task13.due)) + (dl0.days < 0 ? " — ya pasó la fecha: repórtala cuando puedas en la Conversación." : dl0.days === 0 ? " — vence hoy." : " — faltan " + dl0.days + " días.") + "</div>";
       }
-      var contra0 = openContradiction();
-      if (contra0) { var contra0Mods = contra0.mods || contradictionMods(contra0.key) || []; html += '<div class="na-note"><strong>Algo que yo quiero aclarar contigo:</strong> ' + esc(contra0.text) + ' <button class="btn small" type="button" data-answer-contra="' + esc(clarResponderTarget(contra0)) + '" data-contra-key="' + esc(contra0.key) + '">Responder</button></div>'; } /* v17.42 · F8: el destino se calcula al pintar */
+      /* v17.51 · F4: TODAS las aclaraciones abiertas, una nota por cada una (antes solo la primera). */
+      openContradictionList().forEach(function (contra0) { var contra0Mods = contra0.mods || contradictionMods(contra0.key) || []; html += '<div class="na-note"><strong>Algo que yo quiero aclarar contigo:</strong> ' + esc(contra0.text) + ' <button class="btn small" type="button" data-answer-contra="' + esc(clarResponderTarget(contra0)) + '" data-contra-key="' + esc(contra0.key) + '">Responder</button></div>'; }); /* v17.42 · F8: el destino se calcula al pintar */
       /* v17.33 (WS1) · H1: si un reto afirmó 0 ventas y tu aclaración lo corrigió, el Resumen lo dice de frente: el cero queda retractado, no solo en silencio. */
       var zeroRet = zeroSalesRetractionRecord();
       if (zeroRet) {
