@@ -871,6 +871,7 @@
       .chat-search input:focus { outline: 2px solid var(--accent); border-color: transparent; }
       .msg.dim { opacity: .32; }
       .msg.hit .bubble { outline: 2px solid var(--gold-bright); }
+      .msg mark { background: var(--gold-bright); color: inherit; border-radius: 2px; padding: 0 1px; }
       .quick-replies { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 0; }
       .qr-chip { border: 1px dashed var(--line); background: transparent; color: var(--ink-2); border-radius: 99px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; min-height: 1.9rem; }
       .qr-chip:hover { border-color: var(--accent); color: var(--accent); }
@@ -3652,10 +3653,23 @@
                             "why": "Con ventas reales, el detonante y la barrera se cuentan: los casos del mes pasado son la medida, no la teoría."
                         },
                         "En crecimiento": {
+                            /* v17.50 · F1: la variante pedía el detonante
+                               y las barreras de los nuevos sin exigir
+                               ningún caso, así que evidenceMissing no
+                               encontraba hueco, la puerta de commitAnswer
+                               nunca abría pushNextStep y la cadena [0]
+                               no llegaba jamás (ni la repregunta del
+                               caso, ni la auditoría marcaba Q6). Como la
+                               variante hermana «Operando y vendiendo»,
+                               la pregunta exige DOS casos (uno para el
+                               nuevo y otro para el viejo) y la cadena
+                               pide el primero explícitamente; la
+                               repregunta del caso pide el segundo. */
                             "chain": [
-                                "¿Qué barrera frena más a los nuevos que a los viejos?"
+                                "¿Qué barrera frena más a los nuevos que a los viejos?",
+                                "Dame un caso real del detonante del último mes: ¿quién fue y qué pasó?"
                             ],
-                            "exige": "El detonante y las barreras de los clientes nuevos, y si son los mismos de los viejos.",
+                            "exige": "El detonante y las barreras de los clientes nuevos, y si son los mismos de los viejos, con un caso real para el nuevo y otro caso para el viejo.",
                             "q": "¿Qué hecho concreto detona la compra de los clientes nuevos, y qué barreras los frenan? ¿El detonante del nuevo es el mismo que el del viejo, o el crecimiento te trajo otro motivo de compra?",
                             "why": "Crecer trae motivos nuevos: si el detonante del nuevo es otro, tu mensaje de antes ya no le habla."
                         }
@@ -8049,6 +8063,20 @@
               var ws5Bare = ws5AfterClean === "" || (ws5IsCobro && /^por(la|el|una|un|cada)?[a-z]+$/i.test(ws5AfterClean));
               if (ws5Bare) continue;
             }
+            /* v17.50 · F5: el total también se marca DESPUÉS de la
+               cifra («$7.500.000 al mes en total»): la guarda v17.36
+               solo miraba ANTES de la cifra, así que una repregunta
+               que repetía el total con el «en total» detrás se sumaba
+               como tercera fuente ($14.500.000) y la brecha salía
+               «Sobran $7.000.000». Solo vale el «en total» pelado en
+               su misma cláusula, antes de cualquier etiqueta: una
+               etiqueta de fuente después («en membresías», «por
+               WhatsApp») sigue siendo fuente, no total. */
+            var ws5After50 = ch.slice(mf.i + (mf.len || 0), (mi + 1 < mfigs.length) ? mfigs[mi + 1].i : ch.length);
+            var ws5Term50 = ws5After50.search(/[.!?;]/);
+            if (ws5Term50 >= 0) ws5After50 = ws5After50.slice(0, ws5Term50);
+            var ws5AfterClean50 = ws5After50.replace(/\b(al mes|por mes|mensual(?:es)?|cada mes)\b/gi, "").replace(/^[.,:;\s]+/, "").replace(/[^A-Za-zÁÉÍÓÚáéíóúñÑ ]/g, "").trim();
+            if (/^en\s+total\b/i.test(ws5AfterClean50)) continue;
             /* v17.35 (WS5) · F11: la etiqueta sale de la cláusula de
                ESTA fuente, no del trozo entero: antes, todas las
                fuentes de un trozo heredaban la primera etiqueta
@@ -8129,10 +8157,31 @@
         return base;
       }
       var fromM6 = sourcesMainPlusFollowups("M6", 0);
-      if (fromM6 && fromM6.sources && fromM6.sources.length >= 2) return fromM6;
+      if (fromM6 && fromM6.sources && fromM6.sources.length >= 2) return filterTotalAsSource50(fromM6);
       var fromM1 = sourcesMainPlusFollowups("M1", 6);
-      if (fromM1 && fromM1.sources && fromM1.sources.length >= 2) return fromM1;
-      return fromM6 || fromM1;
+      if (fromM1 && fromM1.sources && fromM1.sources.length >= 2) return filterTotalAsSource50(fromM1);
+      return filterTotalAsSource50(fromM6 || fromM1);
+    }
+    /* v17.50 · F5: el total declarado nunca es una fuente. Una
+       repregunta que repite el total pelado («Son $7.500.000 al mes»,
+       «$7.500.000 al mes») no lleva ninguna marca de total y la
+       guarda v17.36 no la ve: se sumaba como tercera fuente y la
+       brecha salía $14.500.000 / «Sobran $7.000.000». Una cifra igual
+       al total declarado es el total, no una fuente: por definición
+       el total es la suma de las fuentes, así que una «fuente» igual
+       al total dejaría a las demás sumando cero. Solo se filtra
+       contra el total declarado (M0 Q6 y demás preguntas que lo
+       enuncian con verbo); sin total declarado no se filtra nada. */
+    function filterTotalAsSource50(inc) {
+      if (!inc || !inc.sources || !inc.sources.length) return inc;
+      var declared50 = null;
+      try { declared50 = extractDeclaredMonthlyTotal(); } catch (e50) { declared50 = null; }
+      if (declared50 == null || !(declared50 > 0)) return inc;
+      var kept50 = inc.sources.filter(function (s) { return s.v !== declared50; });
+      if (kept50.length === inc.sources.length) return inc;
+      var sum50 = 0;
+      kept50.forEach(function (s) { sum50 += s.v; });
+      return { sources: kept50, sum: sum50, statedTotal: inc.statedTotal };
     }
     /* Texto del hueco que un descuadre abierto deja en el bloque de
        ingresos: la misma cifra que el aviso del chat, en forma de
@@ -14962,6 +15011,29 @@
             if (MONTHLY48.test(sent48) && !PERUNIT48.test(sent48)) return "";
             if (RIVAL48.test(sent48)) return canon.alternativa === value ? "alternativa" : "";
             if (OWN48.test(sent48)) return canon.propio === value ? "propio" : "";
+            /* v17.50 · F4: la cláusula neutra hereda el marco de su
+               frase. Una cifra en una continuación de lista («y la
+               revisión completa a $180.000») no trae verbo ni marca en
+               su cláusula, pero la frase entera está enmarcada por el
+               verbo de venta del dueño («Vendo por transacción: …»).
+               Sin este paso la cifra caía en el anclaje por valor y,
+               al coincidir solo con la alternativa, se etiquetaba como
+               de la alternativa aunque el dueño la estuviera cobrando
+               («revisión completa», «canasta con frutas importadas» no
+               están en la lista de productos de OWN48 y nunca podrán
+               estar todos). La frase rival manda primero; el marco
+               propio solo admite el precio propio (o ningún rol si el
+               valor no coincide): nunca etiqueta como alternativa lo
+               que la frase del dueño enmarca. Los verbos propios son
+               solo de primera persona y participios de venta
+               («vendidas»): la tercera persona («cobra», «pone»,
+               «vende») es como se describe a la alternativa y no
+               entra aquí. */
+            var sent50 = figureSentence(String(text), figureIdx, effLen48);
+            var RIVAL_SENT50 = /(alternativa|competencia|otro\s+negocio|otra\s+tienda|otro\s+local|otro\s+taller|la\s+otra|en\s+otro\s+lado|en\s+la\s+calle|lo\s+que\s+paga\s+hoy|paga\s+hoy\s+por|la\s+cadena)/i;
+            var OWN_SENT50 = /\b(vend(o|emos|er|id[oa]s?)|cobr(o|amos|ar)|ofre(zco|cer)|dej(o|ar|amos)|pong(o|er|amos)|fij(o|ar|amos)|me\s+pagan|mis\s+clientes\s+ya\s+pagan)\b/i;
+            if (RIVAL_SENT50.test(sent50)) return canon.alternativa === value ? "alternativa" : "";
+            if (OWN_SENT50.test(sent50)) return canon.propio === value ? "propio" : "";
           }
           var roles = ["propio", "alternativa", "costo", "neto", "cac", "ltv"];
           var match = null, n = 0;
@@ -17532,14 +17604,56 @@
       };
       stepFn(); /* el primer paso sale de inmediato: la burbuja nunca se pinta vacía */
     }
+    /* v17.50 · F6: la búsqueda FILTRA y RESALTA, no solo atenúa.
+       Antes solo añadía «dim» (opacidad .32) a lo que no coincidía y
+       «hit» (contorno dorado) a lo que sí: en el hilo todo seguía
+       visible y ningún texto se resaltaba, así que teclear no
+       filtraba nada. Ahora lo que no coincide se oculta (display
+       none) y cada coincidencia se envuelve en <mark> dentro del
+       bloque visible. Las marcas se quitan antes de cada aplicación
+       (al teclear, el DOM es el mismo y no deben anidarse); al
+       repintar el hilo (renderChat) el DOM es nuevo y se reaplican
+       con la consulta guardada en ui.searchQuery. «Limpiar» restaura
+       todo. */
+    function highlightQueryIn50(root, query) {
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      var nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      nodes.forEach(function (node) {
+        var text = node.nodeValue || "";
+        var lower = text.toLowerCase();
+        var idx = lower.indexOf(query);
+        if (idx < 0) return;
+        var parent = node.parentNode;
+        if (!parent) return;
+        var frag = document.createDocumentFragment();
+        var last = 0;
+        while (idx >= 0) {
+          if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
+          var mk = document.createElement("mark");
+          mk.textContent = text.slice(idx, idx + query.length);
+          frag.appendChild(mk);
+          last = idx + query.length;
+          idx = lower.indexOf(query, last);
+        }
+        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        parent.replaceChild(frag, node);
+      });
+    }
     function applySearch(q) {
       var th = $("thread"); if (!th) return;
       var query = (q || "").trim().toLowerCase();
       th.querySelectorAll(".msg").forEach(function (m) {
+        m.querySelectorAll("mark").forEach(function (mk) {
+          var tx = document.createTextNode(mk.textContent);
+          if (mk.parentNode) mk.parentNode.replaceChild(tx, mk);
+        });
+        if (m.normalize) m.normalize();
         m.classList.remove("dim", "hit");
+        m.style.display = "";
         if (!query) return;
-        if (m.textContent.toLowerCase().indexOf(query) >= 0) m.classList.add("hit");
-        else m.classList.add("dim");
+        if (m.textContent.toLowerCase().indexOf(query) >= 0) { m.classList.add("hit"); highlightQueryIn50(m, query); }
+        else m.style.display = "none";
       });
     }
     function renderEvidencePanel() {
@@ -21370,6 +21484,15 @@
       applyCanvasSide();
     });
     $("chatSearch").addEventListener("input", function () { ui.searchQuery = $("chatSearch").value; applySearch(ui.searchQuery); });
+    /* v17.50 · F6: Enter aplica la búsqueda y lleva la vista al primer
+       resultado (antes no hacía nada). */
+    $("chatSearch").addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      ui.searchQuery = $("chatSearch").value;
+      applySearch(ui.searchQuery);
+      try { var first50 = document.querySelector("#thread .msg.hit"); if (first50 && first50.scrollIntoView) first50.scrollIntoView({ block: "nearest" }); } catch (err50) {}
+    });
     $("chatSearchClear").addEventListener("click", function () { $("chatSearch").value = ""; ui.searchQuery = ""; applySearch(""); $("chatSearch").focus(); });
     $("thread").addEventListener("click", function (e) {
       /* v17.24 · Tocar la burbuja de Analía muestra el texto completo de
