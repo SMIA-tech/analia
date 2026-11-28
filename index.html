@@ -7580,7 +7580,7 @@
          compra. «Me trae sus uniformes de trabajo cada mes» habla de
          una entrega, no de una compra: el atajo solo vale cuando la
          cláusula de la frase trae un verbo de compra del cliente
-         habitual (compra, vuelve, pide, encarga, gasta, paga, repite,
+         habitual (compra, contrata, vuelve, pide, encarga, gasta, paga, repite,
          consume, renueva; «viene» solo con sujeto cliente, y solo en
          tercera persona: «compro tela cada mes» es el dueño comprando
          insumos, no el cliente comprando).
@@ -7596,7 +7596,7 @@
           [".", "!", "?", ";", ":"].forEach(function (ch) { var p = t.indexOf(ch, start + m[0].length); if (p >= 0 && p < e0) e0 = p; });
           var clause = t.slice(s0 + 1, e0);
           if (/no\s+s[eé](?![a-záéíóúñ])/i.test(clause)) continue; /* \b tras «é» nunca casa en JS (ASCII): mirar adelante en su lugar */
-          if (/\b(compra|compran|vuelve|vuelven|regresa|regresan|pide|piden|encarga|encargan|gasta|gastan|paga|pagan|repite|repiten|consume|consumen|renueva|renuevan)\b/i.test(clause)) return n;
+          if (/\b(compra|compran|contrata|contratan|vuelve|vuelven|regresa|regresan|pide|piden|encarga|encargan|gasta|gastan|paga|pagan|repite|repiten|consume|consumen|renueva|renuevan)\b/i.test(clause)) return n;
           /* En la respuesta directa a la frecuencia (M6 Q5) la pregunta ya pone el sujeto (el cliente habitual): «vienen cada mes» ahí sí es frecuencia de compra. En la descripción libre (M0 Q1) «viene» necesita sujeto cliente («viene el proveedor cada mes» no es una compra). */
           if (/\b(viene|vienen)\b/i.test(clause) && (directQ || /\b(clienta|cliente|clientas|clientes|vecina|vecino|comprador|compradora|usuari[oa]s?)\b/i.test(clause))) return n;
         }
@@ -7656,7 +7656,7 @@
           [".", "!", "?", ";", ":"].forEach(function (ch) { var p = t.indexOf(ch, ce47); if (p >= 0 && p < e047) e047 = p; });
           var clause47 = t.slice(s047 + 1, e047);
           if (/\b(punto de equilibrio|equilibrio|pesimista|optimista|escenario|vendo|vendemos|sirvo|servimos|facturo|facturamos)\b/i.test(clause47)) continue;
-          if (!/^(veces|vez)$/.test(noun47) && !/\b(cliente|clienta|clientes|clientas|habitual|compra|compran|viene|vienen|vuelve|vuelven|pide|piden|repite|repiten|consume|consumen)\b/i.test(clause47)) continue;
+          if (!/^(veces|vez)$/.test(noun47) && !/\b(cliente|clienta|clientes|clientas|habitual|compra|compran|contrata|contratan|viene|vienen|vuelve|vuelven|pide|piden|repite|repiten|consume|consumen)\b/i.test(clause47)) continue;
           return n;
         }
         /* v17.32.1 · Frecuencia semanal y diaria: «1 vez por semana»
@@ -8971,7 +8971,22 @@
           if (rec.sourceHash === contradictionSourceHash()) { suppressed = true; break; }
           if (rec.figures && figuresMatchSnapshot(rec.figures, n.key)) { suppressed = true; break; }
         }
-        if (!suppressed) out.push(n);
+        if (!suppressed) {
+          /* v17.53 · F8-scope: la brecha de ingresos («ingresos-fuentes-vs-total») NO se congela en registro: es una nota calculada de las respuestas de ingresos y, si nunca se aclara, no deja registro (phase3 S2a/S2b) — su aclaración, cuando se da, crea el registro resuelto por la vía normal. Las demás notas (CAC…) sí se congelan al detectarse. */
+          if (n.key !== "ingresos-fuentes-vs-total") {
+            /* v17.53 · F8: la nota abierta se congela en su primera aparición (texto y foto de cifras): rehacer + recargar no la recomputa ni la muta — una cifra que aparece después (o que trae la fusión con la nube) no cambia lo que se preguntó. El registro abierto sobrevive al rehacer (no lleva resolvedModule hasta que se resuelve) y al recargar (se guarda con persist). Al resolverla, commitAnswer refresca la foto con las cifras corregidas. */
+            var frozen = null;
+            for (var fi = 0; fi < list.length; fi++) { if (list[fi] && list[fi].key === n.key) { frozen = list[fi]; break; } }
+            if (!frozen) {
+              frozen = { key: n.key, at: new Date().toISOString(), status: "open", figures: contradictionFiguresSnapshot(), text: n.text, sourceHash: contradictionSourceHash() };
+              list.push(frozen);
+              try { persist(); } catch (e) {}
+            } else if (frozen.status === "open" && frozen.text) {
+              n.text = frozen.text;
+            }
+          }
+          out.push(n);
+        }
         if (skip.indexOf(n.key) < 0) skip.push(n.key);
         if (fam[n.key]) fam[n.key].forEach(function (k) { if (skip.indexOf(k) < 0) skip.push(k); });
       }
@@ -12573,6 +12588,21 @@
       if (/\b(en|para|desde|hasta)\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i.test(t)) return true;
       return false;
     }
+    /* v17.53 · F10: una fecha que el dueño solo REPITE del marco de la pregunta («desde el lunes» viene en la propia pregunta y en su repregunta) no es una fecha suya: no cuenta para el plazo que pide la pregunta. Un «el lunes», «este lunes» o una fecha de calendario sí cuentan — son suyos. Sin esto, el eco del marco cerraba el hueco de fecha y la auditoría no marcaba la pregunta (C12 Q6). */
+    function hasDateInOwn(text, q) {
+      var t = String(text || "");
+      if (!hasDateIn(t)) return false;
+      var qs = ((q && (q.q || "")) + " " + (q && (q.exige || ""))).toLowerCase();
+      var frames = [], m;
+      var reF = /\bdesde\s+el\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b/gi;
+      while ((m = reF.exec(qs)) !== null) frames.push(m[1].toLowerCase());
+      if (!frames.length) return true;
+      var stripped = t;
+      frames.forEach(function (wd) {
+        stripped = stripped.replace(new RegExp("\\bdesde\\s+el\\s+" + wd + "\\b", "gi"), " ");
+      });
+      return hasDateIn(stripped);
+    }
     /* v17.32 (WS4b) · G8: un ejemplo/caso solo cuenta con casos
        NOMBRADOS: una mención explícita («por ejemplo», «un caso») o un
        caso con nombre — tratamiento + nombre («doña Rosa»), «el señor
@@ -13280,7 +13310,10 @@
          cantidad pedida (honestZero: misma frase, misma familia),
          nunca un cero cualquiera del texto. */
       var zeroWaiver = honestZero(t, q);
-      if (needs.example && !zeroWaiver) {
+      /* v17.53 · F6: el cero solo dispensa el EJEMPLO cuando es un cero DE CASO («no tengo casos», «0 clientes»): un cero sobre OTRA cosa que pide la pregunta («0 reseñas») dispensa la fecha de la reseña más reciente, pero no el caso — el dueño tiene clientas reales de las que contar. Antes, «0 reseñas» cancelaba el ejemplo y la repregunta del caso nunca se pedía (C3 Q7). */
+      var caseZeroWaiver = false;
+      try { caseZeroWaiver = caseZeroDeclared(t); } catch (e) { caseZeroWaiver = false; }
+      if (needs.example && !caseZeroWaiver) {
         /* v17.40 · F4: una exigencia que pide un caso por elemento
            («un caso real cada uno») necesita DOS casos distintos:
            uno solo no limpia el aviso — y la cadena pide el segundo
@@ -13294,7 +13327,7 @@
       /* v17.32 (WS4b) · G8: la fecha de algo declarado inexistente no
          se pide (absenceWaiver): «un reconocimiento con fecha» no
          tiene fecha que dar cuando no hay reconocimiento (C11 Q2). */
-      if (needs.date && !hasDateIn(t) && !zeroWaiver && !absenceWaiver(t, q) && !dateIsConditional(q, t))
+      if (needs.date && !hasDateInOwn(t, q) && !zeroWaiver && !absenceWaiver(t, q) && !dateIsConditional(q, t))
         return { text: "la fecha o el plazo que pide esta pregunta", needsNumber: false };
       return null;
     }
@@ -13431,7 +13464,10 @@
       /* Un cero honesto ES el dato — pero solo cuando el cero es sobre
          la cantidad que esta pregunta pide (honestZero con alcance):
          «no tenemos deudas» al lado de 7 empleados no es un cero. */
-      if (honestZero(t, q)) return { label: "Dato real — cero/ausencia", miss: [], zero: true };
+      /* v17.53 · F6: «0 reseñas» no es un cero de caso — si la pregunta pide un ejemplo real, la respuesta no trae ningún caso y el cero no es sobre el caso, el cero no dispensa el caso: la valoración sigue por el camino normal (exigeGap), que pide el caso. Sin esta condición, assessEvidence devolvía miss: [] y la cadena, la repregunta del caso y la auditoría nunca veían el hueco. */
+      var f6ZeroCase = false;
+      try { var f6Needs = exigeNeeds(q); f6ZeroCase = !!(f6Needs && f6Needs.example) && !hasExample(t) && !caseZeroDeclared(t); } catch (e) { f6ZeroCase = false; }
+      if (honestZero(t, q) && !f6ZeroCase) return { label: "Dato real — cero/ausencia", miss: [], zero: true };
       var miss = evidenceMissingCore(t, q, stage);
       var hasNum = /\d/.test(t) || /\bcero\b/i.test(t);
       var needs = exigeNeeds(q);
@@ -13439,7 +13475,7 @@
          pide una fecha (exigeNeeds().date): antes, cualquier fecha en
          el texto —un año suelto, un «hoy»— contaba como evidencia y
          podía subir el veredicto aunque la pregunta no pidiera fecha. */
-      var hasDate = needs.date ? hasDateIn(t) : false;
+      var hasDate = needs.date ? hasDateInOwn(t, q) : false;
       var hasSource = /(seg[uú]n|fuente|registro|factura|plataforma|lista|conteo|med[ií]|encuesta|reseña)/i.test(t);
       /* v17.33 (WS3) · H3 «caso»: la misma regla que hasExample: la
          negación no es un caso («no tengo un caso» no cuenta) y las
@@ -14081,8 +14117,23 @@
       [["M0", 6], ["M0", 7], ["M6", 0], ["M6", 1], ["M10", 1]].forEach(function (c) {
         try { var t = combinedAnswer(c[0], c[1]); if (t) texts.push(t); } catch (e) {}
       });
+      /* v17.53 · F9: el sustantivo es el del PRODUCTO QUE SE COBRA, no el primero que aparece tras un «$»: «$18.000 netos por prenda» no casaba (el «netos» estorba) y el primer «$X por <sustantivo>» era «$31.000 por vestido» — el vestido es UN producto, no la unidad por venta. Primero se busca el sustantivo pegado al precio propio (el que se cobra), y después el primer «$X por <sustantivo>» admitiendo hasta dos palabras entre la cifra y el «por» («netos», «en total»). */
+      var ownV = null;
+      try { var _cf9 = contradictionFigures(); if (_cf9 && _cf9.cobrado) ownV = _cf9.cobrado.v; } catch (e) { ownV = null; }
+      if (ownV != null) {
+        for (var j = 0; j < texts.length; j++) {
+          var figs9 = null;
+          try { figs9 = moneyFigures(texts[j]); } catch (e) { figs9 = []; }
+          for (var k = 0; k < figs9.length; k++) {
+            if (figs9[k].v !== ownV) continue;
+            var after9 = texts[j].slice(figs9[k].i + (figs9[k].len || 0), figs9[k].i + (figs9[k].len || 0) + 30);
+            var nm9 = /^\s*(?:[a-záéíóúñ]+\s+){0,2}?por\s+([a-záéíóúñ]+)/i.exec(after9);
+            if (nm9 && !PER_SALE_NOUN_STOP.test(nm9[1])) return nm9[1].toLowerCase();
+          }
+        }
+      }
       for (var i = 0; i < texts.length; i++) {
-        var re = /\$\s*[\d.,]+\s*por\s+([a-záéíóúñ]+)/gi, mm;
+        var re = /\$\s*[\d.,]+\s*(?:[a-záéíóúñ]+\s+){0,2}?por\s+([a-záéíóúñ]+)/gi, mm;
         while ((mm = re.exec(texts[i])) !== null) {
           if (!PER_SALE_NOUN_STOP.test(mm[1])) return mm[1].toLowerCase();
         }
@@ -14198,7 +14249,7 @@
          volumen caía en «ventas». */
       if (!ltvUnitPlural) { try { var _en44 = perSaleNounEarly(); if (_en44) ltvUnitPlural = okrPluralNoun(_en44); } catch (e) {} }
       var NOUNS = "prendas|servicios|ventas|baños|clientes|clientas|pedidos|unidades|reservas|alumnos|consultas|noches|panes|membresías|membresias|clases|sesiones|tazas|platos|piezas" + (ltvUnitPlural ? "|" + ltvUnitPlural : "");
-      var VERBS = "vendo|atiendo|hago|entrego|sirvo|realizo|completo|muevo|tengo";
+      var VERBS = "vendo|vendiendo|vender|atiendo|atendiendo|atender|hago|haciendo|hacer|entrego|entregando|entregar|sirvo|sirviendo|servir|realizo|realizando|realizar|completo|completando|completar|muevo|moviendo|mover|tengo|teniendo|tener";
       function scanVol(t) {
         if (!t) return null;
         var re = new RegExp("(hoy\\s+)?(" + VERBS + ")\\s+(?:unas?|unos?)?\\s*(\\d[\\d.,]*)\\s*(" + NOUNS + ")\\s*(?:al|por)\\s*mes", "i");
@@ -14211,10 +14262,10 @@
       var a = scanVol(mainAnswerText("M10", 1));
       if (a) { a = okrVolumeFixHeadcount(a, ltvUnitPlural); a.src = "C10 Q2"; return a; }
       var q7 = mainAnswerText("M6", 6) || "";
-      var bm = q7.match(new RegExp("base[^:]{0,60}?:\\\\s*(\\\\d[\\\\d.,]*)\\\\s*(" + NOUNS + ")", "i"));
+      var bm = q7.match(new RegExp("base[^:;]{0,60}?:?\\s*(\\d[\\d.,]*)\\s*(" + NOUNS + ")", "i"));
       if (bm) { var bv = ws6ParseMoneyNum(bm[1]); if (bv != null && bv > 0) return okrVolumeFixHeadcount({ v: bv, noun: bm[2].toLowerCase(), verb: null, raw: bm[0], src: "C6 Q7" }, ltvUnitPlural); }
       var q7b = mainAnswerText("M10", 6) || "";
-      var bm2 = q7b.match(new RegExp("(?:mes normal|normal)[^:]{0,60}?:\\\\s*(\\\\d[\\\\d.,]*)\\\\s*(" + NOUNS + ")", "i"));
+      var bm2 = q7b.match(new RegExp("(?:mes normal|normal)[^:;]{0,60}?:?\\s*(\\d[\\d.,]*)\\s*(" + NOUNS + ")", "i"));
       if (bm2) { var bv2 = ws6ParseMoneyNum(bm2[1]); if (bv2 != null && bv2 > 0) return okrVolumeFixHeadcount({ v: bv2, noun: bm2[2].toLowerCase(), verb: null, raw: bm2[0], src: "C10 Q7" }, ltvUnitPlural); }
       try {
         var rf = retarFigures();
@@ -14241,19 +14292,28 @@
       if (!String(t || "").trim()) return null;
       var figs = moneyFigures(t);
       var best = null, bestM = null;
-      figs.forEach(function (f) {
+      /* v17.53 · F12: la mensualidad se mide PEGADA A LA CIFRA (monthlyAttachedToFigure: el marcador tiene que estar junto a ella, sin otra cifra entre medias), no en el tramo de moneyFigures: «Mi meta … es facturar $129.600.000: 240 prendas al mes…» trae el «al mes» de la cláusula siguiente y la meta anual se leía como mensual (×12 otra vez). Y el verbo es «factur-» («facturo» también es meta, no solo «facturar»). */
+      figs.forEach(function (f, k) {
         var clause = "";
         try { clause = figureClause(t, f.i, f.len || 0); } catch (e) { clause = ""; }
-        if (f.monthly || f.unit === "mensual") {
-          if (/meta|facturar/i.test(clause) && (!bestM || f.v > bestM.v)) bestM = f;
+        var isMonthly = false;
+        try { isMonthly = monthlyAttachedToFigure(t, f, figs, k); } catch (e) { isMonthly = !!(f.monthly || f.unit === "mensual"); }
+        var clausePerUnit = /\bpor\s+(cocada|caf[eé]|venta|plato|almuerzo|noche|habitaci[oó]n|unidad|pieza|producto|servicio|cliente|persona|clase|sesi[oó]n|consulta|pedido|reserva|hora|d[ií]a|semana|prenda|limpieza)\b/i.test(clause);
+        if (isMonthly) {
+          if (/meta|factur/i.test(clause) && (!/[:;.!?]/.test(t.slice(0, f.i)) || /meta|facturar/i.test(clause)) && (!bestM || f.v > bestM.v)) bestM = f;
           return;
         }
-        if (f.unit === "por venta") return;
-        if (/meta|facturar|12 meses|doce meses/i.test(clause) && (!best || f.v > best.v)) best = f;
+        if (f.unit === "por venta" || clausePerUnit) return;
+        if (/meta|factur|12 meses|doce meses/i.test(clause) && (!best || f.v > best.v)) best = f;
       });
       if (!best) {
-        figs.forEach(function (f) {
-          if (f.monthly || f.unit === "mensual" || f.unit === "por venta") return;
+        figs.forEach(function (f, k2) {
+          var clause2 = "";
+          try { clause2 = figureClause(t, f.i, f.len || 0); } catch (e) { clause2 = ""; }
+          var isMonthly2 = false;
+          try { isMonthly2 = monthlyAttachedToFigure(t, f, figs, k2); } catch (e) { isMonthly2 = !!(f.monthly || f.unit === "mensual"); }
+          if (isMonthly2 || f.unit === "mensual" || f.unit === "por venta") return;
+          if (/\bpor\s+(cocada|caf[eé]|venta|plato|almuerzo|noche|habitaci[oó]n|unidad|pieza|producto|servicio|cliente|persona|clase|sesi[oó]n|consulta|pedido|reserva|hora|d[ií]a|semana|prenda|limpieza)\b/i.test(clause2)) return;
           if (!best || f.v > best.v) best = f;
         });
       }
@@ -14269,12 +14329,38 @@
       var chosen = (mainAnswerText("M12", 4) || "").trim();
       if (!chosen) return none;
       if (ws6IsThreeTheses(chosen)) { none.unchosen = true; return none; }
-      /* v17.40 · F1: la etiqueta se cortaba en el primer punto, que
-         en «$28.000» es separador de miles, no fin de frase:
-         «a $28.000» quedaba «a $28». Solo parten «:» o un punto
-         seguido de espacio o de fin de texto. */
-      var label = chosen.split(/:|\.(?=\s|$)/)[0].trim();
+      /* v17.53 · F13b: la etiqueta es la primera frase completa de la
+         respuesta. Un punto seguido de dígito es separador de miles,
+         no fin de frase («$58.000» no se corta en «$58»), y un «:» a
+         mitad de frase no corta la etiqueta: «Fijé el vestido en
+         $58.000: de cada venta me deja $31.000» es una sola frase y
+         su justificación no se pierde. */
+      var label = (chosen.match(/^((?:[^.!?;]|\.(?=\d))+)/) || [""])[0].trim();
       if (label.length < 12) label = excerptOf(chosen, 120);
+      /* v17.53 · F13: «Elijo la tesis 1, seguir a $X» es solo un puntero — el resumen debe llevar la tesis, no su número. Se resuelve contra las tres tesis de C12 Q4 si están numeradas; si no, se alarga la etiqueta con la frase siguiente de la respuesta (la defensa), hasta ~160 caracteres. */
+      if (/^\s*(elijo|escojo|me quedo con|voy con)\s+(la\s+)?tesis\s+\d+/i.test(label) || /^la tesis\s+\d+/i.test(label)) {
+        var tn = parseInt((label.match(/tesis\s+(\d+)/i) || [])[1] || "0", 10);
+        var resolved = null;
+        if (tn > 0) {
+          var thesesTxt = "";
+          try { thesesTxt = combinedAnswer("M12", 3) || ""; } catch (e) { thesesTxt = ""; }
+          if (thesesTxt) {
+            var tm = thesesTxt.match(new RegExp("tesis\\s+" + tn + "\\s*[:.\\-]?\\s*((?:[^.!?;]|\\.(?=\\d))+)", "i"));
+            if (tm) resolved = tm[1].trim();
+          }
+        }
+        if (resolved) {
+          label = resolved;
+        } else {
+          var rest = chosen.slice(label.length).replace(/^[:.\s]+/, "");
+          var next = rest.split(/\.(?=\s|$)/)[0].trim();
+          if (next) {
+            var ext = (label + ". " + next).slice(0, 160);
+            if (ext.length === 160 && (label + ". " + next).length > 160) ext = ext.replace(/\s+\S*$/, "");
+            label = ext;
+          }
+        }
+      }
       var sig = chosen.match(/menos de\s+(\d+)\s*(clientas?|clientes?)/i);
       var prem = null, premWord = null;
       var q3 = combinedAnswer("M6", 2) || "";
@@ -14399,7 +14485,7 @@
       [beNoun, okrPluralNoun(noun), "ventas"].forEach(function (n) { if (beNouns.indexOf(n) < 0) beNouns.push(n); });
       var beVerb2 = "Vendes";
       if (vol && vol.verb) {
-        var vm = { vendo: "Vendes", atiendo: "Atiendes", hago: "Haces", entrego: "Entregas", sirvo: "Sirves", realizo: "Realizas", completo: "Completas", muevo: "Mueves" };
+        var vm = { vendo: "Vendes", vendiendo: "Vendes", vender: "Vendes", atiendo: "Atiendes", atendiendo: "Atiendes", atender: "Atiendes", hago: "Haces", haciendo: "Haces", hacer: "Haces", entrego: "Entregas", entregando: "Entregas", entregar: "Entregas", sirvo: "Sirves", sirviendo: "Sirves", servir: "Sirves", realizo: "Realizas", realizando: "Realizas", realizar: "Realizas", completo: "Completas", completando: "Completas", completar: "Completas", muevo: "Mueves", moviendo: "Mueves", mover: "Mueves" };
         if (vm[vol.verb]) beVerb2 = vm[vol.verb];
       }
       if (be && be.computed != null && be.fixed != null && be.margin != null) {
@@ -14915,7 +15001,7 @@
        desde entonces, el aviso y el botón de volver a armar. */
     function okrCloseBubble() {
       if (!state || !state.okrs) return "";
-      var h = '<span class="qtag">Tus objetivos y resultados clave</span>' +
+      var h = '<span class="qtag">Tus objetivos y resultados clave (KR = resultado clave: el número que prueba si la tarea de campo funcionó)</span>' +
         "<strong>Al cerrar tu plan, yo te armo tus objetivos con tus propias cifras verificadas — nada inventado: cada resultado clave trae su punto de partida de hoy y su meta, y yo los voy a medir contigo en C13 y en C14 con los resultados reales.</strong><br><br>" +
         okrHtml("close");
       var stale = false;
@@ -14944,7 +15030,7 @@
         if (m.measured) anyMeasured = true;
         rows += "<p><strong>" + esc(kr.id + " — " + kr.title) + ":</strong> " + esc(m.label) + (m.detail ? " — " + esc(m.detail) : "") + (m.provenance ? " (" + esc(m.provenance) + ")." : "") + "</p>";
       });
-      var head = '<span class="qtag">Tus objetivos y resultados clave · ' + (scope === "C13" ? "medidos con tu reporte de C13" : "medidos con tus resultados reales") + "</span>";
+      var head = '<span class="qtag">Tus objetivos y resultados clave (KR = resultado clave: el número que prueba si la tarea de campo funcionó) · ' + (scope === "C13" ? "medidos con tu reporte de C13" : "medidos con tus resultados reales") + "</span>";
       var intro = "";
       if (scope === "C13" && !anyMeasured) {
         var tk = state.task13 || {}, ev = tk.evidence || {};
@@ -14960,13 +15046,13 @@
        estados vivos. Reusa .maestro-card: sin colores nuevos. */
     function canvasOkrHtml() {
       if (!state || !state.okrs) return "";
-      return "<h3>Tus objetivos y resultados clave · armados al cerrar C12 el " + esc(fmtDateISO(state.okrs.builtAt)) + "</h3><p>Estos objetivos guardan las cifras del cierre de C12.</p>" + okrHtml("canvas");
+      return "<h3>Tus objetivos y resultados clave (KR = resultado clave: el número que prueba si la tarea de campo funcionó) · armados al cerrar C12 el " + esc(fmtDateISO(state.okrs.builtAt)) + "</h3><p>Estos objetivos guardan las cifras del cierre de C12.</p>" + okrHtml("canvas");
     }
     /* La sección del Plan (§5b, sin numerar para no mover los §§6–8) y
        del documento Maestro: vacía hasta el cierre de C12. */
     function okrPlanSection() {
       if (!state || !state.okrs) return "";
-      return "<h2>Objetivos y resultados clave</h2>" + okrHtml("doc");
+      return "<h2>Objetivos y resultados clave (KR = resultado clave: el número que prueba si la tarea de campo funcionó)</h2>" + okrHtml("doc");
     }
     function verdictRank(label, miss) {
       if (label === "Fuerte") return 5;
@@ -15117,7 +15203,7 @@
       var s = ((q && (q.q || "")) + " " + (q && (q.exige || ""))).toLowerCase();
       if (/(costo de adquisici|adquirir|adquisici[oó]n|\bcac\b|conseguir (un )?cliente|traer (un )?cliente)/.test(s)) return "cac";
       if (/(neto|neta|te quedan|lo que te queda)/.test(s)) return "neto";
-      if (/(alternativa|competencia|convencional)/.test(s) && !/(te pag[oó] a ti|pagarte a ti|dispuesto a pagar|tu precio|cu[aá]nto cobras|lo que cobras|yo cobro)/.test(s)) return "alternativa";
+    if (/(alternativa|competencia|convencional)/.test(s) && !/(te pag[oó] a ti|pagarte a ti|dispuesto a pagar|tu precio|cu[aá]nto cobras|lo que cobras|yo cobro)/.test(s)) return "alternativa";
       if (/(tarifa objetivo|precio objetivo|objetivo|meta|quiero cobrar)/.test(s)) return "objetivo";
       if (/(costo|cuesta|gasto)/.test(s) && !/(precio|cobro|cu[aá]nto (vale|cuesta)|cobras|te pagan)/.test(s)) return "costo";
       if (/(precio|cobro|cu[aá]nto|vale|cobras|te pagan|tarifa)/.test(s)) return "propio";
@@ -15236,11 +15322,54 @@
        frase no da etiqueta («ninguna») se ancla por valor, y
        solo si un ÚNICO rol coincide: si dos roles comparten el valor,
        es ambiguo y la cifra se cita sin rol. */
+    /* v17.53 · F1-fallback: rol del mismo valor en otra ocurrencia de la misma respuesta. Busca el valor formateado («$58.000») en el texto, salta la ocurrencia de la cifra que se está etiquetando y analiza la cláusula de cada otra ocurrencia con las mismas reglas; si todas coinciden en un solo rol, ese es el rol. */
+    function sameValueRole(value, text, figureIdx, figureLen, canon) {
+      try {
+        var t = String(text || "");
+        var needle = "$" + Number(value).toLocaleString("es-CO");
+        var roles = [];
+        var from = 0;
+        while (true) {
+          var at = t.indexOf(needle, from);
+          if (at < 0) break;
+          from = at + needle.length;
+          if (figureIdx != null && at === figureIdx) continue;
+          var r = null;
+          try { r = fixCitedLabelAnalyze(value, t, at, needle.length, canon); } catch (e) { r = null; }
+          if (r && r.label && roles.indexOf(r.label) < 0) roles.push(r.label);
+        }
+        return roles.length === 1 ? roles[0] : "";
+      } catch (e) { return ""; }
+    }
     function fixCitedLabel(value, label, text, figureIdx, figureLen) {
+      /* v17.53 · F1–F5: la cláusula manda sobre la etiqueta contextual. Antes, una etiqueta contextual («propio») se devolvía tal cual sin mirar la cláusula, así que un precio de la alternativa, un total mensual o una mención de producto sin ancla se leían como precio propio. Ahora el análisis de la cláusula corre SIEMPRE y su resultado manda: un rol claro («alternativa», «propio», «neto») se devuelve; un «» definitivo (total mensual, cláusula rival con valor que no es la alternativa, cláusula propia con valor que no es el propio, mención de producto sin ancla) se devuelve como «»; y solo cuando el análisis no decide (anclaje por valor ambiguo) se confía en la etiqueta contextual. */
+      var canon = null;
+      try { var f = contradictionFigures(); canon = { propio: f.cobrado ? f.cobrado.v : null, alternativa: f.alternativa ? f.alternativa.v : null, costo: f.costo ? f.costo.v : null, neto: f.neto ? f.neto.v : null, cac: (f.cac && f.cac.length) ? f.cac[0].v : null, ltv: f.ltv ? f.ltv.v : null }; } catch (e) { canon = {}; }
+      var analyzed = null;
+      try { analyzed = fixCitedLabelAnalyze(value, text, figureIdx, figureLen, canon); } catch (e) { analyzed = null; }
+      if (analyzed && analyzed.label) return analyzed.label;
       if (!label || label === "ninguna") {
-        try {
-          var f = contradictionFigures();
-          var canon = { propio: f.cobrado ? f.cobrado.v : null, alternativa: f.alternativa ? f.alternativa.v : null, costo: f.costo ? f.costo.v : null, neto: f.neto ? f.neto.v : null, cac: (f.cac && f.cac.length) ? f.cac[0].v : null, ltv: f.ltv ? f.ltv.v : null };
+        /* v17.53 · F1-fallback: la cifra citada quedó sin rol en su propia cláusula (p. ej. la disposición «dispuesta a pagarme $58.000» no es un precio cobrado) pero el MISMO valor aparece en esta respuesta con un rol claro («Hoy paga $58.000 por la alternativa»): la etiqueta es ese rol único. Solo cuando la etiqueta contextual es «ninguna» (el rol no está reclamado por nadie) y todas las demás ocurrencias del valor coinciden en un solo rol; si discrepan o no hay otra ocurrencia, sigue sin etiqueta. */
+        var fbRole = sameValueRole(value, text, figureIdx, figureLen, canon);
+        if (fbRole) return fbRole;
+        return "";
+      }
+      if (analyzed && analyzed.definitive === true) return "";
+      if (analyzed && typeof analyzed.definitive === "string") {
+        /* v17.53 · F1-frame: el «» de un marco de frase por desajuste de canon solo habla de SU rol: «la limpieza profunda de $75.000… la vendo» no es el precio propio porque el propio es $60.000 (marco propio), pero «Doy cortes a $30.000, mientras la alternativa cobra $35.000» SÍ es el precio propio aunque el marco de la frase sea rival (el rival no habla del precio propio). */
+        if (label === analyzed.definitive) return "";
+      }
+      return label;
+    }
+    function fixCitedLabelAnalyze(value, text, figureIdx, figureLen, canon) {
+      /* Sin frase (llamada vieja), vale el anclaje por valor de siempre. */
+      if (text == null || figureIdx == null) {
+        var roles0 = ["propio", "alternativa", "costo", "neto", "cac", "ltv"];
+        var match0 = null, n0 = 0;
+        for (var i0 = 0; i0 < roles0.length; i0++) { if (canon[roles0[i0]] != null && canon[roles0[i0]] === value) { match0 = roles0[i0]; n0++; } }
+        return { label: n0 === 1 ? match0 : "", definitive: n0 === 1 };
+      }
+      try {
           /* v17.48 F2: el anclaje por valor lo gobierna la CLÁUSULA
              donde está la cifra, no el valor solo (la frase entera
              puede traer dos cifras con dos roles: «La alternativa
@@ -15261,7 +15390,7 @@
             var effLen48 = figureLen || 0;
             while (effLen48 > 0 && /[^0-9]/.test(String(text).charAt(figureIdx + effLen48 - 1))) effLen48--;
             var sent48 = figureClause(String(text), figureIdx, effLen48);
-            var RIVAL48 = /(alternativa|competencia|otro\s+negocio|otra\s+tienda|otro\s+local|la\s+otra|en\s+otro\s+lado|en\s+la\s+calle|lo\s+que\s+paga\s+hoy|paga\s+hoy\s+por|la\s+cadena(?!\s+de\s+valor))/i;
+            var RIVAL48 = /(alternativa|competencia|otro\s+negocio|otra\s+tienda|otro\s+local|la\s+otra|en\s+otro\s+lado|en\s+la\s+calle|lo\s+que\s+paga\s+hoy|paga\s+hoy\s+por|la\s+cadena(?!\s+de\s+valor)|otra\s+empresa|otro\s+proveedor|empresa\s+del\s+centro|negocio\s+del\s+centro|tienda\s+del\s+centro)/i;
             var OWN48 = /(yo|mi|mis|me|nosotros|nuestro|clientes?|clientas?|vecin[oa]s?|compran|compro|tengo|vendo|vendemos|cobro|cobramos|ofrezco|dejo|pongo|fijo|sirvo|cuesta|vale|especial|cocada|caf[eé]|arepa|dulce|plato|almuerzo|empanada|jugo|postre|pan|torta|ropa|prenda|servicio|producto|men[úu])/i;
             /* v17.52 · F1: verbos que fijan el precio del dueño. «pagan»
                solo en tercera persona o con «me» («me pagan», «pagan»,
@@ -15280,8 +15409,8 @@
                mes») sigue sin rol: el marcador está en su propio
                subtramo. */
             var seg48 = figureSegment(String(text), figureIdx, effLen48);
-            if (MONTHLY48.test(seg48) && !PERUNIT48.test(seg48)) return "";
-            if (RIVAL48.test(sent48)) return canon.alternativa === value ? "alternativa" : "";
+            if (MONTHLY48.test(seg48) && !PERUNIT48.test(seg48)) return { label: "", definitive: true };
+            if (RIVAL48.test(sent48)) return { label: canon.alternativa === value ? "alternativa" : "", definitive: canon.alternativa === value };
             /* v17.52 · F1: «me deja $19.000 por unidad» es lo neto, no el
                precio: un verbo de neto pegado a ESTA cifra (desde la cifra
                anterior hasta esta) la etiqueta «neto», aunque el canon no
@@ -15296,7 +15425,7 @@
                 if (figs48[k48].i < figureIdx && figs48[k48].i + (figs48[k48].len || 0) > prevEnd48) prevEnd48 = figs48[k48].i + (figs48[k48].len || 0);
               }
             } catch (e48) {}
-            if (/\b(me\s+(deja|dejan|queda|quedan)|margen|neto|ganancia|utilidad)\b/i.test(String(text).slice(prevEnd48, figureIdx))) return "neto";
+            if (/\b(me\s+(deja|dejan|queda|quedan)|margen|neto|ganancia|utilidad)\b/i.test(String(text).slice(prevEnd48, figureIdx))) return { label: "neto", definitive: true };
             /* v17.52 · F1: un VERBO propio en la cláusula («cobro»,
                «ofrezco», «me pagan», «dejar en $X», «fijo») dice que la
                cifra ES el precio del dueño para ese artículo, aunque su
@@ -15306,8 +15435,12 @@
                costo/valor). Sin verbo, un sustantivo de producto
                («especial») solo es una mención: la cifra sin ancla sigue
                sin etiqueta (control sin ancla). */
-            if (OWN_VERB48.test(sent48)) return "propio";
-            if (OWN48.test(sent48)) return canon.propio === value ? "propio" : "";
+            /* v17.53 · F3: un verbo propio con destinatario rival («paga $75.000 a la empresa del centro») es del rival, no propio: el verbo no manda cuando la cifra se la lleva otro. */
+            if (OWN_VERB48.test(sent48)) {
+              if (/a\s+(la\s+)?(empresa\s+del\s+centro|negocio\s+del\s+centro|tienda\s+del\s+centro|alternativa|competencia|otra\s+empresa|otro\s+negocio|la\s+otra\s+(tienda|empresa)|otro\s+proveedor)\b/i.test(sent48)) return { label: "", definitive: true };
+              return { label: "propio", definitive: true };
+            }
+            if (OWN48.test(sent48)) return { label: canon.propio === value ? "propio" : "", definitive: true };
             /* v17.50 · F4: la cláusula neutra hereda el marco de su
                frase. Una cifra en una continuación de lista («y la
                revisión completa a $180.000») no trae verbo ni marca en
@@ -15327,21 +15460,24 @@
                «vende») es como se describe a la alternativa y no
                entra aquí. */
             var sent50 = figureSentence(String(text), figureIdx, effLen48);
-            var RIVAL_SENT50 = /(alternativa|competencia|otro\s+negocio|otra\s+tienda|otro\s+local|otro\s+taller|la\s+otra|en\s+otro\s+lado|en\s+la\s+calle|lo\s+que\s+paga\s+hoy|paga\s+hoy\s+por|la\s+cadena(?!\s+de\s+valor))/i;
+            var RIVAL_SENT50 = /(alternativa|competencia|otro\s+negocio|otra\s+tienda|otro\s+local|otro\s+taller|la\s+otra|en\s+otro\s+lado|en\s+la\s+calle|lo\s+que\s+paga\s+hoy|paga\s+hoy\s+por|la\s+cadena(?!\s+de\s+valor)|otra\s+empresa|otro\s+proveedor|empresa\s+del\s+centro|negocio\s+del\s+centro|tienda\s+del\s+centro)/i;
             var OWN_SENT50 = /\b(vend(o|emos|er|id[oa]s?)|cobr(o|amos|ar)|ofre(zco|cer)|dej(o|ar|amos)|pong(o|er|amos)|fij(o|ar|amos)|me\s+pagan|mis\s+clientes\s+ya\s+pagan)\b/i;
-            if (RIVAL_SENT50.test(sent50)) return canon.alternativa === value ? "alternativa" : "";
-            if (OWN_SENT50.test(sent50)) return canon.propio === value ? "propio" : "";
+            if (RIVAL_SENT50.test(sent50)) return { label: canon.alternativa === value ? "alternativa" : "", definitive: canon.alternativa === value ? true : "alternativa" };
+            if (OWN_SENT50.test(sent50)) return { label: canon.propio === value ? "propio" : "", definitive: canon.propio === value ? true : "propio" };
           }
           var roles = ["propio", "alternativa", "costo", "neto", "cac", "ltv"];
           var match = null, n = 0;
           for (var i = 0; i < roles.length; i++) { if (canon[roles[i]] != null && canon[roles[i]] === value) { match = roles[i]; n++; } }
           /* v17.45: un solo rol coincide -> ese rol; dos o ninguno ->
-             sin rol (la cifra se cita sin etiqueta). */
-          return n === 1 ? match : "";
-        } catch (e) { return ""; }
-      }
-      /* v17.45: la etiqueta contextual manda — el valor no la toca. */
-      return label;
+             sin rol (la cifra se cita sin etiqueta).
+             v17.53 · F4–F5: una mención de producto sin ancla («El vestido de fiesta a $58.000», «la limpieza profunda de $75.000») no es el precio de nadie aunque su valor coincida con un rol: el anclaje por valor solo etiqueta una cifra cuya cláusula no trae ninguna mención de producto. */
+          /* v17.53 · F4–F5: la puerta de la mención de producto corre ANTES del anclaje por valor: una mención sin ancla («El vestido de fiesta a $58.000») queda sin etiqueta aunque no haya ningún rol con el que coincidir (canon vacío) o aunque su valor coincida con un rol. */
+          var beforeFig = String(text).slice(0, figureIdx);
+          var clauseStart = Math.max(beforeFig.lastIndexOf("."), beforeFig.lastIndexOf("!"), beforeFig.lastIndexOf("?"), beforeFig.lastIndexOf(";"), beforeFig.lastIndexOf(","), beforeFig.lastIndexOf(":"));
+          var beforeInClause = beforeFig.slice(clauseStart + 1);
+          if (/(?:^|[\s,;])(el|la|los|las|un|una)\s+[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2}\s+(a|de)\s*$/i.test(beforeInClause)) return { label: "", definitive: true };
+          return { label: n === 1 ? match : "", definitive: n === 1 };
+        } catch (e) { return { label: "", definitive: false }; }
     }
     function evidenceFoundText(text, q) {
       var t = String(text || "");
@@ -15366,7 +15502,7 @@
          la pide (exigeNeeds().date): antes, cualquier fecha del texto
          —un año suelto, un «hoy»— hacía decir «la fecha que me
          diste» aunque la pregunta no pidiera fecha. */
-      if (exigeNeeds(q).date && hasDateIn(t)) parts.push("la fecha que me diste");
+      if (exigeNeeds(q).date && hasDateInOwn(t, q)) parts.push("la fecha que me diste");
       /* v17.33 (WS3) · H3 «caso»: «el caso que me contaste» solo con
          un caso AFIRMADO (mención explícita sin negar, o caso con
          nombre); «lo de tu cliente» solo con un caso con nombre o
@@ -15650,6 +15786,8 @@
          y la repregunta nunca cita cifras de la principal. */
       var citeText = stepText;
       var isZero = honestZero(stepText, q);
+      /* v17.53 · F6: un cero que no es de caso no convierte el paso en «dato real» cuando la pregunta pide un ejemplo real y el paso no trae ningún caso («0 reseñas» en C3 Q7): la burbuja decía «esto es un dato real» y «no me falta nada crítico» aunque faltara el caso. Con el portón, la lectura es «Por validar» y la falta es el caso. */
+      try { var f6NeedsB = exigeNeeds(q); if (f6NeedsB && f6NeedsB.example && !hasExample(stepText) && !caseZeroDeclared(stepText)) isZero = false; } catch (e) {}
       /* v17.34 (WS4) · F10: un cero con cifras en OTRA oración no es el
          dato principal de la respuesta: la burbuja nombra el cero Y las
          cifras, en vez de presentar toda la respuesta como un cero
@@ -21177,6 +21315,9 @@
          aclaración y la pregunta se volvía a pedir (C10 Q2). */
       var hasFreshQuestion = answeredCount(m.id) < m.questions.length;
       var clarIntent = isClarificationIntent(text, openContra, hasFreshQuestion);
+      /* v17.53 · F7: llegar por el botón «Responder» del Resumen ES la intención de aclarar: el dueño vino a responder ESTA aclaración (ui.clarAnswerKey la nombra), así que el texto es su respuesta aunque no traiga las marcas textuales de corrección («me equivoqué», «en realidad»…). Sin esto, la aclaración no se registraba nunca en un componente completo y el botón era un callejón sin salida. */
+      var clarViaResponder = !!(ui && ui.clarAnswerKey && openContra && ui.clarAnswerKey === openContra.key);
+      if (!clarIntent && clarViaResponder) clarIntent = true;
       /* v17.32 (WS1b) · La familia manda: una intención de aclarar sin
          ninguna cifra de la familia del aviso abierto no se registra
          como aclaración — el texto sigue su camino como respuesta. */
@@ -21197,7 +21338,8 @@
       var clarLeads = ws7ClarLeads(text, openContra);
       if (openContra && !pendFirst && (!hasFreshQuestion || clarLeads) && clarIntent) {
         clarCorr = parseCorrectedFigures(text, openContra.key);
-        if (!correctionBelongsToFamily(clarCorr, openContra.key)) clarIntent = false;
+        /* v17.53 · F7: por el botón «Responder» la familia no se comprueba: el dueño vino a contestar ESTA aclaración (sin pregunta nueva esperando), así que el texto es su respuesta aunque no traiga cifras con rol claro — la resolución ya marca needsRole y pregunta el rol en el hilo, en vez de dejar la respuesta sin registrar. */
+        if (!clarViaResponder && !correctionBelongsToFamily(clarCorr, openContra.key)) clarIntent = false;
       }
       if (openContra && !pendFirst && (!hasFreshQuestion || clarLeads) && clarIntent) {
         if (!state.contradictions) state.contradictions = [];
@@ -21518,9 +21660,16 @@
       /* v17.24 · Un cero declarado con su unidad ES el dato completo:
          «0 clientes» no es una respuesta corta sin desarrollar: es la
          medida real. No genera ningún hueco. */
-      if (honestZero(text, q)) return [];
+      /* v17.53 · F6: igual que en assessEvidence — «0 reseñas» no es un cero de caso: si la pregunta pide un ejemplo real y la respuesta no trae ningún caso, el cero no dispensa el caso. (Ojo: en esta función `hasExample` es una variable local suelta que tapa a la función global — llamarla como `hasExample(text)` lanzaba y el catch dejaba el cero; la función global se llama por `window.hasExample`, con la variable suelta de respaldo.) */
+      var f6ZeroCase2 = false;
+      try { var f6Needs2 = exigeNeeds(q); var f6HasEx2 = false; try { f6HasEx2 = window.hasExample(text); } catch (e2) { f6HasEx2 = hasExample; } f6ZeroCase2 = !!(f6Needs2 && f6Needs2.example) && !f6HasEx2 && !caseZeroDeclared(text); } catch (e) { f6ZeroCase2 = false; }
+      if (honestZero(text, q) && !f6ZeroCase2) return [];
       if (q && q.sinNumero) {
         if (text.length < 90 && !hasExample) return ["concreción: el texto exacto y completo, no una descripción de lo que dirías"];
+        /* v17.53 · F6: sinNumero solo dispensa el NÚMERO, no el ejemplo ni la fecha: si la pregunta pide un caso real y no lo trae, el hueco es el caso (C3 Q7: la cita pelada + «0 reseñas» no es un caso y la rama devolvía [] sin consultar exigeGap). El hueco de cifra (needsNumber) sigue dispensado. */
+        var egSN = null;
+        try { egSN = exigeGap(text, q); } catch (e) { egSN = null; }
+        if (egSN && !egSN.needsNumber) return [egSN.text];
         return [];
       }
       /* v17.19 · En «Idea en papel» la evidencia es la hipótesis: un
@@ -22240,7 +22389,7 @@
       }
       /* v17.35 (WS-OKR) · Los objetivos en el Resumen, con su medición
          viva (C14 arrastra lo medido en C13). */
-      if (state.okrs) html += '<h2 class="section-title">Tus objetivos y resultados clave</h2>' + okrHtml("resumen");
+      if (state.okrs) html += '<h2 class="section-title">Tus objetivos y resultados clave (KR = resultado clave: el número que prueba si la tarea de campo funcionó)</h2>' + okrHtml("resumen");
       html += '<h2 class="section-title">Los 15 componentes</h2><p style="color:var(--muted);margin-top:-6px">El avance es secuencial: puedes <strong>ver</strong> cualquier componente cuando quieras, pero solo puedes <strong>responder</strong> en uno cuando el anterior está completado en su totalidad. Los que aún no se activan aparecen como «Bloqueado · solo lectura».</p>';
       MODULES.forEach(function (m) {
         var s = moduleScore(m.id), c = answeredCount(m.id);
@@ -24419,7 +24568,7 @@
         if (!/cac|adquirir un cliente|por cliente/i.test(lead)) {
           var cacs = [];
           try { cacs = extractCacFigures() || []; } catch (e) { cacs = []; }
-          if (cacs.length) parts.push("CAC: " + fmtMoney(cacs[0].v) + " por cliente" + (cacs[0].channel ? " (vía " + cacs[0].channel + ")" : "") + ".");
+          if (cacs.length) parts.push("CAC (lo que te cuesta conseguir un cliente): " + fmtMoney(cacs[0].v) + " por cliente" + (cacs[0].channel ? " (vía " + cacs[0].channel + ")" : "") + ".");
         }
       } else {
         /* Toda la Q4 habla del canal roto (o no hay Q4): no hay
@@ -24767,7 +24916,7 @@
       var ws5GradeLine = canvasGradeLine(b ? b.key : "");
       if (ws5GradeLine) ws8Out = ws8Out ? ws8Out + ws5GradeLine : ws5GradeLine.slice(1);
       if (ws6BeBlock) ws8Out = (ws8Out ? ws8Out + "\n" : "") + ws6BeBlock;
-      if (ws8LtvLine) ws8Out = (ws8Out ? ws8Out + "\n" : "") + "Valor de vida de cada cliente: " + ws8LtvLine + ".";
+      if (ws8LtvLine) ws8Out = (ws8Out ? ws8Out + "\n" : "") + "Valor de vida (lo que te deja un cliente en total) de cada cliente: " + ws8LtvLine + ".";
       return ws8Out;
     }
     /* v17.29 (WS4) · UN solo estado visible por bloque: el borrador
@@ -25282,7 +25431,7 @@
       body += "<h2>Tesis del modelo</h2>" + canvasThesisHtml();
       body += "<h2>Diagnóstico</h2>" + canvasDiagnosisHtml();
       /* v17.35 (WS-OKR) · El documento Maestro trae los objetivos. */
-      if (state.okrs) body += "<h2>Objetivos y resultados clave</h2>" + okrHtml("doc");
+      if (state.okrs) body += "<h2>Objetivos y resultados clave (KR = resultado clave: el número que prueba si la tarea de campo funcionó)</h2>" + okrHtml("doc");
       body += "<h2>Presentación de negocio</h2>" + canvasPitchHtml();
       body += "<h2>Brief del proyecto</h2>" + qaHtml(mod("M0"));
       return { title: "Canvas Maestro", filename: "Analia-Canvas-Maestro.html",
@@ -25341,7 +25490,7 @@
             if (r.corrected.ltv) {
               var ltvInfoPlan = extractLtvInfo();
               var ltvFormulaPlan = (ltvInfoPlan && ltvInfoPlan.v === r.corrected.ltv.v) ? ltvFormulaText(ltvInfoPlan) : null;
-              bits.push(ltvFormulaPlan ? "Valor de vida: " + ltvFormulaPlan : "Valor de vida: $" + r.corrected.ltv.v.toLocaleString("es-CO") + " en total");
+              bits.push(ltvFormulaPlan ? "Valor de vida (lo que te deja un cliente en total): " + ltvFormulaPlan : "Valor de vida (lo que te deja un cliente en total): $" + r.corrected.ltv.v.toLocaleString("es-CO") + " en total");
             }
             if (r.corrected.ingresoTotal) bits.push("Total mensual: $" + r.corrected.ingresoTotal.v.toLocaleString("es-CO") + " al mes");
             if (r.corrected.margenCliente) bits.push("Margen por cliente: $" + r.corrected.margenCliente.v.toLocaleString("es-CO") + correctedUnitSuffix(r.corrected.margenCliente.unit));
